@@ -6,6 +6,7 @@ BUILD_TYPE="Release"
 BUILD_TEST=true
 WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
+WITH_RDMA=false
 
 # Default command is build
 COMMAND=${1:-build}
@@ -79,6 +80,7 @@ build_falconfs() {
         -DPOSTGRES_SRC_DIR="$POSTGRES_SRC_DIR" \
         -DWITH_FUSE_OPT="$WITH_FUSE_OPT" \
         -DWITH_ZK_INIT="$WITH_ZK_INIT" \
+        -DWITH_RDMA="$WITH_RDMA" \
         -DBUILD_TEST=$BUILD_TEST &&
         cd "$BUILD_DIR" && ninja
     echo "FalconFS build complete."
@@ -225,6 +227,9 @@ build)
                 ;;
             --with-zk-init)
                 WITH_ZK_INIT=true
+                ;;
+            --with-rdma)
+                WITH_RDMA=true
                 ;;
             --help | -h)
                 echo "Usage: $0 build falcon [options]"

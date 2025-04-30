@@ -14,7 +14,7 @@ apt -y install gcc-$GCC_VERSION g++-$GCC_VERSION
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-$GCC_VERSION 60 --slave /usr/bin/g++ g++ /usr/bin/g++-$GCC_VERSION
 update-alternatives --set gcc /usr/bin/gcc-$GCC_VERSION
 
-apt install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev
+apt install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev
 
 ./build-gcc-14.sh
 
@@ -39,7 +39,7 @@ cd /tmp
 wget https://github.com/apache/brpc/archive/refs/tags/$BRPC_VERSION.tar.gz
 tar -zxvf $BRPC_VERSION.tar.gz
 cd brpc-$BRPC_VERSION && mkdir build && cd build
-cmake -DWITH_GLOG=ON ..
+cmake -DWITH_GLOG=ON -DWITH_RDMA=ON ..
 make -j$(nproc)
 make install
 rm /tmp/$BRPC_VERSION.tar.gz
