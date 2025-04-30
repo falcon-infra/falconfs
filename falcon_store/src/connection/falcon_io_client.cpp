@@ -79,8 +79,12 @@ int FalconIOClient::CloseFile(uint64_t physicalFd,
     falcon::brpc_io::ErrorCodeOnlyReply response;
     brpc::Controller cntl;
     cntl.set_timeout_ms(10000);
+#ifdef USE_RDMA
+    cntl.request_attachment().append((void *)buf, size);
+#else
     auto dummyDeleter = [](void *) -> void {};
     cntl.request_attachment().append_user_data((void *)buf, size, dummyDeleter);
+#endif
 
     stub->CloseFile(&cntl, &request, &response, nullptr);
     if (cntl.Failed()) {
@@ -190,8 +194,12 @@ int FalconIOClient::WriteFile(uint64_t physicalFd, const char *writeBuffer, uint
     falcon::brpc_io::WriteReply response;
     brpc::Controller cntl;
     cntl.set_timeout_ms(10000);
+#ifdef USE_RDMA
+    cntl.request_attachment().append((void *)writeBuffer, size);
+#else
     auto dummyDeleter = [](void *) -> void {};
     cntl.request_attachment().append_user_data((void *)writeBuffer, size, dummyDeleter);
+#endif
 
     stub->WriteFile(&cntl, &request, &response, nullptr);
     if (cntl.Failed()) {

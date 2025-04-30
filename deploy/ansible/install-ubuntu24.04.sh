@@ -7,7 +7,7 @@ update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60
 update-alternatives --set gcc /usr/bin/gcc-14
 update-alternatives --set g++ /usr/bin/g++-14
 
-apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev
+apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev
 
 # third_party
 
@@ -30,7 +30,7 @@ cd /tmp
 wget https://github.com/apache/brpc/archive/refs/tags/$BRPC_VERSION.tar.gz
 tar -zxvf $BRPC_VERSION.tar.gz
 cd brpc-$BRPC_VERSION && mkdir build && cd build
-cmake -DWITH_GLOG=ON ..
+cmake -DWITH_GLOG=ON -DWITH_RDMA=ON ..
 make -j$nproc
 make install
 rm /tmp/$BRPC_VERSION.tar.gz

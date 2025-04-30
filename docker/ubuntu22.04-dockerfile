@@ -5,7 +5,7 @@ ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
 RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio
 
 # brpc
-RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool
+RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool libibverbs-dev
 
 ARG PROTOBUF_VERSION=3.12.4
 ARG PROTOBUF_DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
@@ -24,7 +24,7 @@ ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VE
 RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
     cd "/tmp/brpc-${BRPC_VERSION}" && \
     mkdir build && cd build && \
-    cmake -GNinja -DWITH_GLOG=ON .. && \
+    cmake -GNinja -DWITH_GLOG=ON -DWITH_RDMA=ON .. && \
     ninja && ninja install && \
     rm -rf "/tmp/brpc-${BRPC_VERSION}"
 

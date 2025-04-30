@@ -35,6 +35,7 @@ CLIENT_OPTIONS=(
     -o direct_io
     -o attr_timeout=200
     -o entry_timeout=200
+    -brpc
     -rpc_endpoint="0.0.0.0:56039"
     -socket_max_unwritten_bytes=268435456
 )

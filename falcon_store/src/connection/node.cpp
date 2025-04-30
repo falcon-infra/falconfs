@@ -26,12 +26,24 @@ void StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
                           [this](auto &&enumerated) {
                               auto &&[i, rpcEndPoint] = enumerated;
                               FALCON_LOG(LOG_INFO) << "node " << i << " = " << rpcEndPoint;
-
+#ifdef USE_RDMA
+                              bool connected = false;
+                              std::shared_ptr<FalconIOClient> connection;
+                              do {
+                                  connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
+                                  connected = connection->CheckConnection() == 0;
+                                  if (!connected) {
+                                      std::this_thread::sleep_for(1s);
+                                      FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
+                                  }
+                              } while (!connected);
+#else
                               auto connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
                               while (connection->CheckConnection() != 0) {
                                   FALCON_LOG(LOG_ERROR) << "CheckConnection failed, retry";
                                   std::this_thread::sleep_for(1s);
                               }
+#endif
                               nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
                           });
 
@@ -123,6 +135,9 @@ FalconIOClient *StoreNode::CreateIOConnection(const std::string &rpcEndPoint)
     options.connection_type = "pooled";
     options.connect_timeout_ms = 5000;
     options.timeout_ms = 10000;
+#ifdef USE_RDMA
+    options.use_rdma = true;
+#endif
     if (channel->Init(rpcEndPoint.c_str(), &options) != 0) {
         FALCON_LOG(LOG_ERROR) << "Fail to initialize channel for " << rpcEndPoint;
         return nullptr;

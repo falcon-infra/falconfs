@@ -432,10 +432,17 @@ DEFINE_string(rpc_endpoint, "0.0.0.0:56039", "endpoint of rpc server");
 DEFINE_string(f, "", "fuse ops, unneeded");
 DEFINE_string(o, "", "fuse ops, unneeded");
 DEFINE_string(d, "", "fuse ops, unneeded");
+DEFINE_string(brpc, "", "optional ops, unneeded");
 
 int main(int argc, char *argv[])
 {
-    int fuseArgc = argc - 2;
+    int fuseArgc = argc;
+    for (int i = 0; i < argc; ++i) {
+        if (strcmp(argv[i], "-brpc") == 0) {
+            fuseArgc = i;
+            break;
+        }
+    }
     std::vector<std::unique_ptr<char[]>> fuseArgvStorage(fuseArgc);
     std::vector<char *> fuseArgv(fuseArgc);
 

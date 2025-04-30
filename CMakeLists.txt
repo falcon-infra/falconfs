@@ -17,6 +17,11 @@ if(WITH_ZK_INIT)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DZK_INIT")
 endif()
 
+option(WITH_RDMA "Enable storage connection use RDMA" OFF)
+if(WITH_RDMA)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_RDMA")
+endif()
+
 # ==================== Dependencies =================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(BRPC REQUIRED)
