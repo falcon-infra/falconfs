@@ -474,8 +474,8 @@ int main(int argc, char *argv[])
     std::string serverIp = config->GetString(FalconPropertyKey::FALCON_SERVER_IP);
     std::string serverPort = config->GetString(FalconPropertyKey::FALCON_SERVER_PORT);
     g_persist = config->GetBool(FalconPropertyKey::FALCON_PERSIST);
-
 #ifdef ZK_INIT
+    std::println("Initialize with ZK");
     const char *zkEndPoint = std::getenv("zk_endpoint");
     if (zkEndPoint == nullptr) {
         std::println(stderr, "Fetch zk endpoint failed!");
