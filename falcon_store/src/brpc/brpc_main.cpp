@@ -409,6 +409,7 @@ int RemoteIOServer::Run()
     butil::str2endpoint(endPoint.c_str(), &point);
     brpc::ServerOptions options;
 #ifdef USE_RDMA
+    std::println("BRPC is configured to use RDMA");
     options.use_rdma = true;
 #endif
     if (server.Start(point, &options) != 0) {
