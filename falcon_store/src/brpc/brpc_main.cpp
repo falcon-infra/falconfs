@@ -11,6 +11,7 @@
 #include <bthread/unstable.h>
 #include <butil/iobuf.h>
 #include <memory_resource>
+#include <print>
 
 #include "buffer/dir_open_instance.h"
 #include "buffer/open_instance.h"
