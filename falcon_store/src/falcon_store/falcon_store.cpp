@@ -96,7 +96,11 @@ int FalconStore::InitStore()
     }
 #else
     int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
-    StoreNode::GetInstance()->SetNodeConfig(nodeId, clusterView);
+    ret = StoreNode::GetInstance()->SetNodeConfig(nodeId, clusterView);
+    if (ret != 0) {
+        FALCON_LOG(LOG_ERROR) << "Falcon StoreNode init failed";
+        return ret;
+    }
 #endif
     /* start the stats thread */
     if (ifStat) {

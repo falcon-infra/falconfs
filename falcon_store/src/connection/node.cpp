@@ -12,42 +12,54 @@
 #include "cm/falcon_cm.h"
 #include "log/logging.h"
 
+#define CONNECTION_RETRY_NUM 300
+
 using namespace std::chrono_literals;
 
-void StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
+int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
 {
     std::unique_lock<std::shared_mutex> nodeLock(nodeMutex);
     nodeId = initNodeId;
     std::println("falcon_store nodeId = {}", nodeId);
-
+    initStatus = 0;
     std::ranges::for_each(clusterView | std::views::split(',') | std::views::transform([](auto &&rng) {
                               return std::string(&*rng.begin(), std::ranges::distance(rng));
                           }) | std::views::enumerate,
                           [this](auto &&enumerated) {
                               auto &&[i, rpcEndPoint] = enumerated;
                               FALCON_LOG(LOG_INFO) << "node " << i << " = " << rpcEndPoint;
-#ifdef USE_RDMA
                               bool connected = false;
+                              int retry_num = 0;
+#ifdef USE_RDMA
                               std::shared_ptr<FalconIOClient> connection;
                               do {
                                   connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
                                   connected = connection->CheckConnection() == 0;
                                   if (!connected) {
+                                      retry_num++;
                                       std::this_thread::sleep_for(1s);
                                       FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
                                   }
-                              } while (!connected);
+                              } while (!connected && retry_num < CONNECTION_RETRY_NUM);
 #else
                               auto connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
-                              while (connection->CheckConnection() != 0) {
-                                  FALCON_LOG(LOG_ERROR) << "CheckConnection failed, retry";
-                                  std::this_thread::sleep_for(1s);
-                              }
+                              do {
+                                  connected = connection->CheckConnection() == 0;
+                                  if (!connected) {
+                                      retry_num++;
+                                      std::this_thread::sleep_for(1s);
+                                      FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
+                                  }
+                              } while (!connected && retry_num < CONNECTION_RETRY_NUM);
 #endif
-                              nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
+                              if (connected) {
+                                  nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
+                              } else {
+                                  initStatus = 1;
+                                  return;
+                              }
                           });
-
-    initStatus = 0;
+    return initStatus;
 }
 
 int StoreNode::UpdateNodeConfig()

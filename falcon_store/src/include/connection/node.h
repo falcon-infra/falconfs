@@ -19,7 +19,7 @@ class StoreNode {
     std::unordered_map<int, std::pair<std::string, std::shared_ptr<FalconIOClient>>> nodeMap;
 
   public:
-    void SetNodeConfig(int initNodeId, std::string &clusterView);
+    int SetNodeConfig(int initNodeId, std::string &clusterView);
     int SetNodeConfig(std::string &rootPath);
     static StoreNode *GetInstance();
     static void DeleteInstance();

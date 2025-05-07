@@ -24,15 +24,6 @@
 #include "init/falcon_init.h"
 #include "stats/falcon_stats.h"
 
-static struct options
-{
-    int totalConn;
-} options;
-
-#define OPTION(t, p) {t, offsetof(struct options, p), 1}
-
-static const struct fuse_opt option_spec[] = {OPTION("--total_conn=%d", totalConn), FUSE_OPT_END};
-
 static bool g_persist = false;
 
 int DoGetAttr(const char *path, struct stat *stbuf)
@@ -494,11 +485,6 @@ int main(int argc, char *argv[])
         return ret;
     }
     server.SetReadyFlag();
-
-    if (fuse_opt_parse(&args, &options, option_spec, nullptr) == -1) {
-        std::println(stderr, "args parse error! Invalid options or arguments");
-        return 1;
-    }
     std::println("{}", ret);
     ret = fuse_main(args.argc, args.argv, &falconOperations, nullptr);
     fuse_opt_free_args(&args);
