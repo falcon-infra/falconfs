@@ -18,7 +18,7 @@
     ]
   },
   "images": {
-    "cn": "cn_images",
+    "cn": "ghcr.io/falcon-infra/falcon-cn:0.01",
     "dn": "dn_images",
     "zk": "dn_images",
     "store": "store_images"

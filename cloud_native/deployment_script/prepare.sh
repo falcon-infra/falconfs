@@ -32,7 +32,7 @@ done
 
 #modify the configmap
 
-CONFIGMAP=$DIR/../deployment_yaml/configmap.yaml
+CONFIGMAP=$DIR/configmap.yaml
 
 CN_SUP_NUM=$(( $CN_NODES_LEN - 3 ))
 DN_PRIMARY_NUM=$(( ( $DN_NODES_LEN + 1 ) * 3 / 10 ))
@@ -44,7 +44,7 @@ yq eval '.data.dn_num='"$DN_NODES_LEN"'' $CONFIGMAP -i
 yq eval '.data.dn_sup_num='"$DN_SUP_NUM"'' $CONFIGMAP -i
 
 #modify the cn yaml
-CN_YAML=$DIR/../deployment_yaml/cn.yaml
+CN_YAML=$DIR/cn.yaml
 yq eval '.spec.replicas='"$CN_NODES_LEN"'' $CN_YAML -i
 CN_IMAGES=$(jq -r '.images.cn' $JSON_PATH)
 yq eval '.spec.template.spec.containers[0].image="'"$CN_IMAGES"'"' $CN_YAML -i
@@ -52,14 +52,14 @@ CN_HOST_PATH=$(jq -r '.hostpath.cn' $JSON_PATH)
 yq eval '.spec.template.spec.volumes[0].hostPath.path="'"$CN_HOST_PATH"'"' $CN_YAML -i
 
 #modify the dn yaml
-DN_YAML=$DIR/../deployment_yaml/dn.yaml
+DN_YAML=$DIR/dn.yaml
 DN_IMAGES=$(jq -r '.images.dn' $JSON_PATH)
 yq eval '.spec.template.spec.containers[0].image="'"$DN_IMAGES"'"' $DN_YAML -i
 DN_HOST_PATH=$(jq -r '.hostpath.dn' $JSON_PATH)
 yq eval '.spec.template.spec.volumes[0].hostPath.path="'"$DN_HOST_PATH"'"' $DN_YAML -i
 
 #modify the store yaml
-STORE_YAML=$DIR/../deployment_yaml/store.yaml
+STORE_YAML=$DIR/store.yaml
 STORE_IMAGES=$(jq -r '.images.store' $JSON_PATH)
 yq eval '.spec.template.spec.containers[0].image="'"$STORE_IMAGES"'"' $STORE_YAML -i
 STORE_CACHE_HOSTPATH=$(jq -r '.hostpath.store.cache' $JSON_PATH)
