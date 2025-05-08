@@ -18,9 +18,14 @@ apt update && apt -y install jq yq
 
 - change the ```[hostpath]``` of each module.
 
-2. Modify the ```[PVC]``` setting in ```~/code/cloud_native/deployment_script/deployment_yaml/zk.yaml```
+2. Prepare the environment
+```bash
+bash ~/code/cloud_native/deployment_script/requirement/prepare.sh
+```
 
-2. Setup FalconFS
+3. Modify the ```[PVC]``` setting in ```~/code/cloud_native/deployment_script/deployment_yaml/zk.yaml```
+
+4. Setup FalconFS
 - Setup configmap
 ```bash
 kubectl apply -f configmap.yaml
