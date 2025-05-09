@@ -65,7 +65,7 @@ spec:
             limits:
               cpu: "32"
               memory: 200Gi
-            request:
+            requests:
               cpu: "4"
               memory: 50Gi
           volumeMounts:

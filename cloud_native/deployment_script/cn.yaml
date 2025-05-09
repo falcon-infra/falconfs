@@ -26,7 +26,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
         - name: falcon-cn
-          image: cn_images
+          image: ghcr.io/falcon-infra/falcon-cn:0.01
           securityContext:
             privileged: true
           lifecycle:
@@ -82,7 +82,7 @@ spec:
             limits:
               cpu: "16"
               memory: 100Gi
-            request:
+            requests:
               cpu: "4"
               memory: 25Gi
           volumeMounts:
