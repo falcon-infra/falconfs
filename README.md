@@ -16,7 +16,7 @@ Through the above advantages, FalconFS delivers an ideal storage solution for mo
 ## Documents
 
 - [FalconFS Design](./docs/design.md)
-- [FalconFS Cluster Test Setup Guide](./deploy/ansible/README.md)
+- [FalconFS Cluster Test Setup Guide](./docs/setup.md)
 
 ## Architecture
 ![FalconFS Architecture](https://github.com/user-attachments/assets/5ff1e80a-4cce-4b05-a35d-8da54191fb30)
