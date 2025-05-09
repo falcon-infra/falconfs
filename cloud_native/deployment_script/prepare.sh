@@ -12,23 +12,23 @@ if (( ZK_NODES_LEN != 3 )) || (( CN_NODES_LEN < 3 )) || (( DN_NODES_LEN < 3 )); 
     exit 1
 fi 
 
-ZK_NODES=$(jq -r '.nodes.zk| join(" ")' node.json)
-for ZK_NODE in $ZK_NODES
-do
-    kubectl label node $ZK_NODE falcon-zk=falcon-zk
-done 
+# ZK_NODES=$(jq -r '.nodes.zk| join(" ")' node.json)
+# for ZK_NODE in $ZK_NODES
+# do
+#     kubectl label node $ZK_NODE falcon-zk=falcon-zk
+# done 
 
-CN_NODES=$(jq -r '.nodes.cn| join(" ")' node.json)
-for CN_NODE in $CN_NODES
-do
-    kubectl label node $CN_NODE falcon-cn=falcon-cn
-done 
+# CN_NODES=$(jq -r '.nodes.cn| join(" ")' node.json)
+# for CN_NODE in $CN_NODES
+# do
+#     kubectl label node $CN_NODE falcon-cn=falcon-cn
+# done 
 
-DN_NODES=$(jq -r '.nodes.dn| join(" ")' node.json)
-for DN_NODE in $DN_NODES
-do
-    kubectl label node $DN_NODE falcon-dn=falcon-dn
-done 
+# DN_NODES=$(jq -r '.nodes.dn| join(" ")' node.json)
+# for DN_NODE in $DN_NODES
+# do
+#     kubectl label node $DN_NODE falcon-dn=falcon-dn
+# done 
 
 #modify the configmap
 
@@ -38,10 +38,10 @@ CN_SUP_NUM=$(( $CN_NODES_LEN - 3 ))
 DN_PRIMARY_NUM=$(( ( $DN_NODES_LEN + 1 ) * 3 / 10 ))
 DN_SUP_NUM=$(( $DN_NODES_LEN - ( $DN_PRIMARY_NUM * 3 ) ))
 
-yq eval '.data.cn_num='"$CN_NODES_LEN"'' $CONFIGMAP -i
-yq eval '.data.cn_sup_num='"$CN_SUP_NUM"'' $CONFIGMAP -i
-yq eval '.data.dn_num='"$DN_NODES_LEN"'' $CONFIGMAP -i
-yq eval '.data.dn_sup_num='"$DN_SUP_NUM"'' $CONFIGMAP -i
+yq eval '.data.cn_num="'"$CN_NODES_LEN"'"' $CONFIGMAP -i
+yq eval '.data.cn_sup_num="'"$CN_SUP_NUM"'"' $CONFIGMAP -i
+yq eval '.data.dn_num="'"$DN_NODES_LEN"'"' $CONFIGMAP -i
+yq eval '.data.dn_sup_num="'"$DN_SUP_NUM"'"' $CONFIGMAP -i
 
 #modify the cn yaml
 CN_YAML=$DIR/cn.yaml
