@@ -11,8 +11,9 @@ Usage:
 ```bash
 apt update && apt -y install jq yq
 ```
-1. Set values in ```~/code/cloud_native/deployment_script/node.json```
-- change nodes name in ```[nodes]```to deploy the corresponding modules. The number of ```[zk]``` should be 3, the number of ```[cn]``` should be 3-5, the number of ```[dn]``` should be larger than 5.
+1. Set values in ```$FALCON_PATH/cloud_native/deployment_script/node.json```
+- change nodes name in ```[nodes]``` to deploy the corresponding modules. **Important:**
+The number of ```[zk]``` should be 3, the number of ```[cn]``` should be 3-5, the number of ```[dn]``` should be larger than 3.
 
 - change the ```[images]``` of each module. **We have provided images in the json**
 
@@ -20,33 +21,33 @@ apt update && apt -y install jq yq
 
 2. Prepare the environment
 ```bash
-bash ~/code/cloud_native/deployment_script/prepare.sh
+bash $FALCON_PATH/cloud_native/deployment_script/prepare.sh
 ```
 
-3. Modify the ```[PVC]``` setting in ```~/code/cloud_native/deployment_script/zk.yaml```
+3. Modify the ```[PVC]``` setting in ```$FALCON_PATH/cloud_native/deployment_script/zk.yaml```
 
-4. Setup FalconFS
-- Setup configmap
+4. Set up FalconFS
+- Set up configmap
 ```bash
 kubectl apply -f configmap.yaml
 ```
 
-- Setup zookeeper
+- Set up zookeeper
 ```bash
-kubectl apply -f zk.yaml
+kubectl apply -f zk.yaml # ensure zookeeper is ready
 ```
 
-- Setup FalconFS CN
+- Set up FalconFS CN
 ```bash
 kubectl apply -f cn.yaml
 ```
 
-- Setup FalconFS DN
+- Set up FalconFS DN
 ```bash
 kubectl apply -f dn.yaml
 ```
 
-- Setup FalconFS Store
+- Set up FalconFS Store
 ```bash
 kubectl apply -f store.yaml
 ```

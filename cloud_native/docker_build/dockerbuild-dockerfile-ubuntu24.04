@@ -59,8 +59,3 @@ RUN apt-get update && \
     tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-
-# RUN cd /home/$USER_NAME/falconfs && bash build.sh && bash build.sh install
-
-# WORKDIR /home/$USER_NAME/falconfs

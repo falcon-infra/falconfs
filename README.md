@@ -18,6 +18,9 @@ Through the above advantages, FalconFS delivers an ideal storage solution for mo
 - [FalconFS Design](./docs/design.md)
 - [FalconFS Cluster Test Setup Guide](./deploy/ansible/README.md)
 
+## Architecture
+![FalconFS Architecture](https://github.com/user-attachments/assets/5ff1e80a-4cce-4b05-a35d-8da54191fb30)
+
 ## Performance
 
 **Test Environment Configuration:**
@@ -102,40 +105,5 @@ cd falconfs
 ./build.sh clean falcon # only clean falconfs
 ./build.sh build falcon --debug # build falconfs with debug
 ```
-
-## Debug
-
-### build and start FalconFS in the docker
-
-> **⚠️ Warning**  
-> This only for debug mode, do not use no_root_check.patch in production!
-
-no root check debug, suppose at the `~/code` dir
-``` bash
-docker run --privileged -d -it --name falcon-dev -v `pwd`:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:0.1.1
-docker exec -it --detach-keys="ctrl-z,z" falcon-dev /bin/zsh
-git -C third_party/postgres apply ../../patches/no_root_check.patch
-./build.sh clean
-./build.sh build --debug && ./build.sh install
-source deploy/falcon_env.sh
-./deploy/falcon_start.sh
-```
-
-### debug falcon meta server
-
-- first login to cn: `psql -d postgres -p $cnport`
-- when in the pg cli
-``` bash
-select pg_backend_pid(); # to get pid, then use gdb to attach the pid
-SELECT falcon_plain_mkdir('/test'); # to trigger mkdir meta operation
-```
-
-### run some test and stop
-
-``` bash
-./.github/workflows/smoke_test.sh /tmp/falcon_mnt
-./deploy/falcon_stop.sh
-```
-
 ## Copyright
 Copyright (c) 2025 Huawei Technologies Co., Ltd.

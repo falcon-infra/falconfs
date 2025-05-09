@@ -1,13 +1,25 @@
 # !/bin/bash
-isProcessAlive=`ps -ef | grep -m 1 falcon_client | grep -v "grep" | wc -l`
-if [ "${isProcessAlive}" = "0" ]; then
-    echo "no running FuseClient"
+
+# 1. Unmount first (will stop the mounted instance)
+if mount | grep -q "$MNT_PATH"; then
+    $SUDO fusermount -u "$MNT_PATH"
+    echo "Unmounted $MNT_PATH and stopped associated falcon_client"
 else
-    falconfsPid=`ps -ef | grep -m 1 falcon_client | awk '{print $2}'`
-    kill -9 $falconfsPid
+    echo "$MNT_PATH is not mounted"
 fi
 
-umount -l /mnt/falcon
+# 2. Kill any remaining falcon_client processes (for unmounted instances)
+sleep 1
+pids=$(pgrep -f "^\./bin/falcon_client" | grep -v $$ | grep -v grep || true)
+if [ -n "$pids" ]; then
+    for pid in $pids; do
+        if ps -p "$pid" >/dev/null; then
+            kill -9 "$pid" && echo "Stopped orphaned falcon_client (PID: $pid)"
+        fi
+    done
+else
+    echo "No additional falcon_client processes found"
+fi
 
 for i in {1..2}
 do

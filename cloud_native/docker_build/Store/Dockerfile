@@ -12,8 +12,6 @@ RUN apt-get install -y vim
 RUN mkdir /opt/log/ && mkdir /opt/falcon/ && mkdir /opt/conf/ && mkdir /opt/output/ && mkdir /mnt/falcon/
 COPY config.json /opt/conf/
 ENV CONFIG_FILE=/opt/conf/config.json
-# COPY falconfs.tar.gz /root/
-# RUN tar -xvf /root/falconfs.tar.gz -C /root/ && chmod a+x /root/falconfs/bin/falcon_client
 COPY falconfs /root/falconfs
 ENV LD_LIBRARY_PATH=/root/falconfs/lib/
 COPY start.sh /root/
