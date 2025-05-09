@@ -9,3 +9,9 @@ compile_commands.json
 build
 log/falcon.*
 stats.out
+
+cloud_native/docker_build/CN/metadb
+cloud_native/docker_build/CN/falcon_cm
+cloud_native/docker_build/DN/metadb
+cloud_native/docker_build/DN/falcon_cm
+cloud_native/docker_build/Store/falconfs

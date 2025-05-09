@@ -8,6 +8,8 @@ pushd $FALCONFS_DIR
 ./build.sh build falcon --with-zk-init
 popd
 pushd $DIR
+mkdir -p $DIR/Store/falconfs/bin/
+mkdir -p $DIR/Store/falconfs/lib/
 ./ldd_copy.sh -b ~/metadb/lib/postgresql/falcon.so -t ~/metadb/lib/
 ./ldd_copy.sh -b $FALCONFS_DIR/build/bin/falcon_client -t $DIR/Store/falconfs/lib/
 
