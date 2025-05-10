@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falcon-store
+  labels:
+    app: falcon-store
+spec:
+  selector:
+    matchLabels:
+      name: falcon-store
+  template:
+    metadata:
+      labels:
+        name: falcon-store
+    spec:
+      # 容忍所有污点，确保在所有节点上运行
+      containers:
+        - name: falcon-store
+          image: store_images
+          securityContext:
+            privileged: true
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/bash", "-c", "bash /root/start.sh"]
+            preStop:
+              exec:
+                command: ["/bin/bash", "-c", "bash /root/stop.sh"]
+          ports:
+            - containerPort: 5432
+            - containerPort: 5442
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: falcon-config
+          livenessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "bash /root/check_liveness.sh"]
+            failureThreshold: 3
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            successThreshold: 1
+            timeoutSeconds: 20
+          resources:
+            limits:
+              cpu: "32"
+              memory: 200Gi
+            requests:
+              cpu: "4"
+              memory: 50Gi
+          volumeMounts:
+            - name: file-cache
+              mountPath: /opt/falcon
+            - name: logpoint
+              mountPath: /opt/log
+            - name: mntpoint
+              mountPath: /mnt/falcon
+              mountPropagation: Bidirectional
+      volumes:
+        - name: file-cache
+          hostPath:
+            path: /mnt/falcon-cache-path ##modified for your local path to store data cache
+            type: DirectoryOrCreate
+        - name: mntpoint
+          hostPath:
+            path: /mnt/falcon-mnt ##modified for your local path to provide the mount point
+            type: DirectoryOrCreate
+        - name: logpoint
+          hostPath:
+            path: /mnt/falcon-log-path ##modified for your local path to store the log
+            type: DirectoryOrCreate

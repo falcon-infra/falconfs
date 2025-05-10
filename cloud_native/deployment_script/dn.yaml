@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falcon-dn
+  namespace: falconfs
+  labels:
+    app: falcon-dn
+spec:
+  selector:
+    matchLabels:
+      name: falcon-dn
+  template:
+    metadata:
+      labels:
+        name: falcon-dn
+    spec:
+      containers:
+        - name: falcon-dn
+          image: dn_images
+          securityContext:
+            privileged: true
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - timeout
+                  - 5m
+                  - sh
+                  - -c
+                  - >
+                    until pg_isready -d postgres -p 5432 --timeout=10 --quiet; do sleep 2; done;
+
+            preStop:
+              exec:
+                command: ["/bin/bash", "/home/falconMeta/stop_dn.sh"]
+          ports:
+            - containerPort: 5432
+            - containerPort: 5442
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: falcon-config
+          livenessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "bash /home/falconMeta/check_liveness.sh"]
+            failureThreshold: 3
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            successThreshold: 1
+            timeoutSeconds: 20
+          resources:
+            limits:
+              cpu: "16"
+              memory: 100Gi
+            requests:
+              cpu: "4"
+              memory: 25Gi
+          volumeMounts:
+            - name: metadata
+              mountPath: /home/falconMeta/data
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: metadata
+          hostPath:
+            path: /mnt/falcon-dn-path ##modified for your local path to store dn data
+            type: DirectoryOrCreate
+      nodeSelector:
+        falcon-dn: falcon-dn

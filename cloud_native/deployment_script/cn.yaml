@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: falcon-cn
+  labels:
+    app: falcon-cn
+spec:
+  selector:
+    matchLabels:
+      app: falcon-cn
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: falcon-cn
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - falcon-cn
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: falcon-cn
+          image: ghcr.io/falcon-infra/falcon-cn:0.01
+          securityContext:
+            privileged: true
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - timeout
+                  - 5m
+                  - sh
+                  - -c
+                  - >
+                    until pg_isready -d postgres -p 5432 --timeout=10 --quiet; do sleep 2; done;
+
+            preStop:
+              exec:
+                command: ["/bin/bash", "/home/falconMeta/stop.sh"]
+          ports:
+            - containerPort: 5432
+            - containerPort: 5442
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          envFrom:
+            - configMapRef:
+                name: falcon-config
+          livenessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "bash /home/falconMeta/check_liveness.sh"]
+            failureThreshold: 3
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            successThreshold: 1
+            timeoutSeconds: 20
+          resources:
+            limits:
+              cpu: "16"
+              memory: 100Gi
+            requests:
+              cpu: "4"
+              memory: 25Gi
+          volumeMounts:
+            - name: metadata
+              mountPath: /home/falconMeta/data
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: metadata
+          hostPath:
+            path: /mnt/falcon-cn-path
+            type: DirectoryOrCreate
+      nodeSelector:
+        falcon-cn: falcon-cn

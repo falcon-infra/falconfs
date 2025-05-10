@@ -1,0 +1,34 @@
+{
+  "nodes": {
+    "zk": [
+      "node1",
+      "node2",
+      "node3"
+    ],
+    "cn": [
+      "node1",
+      "node2",
+      "node3"
+    ],
+    "dn": [
+      "node1",
+      "node2",
+      "noden",
+      "nodek"
+    ]
+  },
+  "images": {
+    "cn": "ghcr.io/falcon-infra/falcon-cn:latest",
+    "dn": "ghcr.io/falcon-infra/falcon-dn:latest",
+    "store": "ghcr.io/falcon-infra/falcon-cn:latest"
+  },
+  "hostpath": {
+    "cn": "/mnt/falcon-cn-path",
+    "dn": "/mnt/falcon-dn-path",
+    "store": {
+      "cache": "/mnt/falcon-cache-path",
+      "log": "/mnt/falcon-log-path",
+      "mnt": "/mnt/falcon-mnt"
+    }
+  }
+}

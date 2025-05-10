@@ -1,0 +1,29 @@
+{
+  "main": {
+    "falcon_log_dir": "/opt/log",
+    "falcon_log_level": "WARNING",
+    "falcon_log_max_size_mb": 10,
+    "falcon_cache_root": "/opt/falcon",
+    "falcon_dir_num": 101,
+    "falcon_block_size": 524288,
+    "falcon_read_big_file_size": 2097152,
+    "falcon_preblock_num": 1000,
+    "falcon_node_id": 0,
+    "falcon_cluster_view": [
+      "127.0.0.1:56039",
+      "0.0.0.0:56039"
+    ],
+    "falcon_thread_num": 50,
+    "falcon_server_ip": "127.0.0.1",
+    "falcon_server_port": "55510",
+    "falcon_async": false,
+    "falcon_persist": false,
+    "falcon_eviction": 0.1,
+    "falcon_stat": true,
+    "falcon_is_inference": false,
+    "falcon_mount_path": "/mnt/falcon",
+    "falcon_to_local": false,
+    "falcon_log_reserved_num": 3,
+    "falcon_log_reserved_time": 1
+  }
+}

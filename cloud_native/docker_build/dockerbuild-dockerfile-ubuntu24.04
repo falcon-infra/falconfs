@@ -1,0 +1,61 @@
+FROM ubuntu:24.04
+RUN apt-get update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# install gcc-14 and g++-14
+RUN apt-get install -y gcc-14 g++-14 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 60 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60 && \
+    update-alternatives --set gcc /usr/bin/gcc-14 && \
+    update-alternatives --set g++ /usr/bin/g++-14 && \
+    ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6 && \
+    ln -sf /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so
+
+# install dependencies
+RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev  bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils
+RUN mv /usr/include/jsoncpp/json /usr/include/json && rm -rf /usr/include/jsoncpp
+
+# install brpc
+ARG BRPC_VERSION=1.12.1
+ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
+
+RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja -DWITH_GLOG=ON .. -DWITH_RDMA=ON && \
+    ninja && ninja install && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+# install huaweicloud obs sdk
+ARG OBS_VERSION=v3.24.12
+ARG OBS_DOWNLOAD_URL=https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/${OBS_VERSION}.tar.gz
+ARG OBS_INSTALL_PREFIX=/usr/local/obs
+
+RUN wget -O- "${OBS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    sed -i '/if(NOT DEFINED OPENSSL_INC_DIR)/,+5d' CMakeLists.txt && \
+    sed -i '/OPENSSL/d' CMakeLists.txt && \
+    cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && bash build.sh sdk && \
+    mkdir -p "${OBS_INSTALL_PREFIX}" && \
+    tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
+    rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    rm ${OBS_INSTALL_PREFIX}/lib/libcurl.so*
+
+ENV LD_LIBRARY_PATH=/usr/local/obs/lib
+# install docker
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
