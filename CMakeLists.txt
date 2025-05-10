@@ -33,6 +33,7 @@ find_package(BRPC REQUIRED)
 find_package(GFlags REQUIRED)
 find_package(LevelDB REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Compiler flags with GFlags namespace
 set(GFLAGS_NS "gflags")
@@ -68,6 +69,7 @@ file(GLOB_RECURSE common_src "${COMMON_SRC_PATH}/*.cpp" "${COMMON_SRC_PATH}/*.c"
 
 add_subdirectory(falcon_store)
 add_subdirectory(falcon_client)
+add_subdirectory(python_interface/_pyfalconfs_internal)
 
 if(NOT DEFINED POSTGRES_SRC_DIR)
     message(FATAL_ERROR "POSTGRES_SRC_DIR must be defined")
@@ -104,7 +106,7 @@ target_include_directories(falcon_client PUBLIC
 )
 
 # ==================== Install Targets =================
-install(TARGETS FalconStore FalconClient falcon_client
+install(TARGETS falcon_client
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib

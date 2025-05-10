@@ -5,6 +5,7 @@ add_library(FalconClient
     ${FALCON_SRC}
     ${PROTO_SRC}
 )
+set_target_properties(FalconClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(FalconClient PUBLIC
     ${BRPC_LIBRARIES}

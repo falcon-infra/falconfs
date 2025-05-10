@@ -19,8 +19,9 @@ export CONFIG_FILE="$FALCONFS_DIR/config/config.json"
 # Set build directory
 BUILD_DIR="${BUILD_DIR:-$FALCONFS_DIR/build}"
 
-# Set default PostgreSQL install directory
+# Set default install directory
 PG_INSTALL_DIR="${PG_INSTALL_DIR:-$HOME/metadb}"
+FALCON_CLIENT_INSTALL_DIR="${FALCON_CLIENT_INSTALL_DIR:-$HOME/falcon_client}"
 
 gen_proto() {
     mkdir -p "$BUILD_DIR"
@@ -75,6 +76,7 @@ build_falconfs() {
     gen_proto
     echo "Building FalconFS (mode: $BUILD_TYPE)..."
     cmake -B "$BUILD_DIR" -GNinja "$FALCONFS_DIR" \
+        -DCMAKE_INSTALL_PREFIX=$FALCON_CLIENT_INSTALL_DIR \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
         -DPOSTGRES_SRC_DIR="$POSTGRES_SRC_DIR" \
@@ -105,6 +107,12 @@ install_pg() {
         make install
     cd "$POSTGRES_SRC_DIR/contrib" && make install
     echo "PostgreSQL installed to $PG_INSTALL_DIR"
+}
+
+install_falcon_client() {
+    echo "Installing FalconFS client to $FALCON_CLIENT_INSTALL_DIR..."
+    cd "$BUILD_DIR" && ninja install
+    echo "FalconFS client installed to $FALCON_CLIENT_INSTALL_DIR"
 }
 
 clean_dist() {
@@ -330,6 +338,7 @@ test)
     ;;
 install)
     install_pg
+    install_falcon_client
     ;;
 *)
     print_help "build"
