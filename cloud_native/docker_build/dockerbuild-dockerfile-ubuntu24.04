@@ -16,7 +16,7 @@ RUN apt-get install -y gcc-14 g++-14 && \
     ln -sf /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so
 
 # install dependencies
-RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev  bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools
+RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev  bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils
 RUN mv /usr/include/jsoncpp/json /usr/include/json && rm -rf /usr/include/jsoncpp
 
 # install brpc
