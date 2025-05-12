@@ -22,10 +22,26 @@ FalconStore *FalconStore::GetInstance()
 
 void FalconStore::DeleteInstance()
 {
-    StoreNode::DeleteInstance();
+    if (statsThread.joinable()) {
+        statsThread.request_stop();
+    }
+    if (storeThreadPool) {
+        storeThreadPool->Stop();
+        storeThreadPool.reset();
+    }
     if (storage) {
         storage->DeleteInstance();
+        storage = nullptr;
     }
+    StoreNode::DeleteInstance();
+
+    initStatus = 0;
+    asyncToObs = false;
+    persistToStorage = true;
+    parentPathLevel = -1;
+    isInference = true;
+    toLocal = false;
+    nodeHash.clear();
 }
 
 int FalconStore::GetInitStatus() { return initStatus; }
