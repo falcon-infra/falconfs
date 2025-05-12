@@ -10,8 +10,8 @@ build
 log/falcon.*
 stats.out
 
-cloud_native/docker_build/CN/metadb
-cloud_native/docker_build/CN/falcon_cm
-cloud_native/docker_build/DN/metadb
-cloud_native/docker_build/DN/falcon_cm
-cloud_native/docker_build/Store/falconfs
+cloud_native/docker_build/cn/metadb
+cloud_native/docker_build/cn/falcon_cm
+cloud_native/docker_build/dn/metadb
+cloud_native/docker_build/dn/falcon_cm
+cloud_native/docker_build/store/falconfs
