@@ -16,6 +16,12 @@
 
 using namespace std::chrono_literals;
 
+StoreNode::~StoreNode() {
+    std::unique_lock<std::shared_mutex> lock(nodeMutex);
+    nodeMap.clear();
+    FALCON_LOG(LOG_INFO) << "StoreNode destroyed";
+}
+
 int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
 {
     std::unique_lock<std::shared_mutex> nodeLock(nodeMutex);
@@ -126,13 +132,30 @@ int StoreNode::SetNodeConfig(std::string &rootPath)
 
 StoreNode *StoreNode::GetInstance()
 {
-    static StoreNode instance;
-    return &instance;
+    static std::once_flag onceFlag;
+    static StoreNode* instance = nullptr;
+
+    std::call_once(onceFlag, []() {
+        instance = new StoreNode();
+        std::atexit([]() { DeleteInstance(); });
+    });
+    return instance;
 }
 
 int StoreNode::GetInitStatus() { return initStatus; }
 
-void StoreNode::DeleteInstance() {}
+void StoreNode::DeleteInstance() {
+    static std::mutex delMutex;
+    std::lock_guard<std::mutex> lock(delMutex);
+
+    static StoreNode* instance = GetInstance();
+
+    if (instance) {
+        delete instance;
+        instance = nullptr;
+        FALCON_LOG(LOG_INFO) << "StoreNode instance deleted";
+    }
+}
 
 void StoreNode::Delete()
 {

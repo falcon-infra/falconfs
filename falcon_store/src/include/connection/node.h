@@ -13,6 +13,7 @@
 
 class StoreNode {
   private:
+    ~StoreNode();
     std::shared_mutex nodeMutex;
     int initStatus = 0;
     int nodeId;
