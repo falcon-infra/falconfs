@@ -34,6 +34,9 @@ int FalconInit(std::string &coordinatorIp, int coordinatorPort)
         return ret;
     }
     ServerIdentifier coordinator(coordinatorIp, coordinatorPort);
+    if (router) {
+        router=nullptr;
+    }
     router = std::make_shared<Router>(coordinator);
     return 0;
 }

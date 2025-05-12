@@ -132,13 +132,13 @@ int StoreNode::SetNodeConfig(std::string &rootPath)
 
 StoreNode *StoreNode::GetInstance()
 {
-    static std::once_flag onceFlag;
+    static std::mutex instanceMutex;
     static StoreNode* instance = nullptr;
 
-    std::call_once(onceFlag, []() {
+    std::lock_guard<std::mutex> lock(instanceMutex);
+    if (!instance) {
         instance = new StoreNode();
-        std::atexit([]() { DeleteInstance(); });
-    });
+    }
     return instance;
 }
 
@@ -146,10 +146,9 @@ int StoreNode::GetInitStatus() { return initStatus; }
 
 void StoreNode::DeleteInstance() {
     static std::mutex delMutex;
-    std::lock_guard<std::mutex> lock(delMutex);
-
     static StoreNode* instance = GetInstance();
 
+    std::lock_guard<std::mutex> lock(delMutex);
     if (instance) {
         delete instance;
         instance = nullptr;

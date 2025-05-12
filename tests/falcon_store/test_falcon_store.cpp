@@ -1203,6 +1203,34 @@ TEST_F(FalconStoreUT, WriteTruncateOpenInstanceRemote)
     EXPECT_EQ(openInstance->currentSize, 1000);
 }
 
+TEST_F(FalconStoreUT, MultipleInstanceManagement)
+{
+    FalconStore* instance1 = FalconStore::GetInstance();
+    ASSERT_NE(instance1, nullptr);
+    EXPECT_EQ(instance1->GetInitStatus(), 0);
+
+    instance1->DeleteInstance();
+
+    FalconStore* instance2 = FalconStore::GetInstance();
+    ASSERT_NE(instance2, nullptr);
+    EXPECT_EQ(instance2->GetInitStatus(), 0);
+    EXPECT_EQ(instance1, instance2);
+
+    {
+        FalconStore* instance3 = FalconStore::GetInstance();
+        ASSERT_NE(instance3, nullptr);
+        instance3->DeleteInstance();
+    }
+
+    FalconStore* instance4 = FalconStore::GetInstance();
+    ASSERT_NE(instance4, nullptr);
+    EXPECT_EQ(instance4->GetInitStatus(), 0);
+    EXPECT_NO_THROW({
+        instance4->DeleteInstance();
+        instance4->DeleteInstance();
+    });
+}
+
 int main(int argc, char **argv)
 {
     testing::InitGoogleTest(&argc, argv);
