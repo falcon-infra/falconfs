@@ -17,22 +17,23 @@ pushd $FALCONFS_DIR
 ./build.sh build falcon --with-zk-init
 popd
 pushd $DIR
-mkdir -p $DIR/Store/falconfs/bin/
-mkdir -p $DIR/Store/falconfs/lib/
+mkdir -p $DIR/store/falconfs/bin/
+mkdir -p $DIR/store/falconfs/lib/
 ./ldd_copy.sh -b ~/metadb/lib/postgresql/falcon.so -t ~/metadb/lib/
-./ldd_copy.sh -b $FALCONFS_DIR/build/bin/falcon_client -t $DIR/Store/falconfs/lib/
+./ldd_copy.sh -b $FALCONFS_DIR/build/bin/falcon_client -t $DIR/store/falconfs/lib/
 
-cp -rf ~/metadb ./CN/
-cp -rf ~/metadb ./DN/
-cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./CN/
-cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./DN/
+cp -rf ~/metadb ./cn/
+cp -rf ~/metadb ./dn/
+cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./cn/
+cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./dn/
 
-cp -f $FALCONFS_DIR/build/bin/falcon_client $DIR/Store/falconfs/bin/
+cp -f $FALCONFS_DIR/build/bin/falcon_client $DIR/store/falconfs/bin/
 
-chmod 777 -R ./CN/metadb
-chmod 777 -R ./CN/falcon_cm
-chmod 777 -R ./DN/metadb
-chmod 777 -R ./DN/falcon_cm
-chmod 777 -R ./Store/falconfs
+chmod 777 -R ./cn/metadb
+chmod 777 -R ./cn/falcon_cm
+chmod 777 -R ./dn/metadb
+chmod 777 -R ./dn/falcon_cm
+chmod 777 -R ./store/falconfs
+
 gen_config
 popd

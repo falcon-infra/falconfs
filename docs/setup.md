@@ -141,7 +141,7 @@ cd falconfs
 git submodule update --init --recursive # submodule update postresql
 ./patches/apply.sh
 
-docker run -it --privileged --rm -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falcon-dockerbuild:0.1.0 /bin/bash
+docker run -it --privileged --rm -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falcon-dockerbuild:0.1.1 /bin/bash
 
 bash cloud_native/docker_build/docker_build.sh
 dockerd &
@@ -152,19 +152,19 @@ The dockerfile in the path ```cd cloud_native/docker_build/```
 
 - build the CN image
 ```
-cd CN
+cd cn
 docker build -t falcon-cn .
 ```
 
 - build the DN image
 ```
-cd DN
+cd dn
 docker build -t falcon-dn .
 ```
 
 - build the store iamge
 ```
-cd Store
+cd store
 docker build -t falcon-store .
 ```
 
@@ -177,6 +177,11 @@ docker tag falcon-store [falcon-store url]
 docker push [falcon-cn url]
 docker push [falcon-dn url]
 docker push [falcon-store url]
+```
+
+4. Clean the workspace
+```bash
+bash clean.sh
 ```
 </details>
 
