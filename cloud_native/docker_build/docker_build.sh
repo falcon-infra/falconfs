@@ -4,8 +4,8 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 FALCONFS_DIR=$DIR/../../
 
 gen_config() {
-    cp -f $FALCONFS_DIR/config/config.json $DIR/Store/
-    JSON_DIR=$DIR/Store/config.json
+    cp -f $FALCONFS_DIR/config/config.json $DIR/store/
+    JSON_DIR=$DIR/store/config.json
     ## modified the content in config.json for container
     jq '.main.falcon_log_dir = "/opt/log"' $JSON_DIR | sponge $JSON_DIR
     jq '.main.falcon_cache_root = "/opt/falcon"' $JSON_DIR | sponge $JSON_DIR
