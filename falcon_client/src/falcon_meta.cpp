@@ -34,9 +34,6 @@ int FalconInit(std::string &coordinatorIp, int coordinatorPort)
         return ret;
     }
     ServerIdentifier coordinator(coordinatorIp, coordinatorPort);
-    if (router) {
-        router=nullptr;
-    }
     router = std::make_shared<Router>(coordinator);
     return 0;
 }
@@ -433,7 +430,7 @@ int FalconCloseDir(uint64_t fd)
 int FalconDestroy()
 {
     FalconStore::GetInstance()->DeleteInstance();
-
+    router = nullptr;
     return 0;
 }
 
