@@ -1,9 +1,9 @@
 #!/bin/bash
 
-set -euo pipefail
-
 CURDIR=$(pwd)
 source $CURDIR/deploy/falcon_env.sh
+
+set -euo pipefail
 
 $FALCONFS_HOME/build.sh test
 $FALCONFS_HOME/deploy/falcon_start.sh
