@@ -42,4 +42,4 @@ jobs:
 
     - name: Deploy and run tests
       shell: bash
-      run: sudo -u falcon bash -c '.github/workflows/run_test.sh'
+      run: sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c '.github/workflows/run_test.sh'
