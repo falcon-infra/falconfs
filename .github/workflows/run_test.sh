@@ -2,7 +2,7 @@
 
 CURDIR=$(pwd)
 source $CURDIR/deploy/falcon_env.sh
-
+source $CURDIR/deploy/client/falcon_client_config.sh
 set -euo pipefail
 
 $FALCONFS_HOME/build.sh test

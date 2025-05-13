@@ -1,4 +1,4 @@
 #!/bin/bash
 
-export CACHE_PATH="/tmp/falcon_cache"
-export MNT_PATH="/tmp/falcon_mnt"
+CACHE_PATH="/tmp/falcon_cache"
+MNT_PATH="/tmp/falcon_mnt"
