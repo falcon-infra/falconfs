@@ -1,10 +1,9 @@
 #!/bin/bash
 
 CURDIR=$(pwd)
+set -euo pipefail
 source $CURDIR/deploy/falcon_env.sh
 source $CURDIR/deploy/client/falcon_client_config.sh
-set -euo pipefail
-
 $FALCONFS_HOME/build.sh test
 $FALCONFS_HOME/deploy/falcon_start.sh
 $FALCONFS_HOME/.github/workflows/smoke_test.sh $MNT_PATH
