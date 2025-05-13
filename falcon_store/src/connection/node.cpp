@@ -132,14 +132,8 @@ int StoreNode::SetNodeConfig(std::string &rootPath)
 
 StoreNode *StoreNode::GetInstance()
 {
-    static std::mutex instanceMutex;
-    static StoreNode* instance = nullptr;
-
-    std::lock_guard<std::mutex> lock(instanceMutex);
-    if (!instance) {
-        instance = new StoreNode();
-    }
-    return instance;
+    static StoreNode instance;
+    return &instance;
 }
 
 int StoreNode::GetInitStatus() { return initStatus; }
