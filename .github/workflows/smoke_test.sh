@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -euo pipefail
+
 TESTFILE=$1/file
 df -T | grep -q 'fuse.falcon_client' || {
     echo "Error: falcon_client not mounted!" >&2

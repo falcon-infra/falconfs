@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -euo pipefail
+
 CURDIR=$(pwd)
 source $CURDIR/deploy/falcon_env.sh
 

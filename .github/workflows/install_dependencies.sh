@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -euo pipefail
+
 sudo apt-get update
 echo -e "Asia\nShanghai" | sudo apt-get install -y tzdata
 apt-get install -y locales && locale-gen en_US.UTF-8
