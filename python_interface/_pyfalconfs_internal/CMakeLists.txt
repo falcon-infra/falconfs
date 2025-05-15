@@ -23,6 +23,7 @@ target_link_libraries(_pyfalconfs_internal PUBLIC
     jsoncpp
     ${BRPC_LIBRARIES}
     ${DYNAMIC_LIB}
+    dl
 )
 target_link_directories(_pyfalconfs_internal PUBLIC
     ${POSTGRES_SRC_DIR}/src/interfaces/libpq
