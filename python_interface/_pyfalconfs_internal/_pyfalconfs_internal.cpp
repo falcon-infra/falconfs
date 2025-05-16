@@ -1,8 +1,5 @@
 #include <Python.h>
 
-#include <cxxabi.h>
-#include <dlfcn.h>
-#include <execinfo.h>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -15,34 +12,6 @@
 #include "init/falcon_init.h"
 #include "log/logging.h"
 #include "stats/falcon_stats.h"
-
-thread_local static void* stack_buffer[128];
-thread_local static int stack_size = 0;
-using __cxa_throw_type = void(*)(void*, void*, void(*)(void*));
-__cxa_throw_type orig_cxa_throw = nullptr;
-extern "C" __attribute__((noreturn)) void __cxa_throw(void* ex, void* info, void(*dest)(void*)) 
-{
-    stack_size = backtrace(stack_buffer, 128);
-    orig_cxa_throw(ex, info, dest);
-    __builtin_unreachable();
-}
-__attribute__((constructor)) void init_hook() 
-{
-    orig_cxa_throw = (__cxa_throw_type)dlsym(RTLD_NEXT, "__cxa_throw");
-}
-static void PrintStacktrace() 
-{
-    fprintf(stderr, "PrintStacktrace:\n");
-    if (stack_size > 0) 
-    {
-        char** symbols = backtrace_symbols(stack_buffer, stack_size);
-        for (int i = 0; i < stack_size; i++) 
-        {
-            fprintf(stderr, "%s\n", symbols[i]);
-        }
-        free(symbols);
-    }
-}
 
 static void Init(const char* workspace, const char* runningConfigFile) 
 {
@@ -103,7 +72,6 @@ static PyObject* PyWrapper_Init(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -131,7 +99,6 @@ static PyObject* PyWrapper_Mkdir(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -160,7 +127,6 @@ static PyObject* PyWrapper_Rmdir(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -197,7 +163,6 @@ static PyObject* PyWrapper_Create(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -226,7 +191,6 @@ static PyObject* PyWrapper_Unlink(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -261,7 +225,6 @@ static PyObject* PyWrapper_Open(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -290,7 +253,6 @@ static PyObject* PyWrapper_Flush(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -323,7 +285,6 @@ static PyObject* PyWrapper_Close(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -361,7 +322,6 @@ static PyObject* PyWrapper_Read(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -403,7 +363,6 @@ static PyObject* PyWrapper_Write(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -456,7 +415,6 @@ static PyObject* PyWrapper_Stat(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -508,7 +466,6 @@ static PyObject* PyWrapper_OpenDir(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
@@ -537,7 +494,6 @@ static PyObject* PyWrapper_CloseDir(PyObject* self, PyObject* args)
     }
     catch (const std::exception& e)
     {
-        PrintStacktrace();
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }

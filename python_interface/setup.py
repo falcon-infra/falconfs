@@ -5,7 +5,7 @@ setup(
     version="0.1",
     packages=find_packages(),
     package_data={
-        "pyfalconfs": ["_pyfalconfs_internal.so"]
+        "pyfalconfs": ["_pyfalconfs_internal.so", "throw_hook.so"]
     },
     include_package_data=True
 )
