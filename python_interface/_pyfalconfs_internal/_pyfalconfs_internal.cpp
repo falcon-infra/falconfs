@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <iostream>
-#include <regex>
 #include <string>
 
 #include "conf/falcon_property_key.h"
@@ -28,19 +27,20 @@ static void Init(const char* workspace, const char* runningConfigFile)
         throw std::runtime_error("target(" + pyConfigFile + ") cannot be opened.");
     }
 
-    const std::regex patternLogDir(
-        R"((\s*"falcon_log_dir":\s*")([^"]*)(",\s*))", 
-        std::regex::ECMAScript | std::regex::optimize
-    );
-    const std::string replacementLogDir = "$1" + std::string(workspace) + "$3";
-
     std::string line;
     while (getline(baseConfig, line)) 
     {
-        if (std::regex_search(line, patternLogDir)) 
-            line = std::regex_replace(line, patternLogDir, replacementLogDir);
-        
-        pyConfig << line << '\n';
+        size_t pos = line.find("falcon_log_dir");
+        if (pos != std::string::npos)
+        {
+            pyConfig << line.substr(0, pos) << "falcon_log_dir\": \"" << workspace << "\",";
+        }
+        else
+        {
+            pyConfig << line;
+        }
+
+        pyConfig << '\n';
     }
 
     baseConfig.close();
