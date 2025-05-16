@@ -265,10 +265,7 @@ static int Close(const char *path, uint64_t fd)
     FalconStats::GetInstance().stats[META_FLUSH].fetch_add(1);
     FalconStats::GetInstance().stats[META_RELEASE].fetch_add(1);
     StatFuseTimer t;
-    int ret = FalconClose(path, fd, true, -1);
-    if (ret != 0)
-        FALCON_LOG(LOG_ERROR) << "Flush failed. errno = " << -ErrorCodeToErrno(ret);
-    ret = FalconClose(path, fd, false, -1);
+    int ret = FalconClose(path, fd, false, -1);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
 static PyObject* PyWrapper_Close(PyObject* self, PyObject* args) 
