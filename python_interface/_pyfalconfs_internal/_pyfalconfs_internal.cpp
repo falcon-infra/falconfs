@@ -1,7 +1,13 @@
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+
 #include <Python.h>
 
+#include <condition_variable>
+#include <fcntl.h>
 #include <fstream>
+#include <future>
 #include <iostream>
+#include <queue>
 #include <string>
 
 #include "conf/falcon_property_key.h"
@@ -12,6 +18,68 @@
 #include "log/logging.h"
 #include "stats/falcon_stats.h"
 
+class AsyncTaskThreadPool 
+{
+private:
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex mutexTasks;
+    std::condition_variable cvTasks;
+    bool stop = false;
+public:
+    explicit AsyncTaskThreadPool(size_t poolSize = std::thread::hardware_concurrency())
+    {
+        for (size_t i = 0; i < poolSize; ++i)
+        {
+            workers.emplace_back([this]() -> void 
+            {
+                while(true) 
+                {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(mutexTasks);
+                        cvTasks.wait(lock, [this] { return stop || !tasks.empty(); });
+                        if (stop && tasks.empty()) 
+                            return;
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }
+                    task();
+                }
+            });
+        }
+    }
+
+    ~AsyncTaskThreadPool() 
+    {
+        {
+            std::unique_lock<std::mutex> lock(mutexTasks);
+            stop = true;
+        }
+        cvTasks.notify_all();
+        for (auto& worker : workers) 
+            worker.join();
+    }
+
+    template<class F, class... Args>
+    auto enqueue(F&& f, Args&&... args) -> std::future<decltype(f(args...))> 
+    {
+        using return_type = decltype(f(args...));
+        auto task = std::make_shared<std::packaged_task<return_type()>>(
+            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+        );
+        std::future<return_type> res = task->get_future();
+        {
+            std::unique_lock<std::mutex> lock(mutexTasks);
+            tasks.emplace([task](){ (*task)(); });
+        }
+        cvTasks.notify_one();
+        return res;
+    }
+};
+static std::shared_ptr<AsyncTaskThreadPool> AsyncTaskThreadPoolForPy = nullptr;
+
+/* =================== Blocking Methods =======================*/
 static void Init(const char* workspace, const char* runningConfigFile) 
 {
     const char* baseConfigFile = runningConfigFile;
@@ -336,7 +404,7 @@ static int Write(const char *path, uint64_t fd, char *buffer, size_t size, off_t
         return ret;
     }
     FalconStats::GetInstance().stats[FUSE_WRITE] += size;
-    return size;
+    return ret;
 }
 static PyObject* PyWrapper_Write(PyObject* self, PyObject* args) 
 {
@@ -539,6 +607,221 @@ static PyObject* PyWrapper_ReadDir(PyObject* self, PyObject* args)
     return Py_BuildValue("(iN)", ret, list);
 }
 
+/* =================== Non-Blocking Methods =======================*/
+class AsyncResultBase
+{
+public:
+    char* exceptionInfo;
+    AsyncResultBase() : exceptionInfo(nullptr) { }
+    AsyncResultBase(char* exceptionInfo) : exceptionInfo(exceptionInfo) { }
+
+    virtual PyObject* GeneratePyObject()
+    {
+        PyErr_SetString(PyExc_RuntimeError, exceptionInfo);
+        return NULL;
+    }
+    ~AsyncResultBase()
+    {
+        if (exceptionInfo)
+            free(exceptionInfo);
+    }
+};
+struct AsyncState 
+{
+    PyObject_HEAD
+    std::future<std::unique_ptr<AsyncResultBase>> future;
+};
+
+class AsyncResultIntOnly : public AsyncResultBase
+{
+public:
+    int data = 0;
+
+    AsyncResultIntOnly(int data) : data(data) { }
+    PyObject* GeneratePyObject()
+    {
+        if (exceptionInfo)
+            return AsyncResultBase::GeneratePyObject();
+        return PyLong_FromLong(data);
+    }
+};
+
+static PyObject* AsyncState_new(PyTypeObject* type, PyObject* args, PyObject* kwargs) 
+{
+    AsyncState* self = (AsyncState*)type->tp_alloc(type, 0);
+    return (PyObject*)self;
+}
+
+static void AsyncState_dealloc(AsyncState* self) 
+{
+    Py_TYPE(self)->tp_free((PyObject*)self);
+}
+
+static PyObject* AsyncState_iter(PyObject* self) {
+    Py_INCREF(self);
+    return self;
+}
+
+static PyObject* AsyncState_iternext(PyObject* self) 
+{
+    AsyncState* state = (AsyncState*)self;
+    if (state->future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        Py_RETURN_NONE;
+
+    std::unique_ptr<AsyncResultBase> result = state->future.get();
+    PyObject* pyResult = result->GeneratePyObject();
+    PyErr_SetObject(PyExc_StopIteration, pyResult);
+    Py_DECREF(pyResult);
+    return NULL;
+}
+
+static PyObject* AsyncState_await(PyObject *self)
+{
+    Py_INCREF(self);
+    return self;
+}
+
+static PyAsyncMethods AsyncState_as_async = 
+{
+    .am_await = AsyncState_await,
+    .am_aiter = AsyncState_iter,
+    .am_anext = AsyncState_iternext
+};
+
+static PyTypeObject AsyncStateType = {
+    .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "pyfalconfs.AsyncState",
+    .tp_basicsize = sizeof(AsyncState),
+    .tp_dealloc = (destructor)AsyncState_dealloc,
+    .tp_as_async = &AsyncState_as_async,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_doc = "Asynchronous task state",
+    .tp_iter = AsyncState_iter,
+    .tp_iternext = AsyncState_iternext,
+    .tp_new = AsyncState_new,
+};
+
+static PyObject* PyWrapper_AsyncExists(PyObject* self, PyObject* args) 
+{
+    char* path = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &path)) 
+        return nullptr;
+
+    AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
+    auto task = [path]() -> std::unique_ptr<AsyncResultBase>
+    {
+        int ret = -1;
+        struct stat stbuf;
+        try
+        {
+            ret = Stat(path, &stbuf);
+            if (ret != 0)
+                return std::make_unique<AsyncResultIntOnly>(ret);
+        }
+        catch (const std::exception& e)
+        {
+            return std::make_unique<AsyncResultBase>(strdup(e.what()));
+        }
+        return std::make_unique<AsyncResultIntOnly>(ret);
+    };
+    state->future = AsyncTaskThreadPoolForPy->enqueue(task);
+    return (PyObject*)state;
+}
+
+static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args) 
+{
+    char* path = nullptr;
+    Py_buffer buffer;
+    int size;
+    int offset;
+    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
+        return nullptr;
+
+    AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
+    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
+    {
+        int ret = -1;
+        int readSize;
+        uint64_t fd = UINT64_MAX;
+        try
+        {
+            ret = Open(path, O_RDONLY, fd);
+            if (ret != 0)
+                return std::make_unique<AsyncResultIntOnly>(ret);
+            
+            readSize = Read(path, fd, (char*)buffer.buf, size, offset);
+            if (readSize < 0)
+            {
+                Close(path, fd);
+                return std::make_unique<AsyncResultIntOnly>(readSize);
+            }
+            
+            ret = Close(path, fd);
+            if (ret != 0)
+                return std::make_unique<AsyncResultIntOnly>(ret);
+        }
+        catch (const std::exception& e)
+        {
+            if (fd != UINT64_MAX)
+                Close(path, fd);    // We believe Close never throw error currently.
+            return std::make_unique<AsyncResultBase>(strdup(e.what()));
+        }
+        return std::make_unique<AsyncResultIntOnly>(ret);
+    };
+    state->future = AsyncTaskThreadPoolForPy->enqueue(task);
+    return (PyObject*)state;
+}
+
+static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args) 
+{
+    char* path = nullptr;
+    Py_buffer buffer;
+    int size;
+    int offset;
+    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
+        return nullptr;
+
+    AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
+    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
+    {
+        int ret = -1;
+        uint64_t fd = UINT64_MAX;
+        try
+        {
+            ret = Create(path, O_WRONLY, fd);
+            if (ret != 0 && ret != -EEXIST)
+                return std::make_unique<AsyncResultIntOnly>(ret);
+            
+            ret = Write(path, fd, (char*)buffer.buf, size, offset);
+            if (ret != 0)
+            {
+                Close(path, fd);
+                return std::make_unique<AsyncResultIntOnly>(ret);
+            }
+
+            ret = Flush(path, fd);
+            if (ret != 0)
+            {
+                Close(path, fd);
+                return std::make_unique<AsyncResultIntOnly>(ret);
+            }
+            
+            ret = Close(path, fd);
+            if (ret != 0)
+                return std::make_unique<AsyncResultIntOnly>(ret);
+        }
+        catch (const std::exception& e)
+        {
+            if (fd != UINT64_MAX)
+                Close(path, fd);    // We believe Close never throw error currently.
+            return std::make_unique<AsyncResultBase>(strdup(e.what()));
+        }
+        return std::make_unique<AsyncResultIntOnly>(ret);
+    };
+    state->future = AsyncTaskThreadPoolForPy->enqueue(task);
+    return (PyObject*)state;
+}
+
 static PyMethodDef PyFalconFSInternalMethods[] = 
 {
     {
@@ -702,6 +985,42 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "  content (list): Contain items which are (name, st_mode)"
     },
     {
+        "AsyncExists", 
+        PyWrapper_AsyncExists, 
+        METH_VARARGS, 
+        "Check file/directory exists in FalconFS\n"
+        "Parameters:\n"
+        "  path (str): Target file/directory path, must start with '/', which corresponding to mount point\n"
+        "Returns:\n"
+        "  errno (int): Refer to errno in linux"
+    },
+    {
+        "AsyncGet", 
+        PyWrapper_AsyncGet, 
+        METH_VARARGS, 
+        "Get file content in FalconFS\n"
+        "Parameters:\n"
+        "  path (str): Target file path, must start with '/', which corresponding to mount point\n"
+        "  buffer (bytearray): Space to store data\n"
+        "  size (int): Requested size\n"
+        "  offset (int): Read offset\n"
+        "Returns:\n"
+        "  read size (int): read byte size"
+    },
+    {
+        "AsyncPut", 
+        PyWrapper_AsyncPut, 
+        METH_VARARGS, 
+        "Put data to file in FalconFS\n"
+        "Parameters:\n"
+        "  path (str): Target file path, must start with '/', which corresponding to mount point\n"
+        "  buffer (bytearray): Space of stored data\n"
+        "  size (int): To write size\n"
+        "  offset (int): Write offset\n"
+        "Returns:\n"
+        "  write size (int): write byte size"
+    },
+    {
         NULL, 
         NULL, 
         0, 
@@ -721,7 +1040,13 @@ static struct PyModuleDef PyFalconFSInternalModule = {
     NULL
 };
 
-// 模块初始化函数（必须命名为 PyInit_<模块名>）
-extern "C" PyMODINIT_FUNC PyInit__pyfalconfs_internal(void) {
-    return PyModule_Create(&PyFalconFSInternalModule); // 创建模块对象[2,7](@ref)
+extern "C" PyMODINIT_FUNC PyInit__pyfalconfs_internal(void) 
+{
+    AsyncTaskThreadPoolForPy = std::make_shared<AsyncTaskThreadPool>(std::thread::hardware_concurrency() * 2);
+    PyObject* module = PyModule_Create(&PyFalconFSInternalModule);
+    if (PyType_Ready(&AsyncStateType) < 0) 
+        return nullptr;
+    Py_INCREF(&AsyncStateType);
+    PyModule_AddObject(module, "AsyncState", (PyObject*)&AsyncStateType);
+    return module;
 }

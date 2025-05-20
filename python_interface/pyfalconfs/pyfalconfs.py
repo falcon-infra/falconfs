@@ -70,3 +70,20 @@ class Client:
     @copy_doc_from(_pyfalconfs_internal.ReadDir)
     def ReadDir(self, path, fd):
         return _pyfalconfs_internal.ReadDir(path, fd)
+
+class AsyncConnector:
+    @copy_doc_from(_pyfalconfs_internal.Init)
+    def __init__(self, workspace, running_config_file):
+        _pyfalconfs_internal.Init(workspace, running_config_file)
+
+    @copy_doc_from(_pyfalconfs_internal.AsyncExists)
+    async def AsyncExists(self, path):
+        return await _pyfalconfs_internal.AsyncExists(path)
+    
+    @copy_doc_from(_pyfalconfs_internal.AsyncGet)
+    async def AsyncGet(self, path, buffer, size, offset):
+        return await _pyfalconfs_internal.AsyncGet(path, buffer, size, offset)
+    
+    @copy_doc_from(_pyfalconfs_internal.AsyncPut)
+    async def AsyncPut(self, path, buffer, size, offset):
+        return await _pyfalconfs_internal.AsyncPut(path, buffer, size, offset)
