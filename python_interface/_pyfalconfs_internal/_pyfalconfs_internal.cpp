@@ -77,6 +77,8 @@ public:
         return res;
     }
 };
+
+static std::mutex AsyncTaskThreadPoolForPyMutex;
 static std::shared_ptr<AsyncTaskThreadPool> AsyncTaskThreadPoolForPy = nullptr;
 
 /* =================== Blocking Methods =======================*/
@@ -1042,7 +1044,11 @@ static struct PyModuleDef PyFalconFSInternalModule = {
 
 extern "C" PyMODINIT_FUNC PyInit__pyfalconfs_internal(void) 
 {
-    AsyncTaskThreadPoolForPy = std::make_shared<AsyncTaskThreadPool>(std::thread::hardware_concurrency() * 2);
+    {
+        std::lock_guard guard(AsyncTaskThreadPoolForPyMutex);
+        if (!AsyncTaskThreadPoolForPy)
+            AsyncTaskThreadPoolForPy = std::make_shared<AsyncTaskThreadPool>(std::thread::hardware_concurrency());
+    }
     PyObject* module = PyModule_Create(&PyFalconFSInternalModule);
     if (PyType_Ready(&AsyncStateType) < 0) 
         return nullptr;
