@@ -53,6 +53,7 @@ class FalconStore {
     int TruncateFile(OpenInstance *openInstance, off_t size);
     int TruncateOpenInstance(OpenInstance *openInstance, off_t size);
     int TruncateFileForBrpc(uint64_t inodeId, off_t size);
+    int StatCluster(int nodeId, std::vector<size_t> &currentStats, bool scatter);
 
     /*-----------------util-----------------*/
     int GetInitStatus();

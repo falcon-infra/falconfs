@@ -23,6 +23,8 @@
 #include "falcon_meta.h"
 #include "init/falcon_init.h"
 #include "stats/falcon_stats.h"
+#include "connection/falcon_io_client.h"
+#include "prometheus/prometheus.h"
 
 static bool g_persist = false;
 
@@ -52,7 +54,7 @@ int DoGetAttr(const char *path, struct stat *stbuf)
         FalconStats::GetInstance().stats[META_STAT].fetch_add(1);
     }
 
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT, META_STAT_LAT);
     int ret = FalconGetStat(path, stbuf);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
@@ -63,7 +65,7 @@ int DoMkDir(const char *path, mode_t /*mode*/)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_MKDIR].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     int ret = FalconMkdir(path);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
@@ -74,7 +76,7 @@ int DoOpen(const char *path, struct fuse_file_info *fi)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_OPEN].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT, META_OPEN_LAT);
     int oflags = fi->flags;
     uint64_t fd = -1;
     struct stat st;
@@ -94,6 +96,7 @@ int DoOpenAtomic(const char *path, struct stat *stbuf, mode_t /*mode*/, struct f
     }
 
     FalconStats::GetInstance().stats[META_OPEN_ATOMIC].fetch_add(1);
+    StatFuseTimer t(META_LAT);
     uint64_t fd = -1;
     int oflags = fi->flags;
     int ret = 0;
@@ -116,7 +119,7 @@ int DoOpenDir(const char *path, struct fuse_file_info *fi)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_OPENDIR].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     auto *ti = (struct FalconFuseInfo *)fi;
     int ret = FalconOpenDir(path, ti);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
@@ -128,7 +131,7 @@ int DoReadDir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_READDIR].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     auto *ti = (struct FalconFuseInfo *)fi;
     int ret = 0;
 
@@ -142,7 +145,7 @@ int DoCreate(const char *path, mode_t /*mode*/, struct fuse_file_info *fi)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_CREATE].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT, META_CREATE_LAT);
     uint64_t fd = 0;
     int oflags = fi->flags;
     struct stat st;
@@ -161,7 +164,7 @@ int DoAccess(const char *path, int /*mask*/)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_ACCESS].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     return 0;
 }
 
@@ -171,7 +174,7 @@ int DoRelease(const char *path, struct fuse_file_info *fi)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_RELEASE].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT, META_RELEASE_LAT);
     uint64_t fd = fi->fh;
     int ret = FalconClose(path, fd);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
@@ -183,7 +186,7 @@ int DoReleaseDir(const char *path, struct fuse_file_info *fi)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_RELEASEDIR].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     uint64_t fd = fi->fh;
     int ret = FalconCloseDir(fd);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
@@ -207,7 +210,7 @@ int DoRmDir(const char *path)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_RMDIR].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     int ret;
     ret = FalconRmDir(path);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
@@ -225,7 +228,7 @@ int DoWrite(const char *path, const char *buffer, size_t size, off_t offset, str
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[FUSE_WRITE_OPS].fetch_add(1);
-    StatFuseTimer t(FUSE_WRITE_LAT);
+    StatFuseTimer t(FUSE_LAT, FUSE_WRITE_LAT);
     uint ret;
     int64_t fd = fi->fh;
     ret = FalconWrite(fd, path, buffer, size, offset);
@@ -242,7 +245,7 @@ int DoRead(const char *path, char *buffer, size_t size, off_t offset, struct fus
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[FUSE_READ_OPS].fetch_add(1);
-    StatFuseTimer t(FUSE_READ_LAT);
+    StatFuseTimer t(FUSE_LAT, FUSE_READ_LAT);
     uint64_t fd = fi->fh;
     int retSize = FalconRead(path, fd, buffer, size, offset);
     FalconStats::GetInstance().stats[FUSE_READ] += retSize >= 0 ? retSize : 0;
@@ -254,7 +257,7 @@ int DoSetXAttr(const char *path, const char * /*key*/, const char *value, size_t
     if (path == nullptr || value == nullptr || strlen(path) == 0) {
         return -EINVAL;
     }
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     return 0;
 }
 
@@ -298,7 +301,7 @@ int DoRename(const char *srcPath, const char *dstPath)
         return -EINVAL;
     }
     FalconStats::GetInstance().stats[META_RENAME].fetch_add(1);
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     int ret = 0;
     if (g_persist) {
         ret = FalconRenamePersist(srcPath, dstPath);
@@ -325,7 +328,7 @@ int DoStatfs(const char *path, struct statvfs *vfsBuf)
     if (path == nullptr || vfsBuf == nullptr || strlen(path) == 0) {
         return -EINVAL;
     }
-    StatFuseTimer t;
+    StatFuseTimer t(META_LAT);
     int ret = FalconStatFS(vfsBuf);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
@@ -445,6 +448,46 @@ int main(int argc, char *argv[])
 
     struct fuse_args args = FUSE_ARGS_INIT(fuseArgc, fuseArgv.data());
 
+    /* cli stats */
+    if (strncmp(argv[1], "stats", 5) == 0) {
+        bool scatter;
+        if (strcmp(argv[1], "stats") == 0) {
+            scatter = true;
+        } else if (strcmp(argv[1], "stats-all") == 0) {
+            scatter = false;
+        } else {
+            std::println(stderr, "Invalid argv[1], should be stats or stats-all");
+            return 1;
+        }
+
+        /* Communicate with store process using brpc */
+        gflags::ParseCommandLineFlags(&argc, &argv, false);
+        auto channel = std::make_shared<brpc::Channel>();
+        brpc::ChannelOptions options;
+        if (channel->Init(FLAGS_rpc_endpoint.c_str(), &options) != 0) {
+            std::println(stderr, "Falied to initialize channel");
+            return 1;
+        }
+        auto client = std::make_shared<FalconIOClient>(channel);
+        std::vector<size_t> stats(STATS_END);
+        /* drop stale stats */
+        int ret = client->StatCluster(-1, stats, scatter);
+        int cnt = 0;
+        while (true) {
+            sleep(1);
+            ret = client->StatCluster(-1, stats, scatter);
+            if (ret != 0) {
+                std::println(stderr, "StatCluster falied: {}", strerror(-ret));
+                continue;
+            }
+            if (cnt++ % 30 == 0) {
+                printStatsHeader();
+            }
+            printStatsVector(convertStatstoString(stats));
+        }
+        return 0;
+    }
+
     gflags::ParseCommandLineFlags(&argc, &argv, false);
 
     falcon::brpc_io::RemoteIOServer &server = falcon::brpc_io::RemoteIOServer::GetInstance();
@@ -485,6 +528,34 @@ int main(int argc, char *argv[])
         return ret;
     }
     server.SetReadyFlag();
+
+    /* Start stats thread */
+    bool statMax = config->GetBool(FalconPropertyKey::FALCON_STAT_MAX);
+    setStatMax(statMax);
+    std::jthread statsThread = std::jthread([](std::stop_token stoken) { 
+        FalconStats::GetInstance().storeStatforGet(stoken);
+    });
+
+    /* Start prometheus monitor */
+    bool usePrometheus = config->GetBool(FalconPropertyKey::FALCON_USE_PROMETHEUS);
+    std::jthread prometheusThread;
+    if (usePrometheus) {
+        std::string prometheusPort = config->GetString(FalconPropertyKey::FALCON_PROMETHEUS_PORT);
+        try {
+            int port = std::stoi(prometheusPort);
+            if (port < 0 || port > 65535) {
+                std::println(stderr, "Falcon prometheus port out of range: {}", port);
+                return 1;
+            }
+        } catch (const std::exception &e) {
+            std::println(stderr, "Falcon prometheus port {}: {}", prometheusPort, e.what());
+            return 1;
+        }
+        prometheusThread = std::jthread([prometheusPort](std::stop_token stoken) {
+            startPrometheusMonitor("0.0.0.0:" + prometheusPort, stoken);
+        });
+    }
+
     std::println("{}", ret);
     ret = fuse_main(args.argc, args.argv, &falconOperations, nullptr);
     fuse_opt_free_args(&args);

@@ -351,3 +351,31 @@ int FalconIOClient::CheckConnection()
     }
     return 0;
 }
+
+int FalconIOClient::StatCluster(int nodeId, std::vector<size_t> &stats, bool scatter)
+{
+    falcon::brpc_io::StatClusterRequest request;
+    falcon::brpc_io::StatClusterReply response;
+    brpc::Controller cntl;
+    cntl.set_timeout_ms(10000);
+
+    request.set_scatter(scatter);
+    request.set_node_id(nodeId);
+
+    stub->StatCluster(&cntl, &request, &response, nullptr);
+    if (cntl.Failed()) {
+        FALCON_LOG(LOG_ERROR) << "StatCluster by brpc failed " << cntl.ErrorText()
+                              << "error code: " << cntl.ErrorCode();
+        return -BrpcErrorCodeToFuseErrno(cntl.ErrorCode());
+    }
+
+    if (response.error_code() != 0) {
+        FALCON_LOG(LOG_ERROR) << "FalconIOClient::StatCluster failed: " << strerror(-response.error_code());
+        return response.error_code();
+    }
+
+    stats.resize(STATS_END);
+    stats.assign(response.stats().begin(), response.stats().end());
+
+    return 0;
+}

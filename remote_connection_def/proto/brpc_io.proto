@@ -14,7 +14,18 @@ service RemoteIOService {
     rpc StatFS(StatFSRequest) returns(StatFSReply) {}
     rpc TruncateOpenInstance(TruncateOpenInstanceRequest) returns(ErrorCodeOnlyReply) {}
     rpc TruncateFile(TruncateFileRequest) returns(ErrorCodeOnlyReply) {}
-    rpc CheckConnection(CheckConnectionRequest) returns(ErrorCodeOnlyReply){}
+    rpc CheckConnection(CheckConnectionRequest) returns(ErrorCodeOnlyReply) {}
+    rpc StatCluster(StatClusterRequest) returns(StatClusterReply) {}
+}
+
+message StatClusterRequest {
+    bool scatter = 1;
+    int32 node_id = 2;
+}
+
+message StatClusterReply {
+    repeated int64 stats = 1;
+    int32 error_code = 2;
 }
 
 message CheckConnectionRequest {

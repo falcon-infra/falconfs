@@ -12,6 +12,7 @@
 
 #include "brpc_io.pb.h"
 #include "util/utils.h"
+#include "stats/falcon_stats.h"
 
 #define BRPC_RETRY_NUM 3
 #define BRPC_RETRY_DELEY 1
@@ -51,6 +52,7 @@ class FalconIOClient {
     int TruncateOpenInstance(uint64_t physicalFd, off_t size);
     int TruncateFile(uint64_t physicalFd, off_t size);
     int CheckConnection();
+    int StatCluster(int nodeId, std::vector<size_t> &stats, bool scatter);
 
   private:
     std::shared_ptr<brpc::Channel> channel;

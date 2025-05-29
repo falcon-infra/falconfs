@@ -55,8 +55,6 @@ class FalconPropertyKey : public PropertyKey {
     inline static const auto FALCON_EVICTION =
         PropertyKey::Builder("main", "falcon_eviction", FALCON, FALCON_DOUBLE).build();
 
-    inline static const auto FALCON_STAT = PropertyKey::Builder("main", "falcon_stat", FALCON, FALCON_BOOL).build();
-
     inline static const auto FALCON_IS_INFERENCE =
         PropertyKey::Builder("main", "falcon_is_inference", FALCON, FALCON_BOOL).build();
 
@@ -71,4 +69,13 @@ class FalconPropertyKey : public PropertyKey {
 
     inline static const auto FALCON_LOG_RESERVED_TIME =
         PropertyKey::Builder("main", "falcon_log_reserved_time", FALCON, FALCON_UINT).build();
+
+    inline static const auto FALCON_STAT_MAX = 
+        PropertyKey::Builder("main", "falcon_stat_max", FALCON, FALCON_BOOL).build();
+
+    inline static const auto FALCON_USE_PROMETHEUS = 
+        PropertyKey::Builder("main", "falcon_use_prometheus", FALCON, FALCON_BOOL).build();
+
+    inline static const auto FALCON_PROMETHEUS_PORT =
+        PropertyKey::Builder("main", "falcon_prometheus_port", FALCON, FALCON_STRING).build();
 };
