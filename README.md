@@ -11,7 +11,7 @@ FalconFS is a high-performance distributed file system (DFS) optimized for AI wo
 
 3. **Large scale** - FalconFS can scale to thousands of NPUs through its scale-out metadata engine and scale-up single metadata performance.
 
-Through the above advantages, FalconFS delivers an ideal storage solution for modern AI pipelines.
+Through the above advantages, FalconFS delivers an ideal storage solution for modern AI pipelines and has been running in Huawei autonomous driving system's production environment with 10,000 NPUs.
 
 ## Documents
 
