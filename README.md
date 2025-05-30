@@ -7,11 +7,11 @@ FalconFS is a high-performance distributed file system (DFS) optimized for AI wo
 
 1. **Massive small files** – Its high-performance distributed metadata engine dramatically improves I/O throughput of handling massive small files (e.g., images), eliminating storage bottlenecks in AI data preprocessing and model training.
 
-2. **High throughput requirement** – In tiered storage (i.e., DRAM, SSD and elastic object store), FalconFS can aggregates near-compute DRAM and SSDs to provide over TB/s high throughput for AI workloads (e.g., KV Cache Offloading, model training and data preprocessing).
+2. **High throughput requirement** – In tiered storage (i.e., DRAM, SSD and elastic object store), FalconFS can aggregates near-compute DRAM and SSDs to provide over TB/s high throughput for AI workloads (e.g., model training, data preprocessing and KV cache offloading).
 
 3. **Large scale** - FalconFS can scale to thousands of NPUs through its scale-out metadata engine and scale-up single metadata performance.
 
-Through the above advantages, FalconFS delivers an ideal storage solution for modern AI pipelines and has been running in Huawei autonomous driving system's production environment with 10,000 NPUs.
+Through the above advantages, FalconFS delivers an ideal storage solution for modern AI workloads and has been running in Huawei autonomous driving system's production environment with 10,000 NPUs.
 
 ## Documents
 
