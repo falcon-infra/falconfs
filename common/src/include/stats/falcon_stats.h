@@ -123,6 +123,7 @@ class StatFuseTimer {
 std::string formatU64(size_t size);
 std::string formatOp(size_t size);
 std::string formatTime(size_t mus, size_t ops);
+double formatTimeDouble(size_t mus, size_t ops);
 
 std::vector<std::string> convertStatstoString(const std::vector<size_t> &stats);
 void PrintStats(std::string_view mountPath, std::stop_token stoken);

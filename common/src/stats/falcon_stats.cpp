@@ -62,20 +62,23 @@ std::string formatOp(size_t size)
     return std::format("{}{}", size, units[unitIdx]);
 }
 
-std::string formatTime(size_t mus, size_t ops)
+double formatTimeDouble(size_t mus, size_t ops)
 {
-    std::ostringstream oss;
     if (ops == 0) {
-        oss << mus;
-        return oss.str();
+        return double(mus);
     }
 
     double time = static_cast<double>(mus) / (ops * 1000);
     const auto precision = time < 10 ? 3 : time < 100 ? 2 : time < 1000 ? 1 : 0;
-
     time = std::round(time * std::pow(10, precision)) / std::pow(10, precision);
-    oss << time;
-    return time < 0.001 ? "0" : oss.str();
+    return time < 0.001 ? 0 : time;
+}
+
+std::string formatTime(size_t mus, size_t ops)
+{
+    std::ostringstream oss;
+    oss << formatTimeDouble(mus, ops);
+    return oss.str();
 }
 
 void PrintStats(std::string_view mountPath, std::stop_token stoken)
