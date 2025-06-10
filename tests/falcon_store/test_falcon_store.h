@@ -82,11 +82,6 @@ class FalconStoreUT : public testing::Test {
         statsThread = std::jthread([](std::stop_token stoken) {
             FalconStats::GetInstance().storeStatforGet(stoken);
         });
-        // int cnt = 10;
-        // while(cnt--) {
-        //     std::cout << "sleep 1s\n";
-        //     sleep(1);
-        // }
 
         auto channel = std::make_shared<brpc::Channel>();
         brpc::ChannelOptions options;

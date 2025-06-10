@@ -35,7 +35,7 @@ std::string formatU64(size_t size)
     if (size == 0)
         return "0";
 
-    constexpr std::array units = {"B", "KiB", "MiB", "GiB", "TiB", "PiB"};
+    constexpr std::array units = {"B", "K", "M", "G", "T", "P"};
     int unitIdx = 0;
 
     while (size >= 10000 && unitIdx < std::ssize(units) - 1) {
@@ -51,7 +51,7 @@ std::string formatOp(size_t size)
     if (size == 0)
         return "0";
 
-    constexpr std::array units = {"", "Ki", "Mi", "Gi"};
+    constexpr std::array units = {"", "K", "M", "G"};
     int unitIdx = 0;
 
     while (size >= 10000 && unitIdx < std::ssize(units) - 1) {
@@ -221,11 +221,11 @@ void printStatsVector(const std::vector<std::string> &stats)
     std::cout << std::setw(14 - fuseOps.size()) << stats[FUSE_LAT] << "/" << std::setw(6) << stats[FUSE_LAT_MAX] << "|";
     std::string fuseReadOps = stats[FUSE_READ_OPS];
     std::cout << std::setw(fuseReadOps.size()) << fuseReadOps;
-    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_READ_LAT] << "/" << std::setw(6) << stats[FUSE_READ_LAT_MAX] << "|";
+    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_READ_LAT] << "/" << std::setw(6) << stats[FUSE_READ_LAT_MAX] << " ";
     std::cout << std::setw(6) << stats[FUSE_READ] << "|";
     std::string fuseWriteOps = stats[FUSE_WRITE_OPS];
     std::cout << std::setw(fuseWriteOps.size()) << fuseWriteOps;
-    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_WRITE_LAT] << "/" << std::setw(6) << stats[FUSE_WRITE_LAT_MAX] << "|";
+    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_WRITE_LAT] << "/" << std::setw(6) << stats[FUSE_WRITE_LAT_MAX] << " ";
     std::cout << std::setw(6) << stats[FUSE_WRITE] << "|";
 
     std::string metaOps = stats[META_OPS];

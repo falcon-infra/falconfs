@@ -1443,7 +1443,7 @@ int FalconStore::StatCluster(int nodeId, std::vector<size_t> &currentStats, bool
         int ret = -EHOSTUNREACH;
         std::vector<size_t> remoteStats(STATS_END);
         if (ioClient != nullptr) {
-            ioClient->StatCluster(nodeId, remoteStats, false);
+            ret = ioClient->StatCluster(nodeId, remoteStats, false);
         }
         if (ret != 0) {
             FALCON_LOG(LOG_WARNING) << "StatCluster rpc failed: " << strerror(-ret) << " for node " << nodeId;
