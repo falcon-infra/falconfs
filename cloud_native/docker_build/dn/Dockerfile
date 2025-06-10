@@ -24,7 +24,7 @@ ENV PATH=/home/falconMeta/metadb/bin/:$PATH \
     LD_LIBRARY_PATH=/home/falconMeta/metadb/lib/ \
     TMOUT=0 
 RUN echo PATH=$PATH >> ~/.bashrc
-RUN pip3 install --break-system-packages psycopg2 && pip3 install --break-system-packages kazoo
+RUN pip3 install --break-system-packages psycopg2 && pip3 install --break-system-packages kazoo && pip3 install --break-system-packages requests
 RUN chmod +x /home/falconMeta/docker-entrypoint.sh
 USER root
 EXPOSE 5432

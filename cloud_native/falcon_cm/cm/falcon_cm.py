@@ -7,6 +7,8 @@ from kazoo.client import KazooClient, KazooState
 from kazoo.recipe.watchers import ChildrenWatch, DataWatch
 from kazoo.protocol.states import WatchedEvent, EventType
 from kazoo.exceptions import *
+from tool.check_replication import *
+from tool.monitor_object import *
 import threading
 import traceback
 
@@ -56,7 +58,8 @@ class FalconCM:
         self._cn_supplement_num = int(os.environ.get("cn_sup_num"))
         self._wait_replica_time = int(os.environ.get("wait_replica_time", "600"))
         self._data_dir = os.environ.get("data_dir", "/home/falconMeta/data")
-
+        self._check_meta_period = int(os.environ.get("CHECK_META_PERIOD", "2")) * 3600
+        self._send_msg_dst = os.environ.get("REPORT_DST", "None")
     def connect_zk(self):
         try:
             self._zk_client = KazooClient(hosts=self._hosts, timeout=self._timeout)
@@ -735,10 +738,15 @@ class FalconCM:
         handle_replica_thread = threading.Thread(
             target=FalconCM.handle_need_supplement, args=(self,)
         )
+        check_meta_status_thread = threading.Thread(
+            target=FalconCM.handle_meta_error_report, args=(self,)
+        )
         watch_replica_thread.start()
         handle_replica_thread.start()
+        check_meta_status_thread.start()
         watch_replica_thread.join()
         handle_replica_thread.join()
+        check_meta_status_thread.join()
 
     def handle_replica_change(self):
         while self._thread_running:
@@ -891,6 +899,21 @@ class FalconCM:
                     self.logger.info("delete {} in need supplement".format(child))
             else:
                 time.sleep(10)
+
+    def handle_meta_error_report(self):
+        while self._thread_running:
+            self.logger.info(f"check meta status")
+            cluster_is_healthy = False
+            retry_num = 10
+            while not cluster_is_healthy and retry_num > 0:
+                time.sleep(60)
+                cluster_is_healthy, error_message, error_node = check_replication_status()
+                if not cluster_is_healthy:
+                    self.logger.error("cluster is not healthy!")
+                retry_num -= 1
+            if not cluster_is_healthy:
+                send_message(error_message, error_node, self._send_msg_dst)
+            time.sleep(self._check_meta_period)
 
     def watch_need_supplement(self):
         @self._zk_client.ChildrenWatch(self._need_supplement_path)

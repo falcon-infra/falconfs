@@ -23,7 +23,7 @@
     "falcon_is_inference": false,
     "falcon_mount_path": "/mnt/falcon",
     "falcon_to_local": false,
-    "falcon_log_reserved_num": 3,
-    "falcon_log_reserved_time": 1
+    "falcon_log_reserved_num": 50,
+    "falcon_log_reserved_time": 168
   }
 }
