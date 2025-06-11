@@ -157,7 +157,24 @@ TEST_F(FalconStoreUT, OpenRemoteRDWRNoneExist)
     }
 }
 
+TEST_F(FalconStoreUT, OpenStats)
+{
+    std::vector<size_t> stats(STATS_END);
+    int ret = client->StatCluster(-1, stats, true);
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(stats[FUSE_READ_OPS], 0);
+    EXPECT_EQ(stats[FUSE_WRITE_OPS], 0);
+    EXPECT_EQ(stats[FUSE_READ], 0);
+    EXPECT_EQ(stats[FUSE_WRITE], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_READ], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_WRITE], 0);
+    EXPECT_EQ(stats[OBJ_GET], 0);
+    EXPECT_EQ(stats[OBJ_PUT], 0);
+}
+
 /* ------------------------------------------- write local -------------------------------------------*/
+
+size_t writeLocalSize = 0;
 
 TEST_F(FalconStoreUT, WriteLocalLarge)
 {
@@ -169,6 +186,7 @@ TEST_F(FalconStoreUT, WriteLocalLarge)
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     EXPECT_EQ(openInstance->currentSize.load(), size);
@@ -201,13 +219,16 @@ TEST_F(FalconStoreUT, WriteLocalSeq)
     // local no buffer cache
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, size);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     // perisist previous to cache file, new to buffer
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, size * 2);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     EXPECT_EQ(openInstance->currentSize.load(), size * 3);
@@ -225,10 +246,12 @@ TEST_F(FalconStoreUT, WriteLocalRandom)
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, size);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     EXPECT_EQ(openInstance->currentSize.load(), size * 2);
@@ -245,19 +268,41 @@ TEST_F(FalconStoreUT, WriteLocalSeqToRandom)
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, size);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
     EXPECT_EQ(openInstance->currentSize.load(), size * 2);
     free(buf);
 }
 
+TEST_F(FalconStoreUT, WriteLocalStats)
+{
+    // wait until stats are updated
+    sleep(1);
+    std::vector<size_t> stats(STATS_END);
+    int ret = client->StatCluster(-1, stats, true);
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(stats[FUSE_READ_OPS], 0);
+    EXPECT_EQ(stats[FUSE_WRITE_OPS], 0);
+    EXPECT_EQ(stats[FUSE_READ], 0);
+    EXPECT_EQ(stats[FUSE_WRITE], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_READ], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_WRITE], writeLocalSize);
+    EXPECT_EQ(stats[OBJ_GET], 0);
+    EXPECT_EQ(stats[OBJ_PUT], 0);
+}
+
 /* ------------------------------------------- write remote -------------------------------------------*/
+
+size_t writeRemoteSize = 0;
 
 TEST_F(FalconStoreUT, WriteRemoteLarge)
 {
@@ -268,6 +313,7 @@ TEST_F(FalconStoreUT, WriteRemoteLarge)
     strcpy(buf, "abc");
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
+    writeRemoteSize += size;
     EXPECT_EQ(ret, 0);
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, 0);
@@ -306,8 +352,10 @@ TEST_F(FalconStoreUT, WriteRemoteSeq)
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size * 2);
     // perisist previous to cache file, new to buffer
+    writeRemoteSize += bufferedSize;
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, size * 2);
     EXPECT_EQ(ret, 0);
+    writeRemoteSize += 0;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size);
     EXPECT_EQ(openInstance->currentSize.load(), size * 3);
@@ -327,8 +375,10 @@ TEST_F(FalconStoreUT, WriteRemoteRandom)
     EXPECT_EQ(ret, 0);
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size);
+    writeRemoteSize += size;
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeRemoteSize += 0;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size);
     EXPECT_EQ(openInstance->currentSize.load(), size * 2);
@@ -349,22 +399,46 @@ TEST_F(FalconStoreUT, WriteRemoteSeqToRandom)
     EXPECT_EQ(ret, 0);
     auto bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size * 2);
+    writeRemoteSize += size;
+    writeRemoteSize += size;
     ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), buf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeRemoteSize += 0;
     bufferedSize = openInstance->writeStream.GetSize();
     EXPECT_EQ(bufferedSize, size);
     EXPECT_EQ(openInstance->currentSize.load(), size * 2);
     free(buf);
 }
 
+TEST_F(FalconStoreUT, WriteRemoteStats)
+{
+    // wait until stats are updated
+    sleep(1);
+    std::vector<size_t> stats(STATS_END);
+    int ret = client->StatCluster(-1, stats, true);
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(stats[FUSE_READ_OPS], 0);
+    EXPECT_EQ(stats[FUSE_WRITE_OPS], 0);
+    EXPECT_EQ(stats[FUSE_READ], 0);
+    EXPECT_EQ(stats[FUSE_WRITE], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_READ], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_WRITE], writeRemoteSize);
+    EXPECT_EQ(stats[OBJ_GET], 0);
+    EXPECT_EQ(stats[OBJ_PUT], 0);
+}
+
 /* ------------------------------------------- read local -------------------------------------------*/
+
+size_t readLocalSize = 0;
 
 TEST_F(FalconStoreUT, ReadLocalSeqSmall)
 {
+    writeLocalSize = 0;
     NewOpenInstance(10000, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalSmall", O_WRONLY | O_CREAT);
     ResetBuf(false);
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
 
     NewOpenInstance(10000, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalSmall", O_RDONLY);
     openInstance->originalSize = size;
@@ -374,6 +448,7 @@ TEST_F(FalconStoreUT, ReadLocalSeqSmall)
     openInstance->readBufferSize = size;
     ret = FalconStore::GetInstance()->ReadSmallFiles(openInstance.get());
     EXPECT_EQ(ret, 0);
+    readLocalSize += size;
 
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
@@ -393,6 +468,7 @@ TEST_F(FalconStoreUT, ReadLocalRandomSmall)
     openInstance->readBufferSize = size;
     int ret = FalconStore::GetInstance()->ReadSmallFiles(openInstance.get());
     EXPECT_EQ(ret, 0);
+    readLocalSize += size;
 
     memset(readBuf, 0, readSize);
 
@@ -411,6 +487,7 @@ TEST_F(FalconStoreUT, ReadLocalSeqLarge)
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
 
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDONLY);
     openInstance->originalSize = size;
@@ -419,9 +496,11 @@ TEST_F(FalconStoreUT, ReadLocalSeqLarge)
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf, readBuf, readSize));
+    readLocalSize += readSize;
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, readSize);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf + readSize, readBuf, readSize));
+    readLocalSize += readSize;
 }
 
 TEST_F(FalconStoreUT, ReadLocalRandomLarge)
@@ -435,9 +514,11 @@ TEST_F(FalconStoreUT, ReadLocalRandomLarge)
     int ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, readSize);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf + readSize, readBuf, readSize));
+    readLocalSize += readSize;
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf, readBuf, readSize));
+    readLocalSize += readSize;
 }
 
 TEST_F(FalconStoreUT, ReadLocalSeqToRandomLarge)
@@ -451,13 +532,16 @@ TEST_F(FalconStoreUT, ReadLocalSeqToRandomLarge)
     int ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf, readBuf, readSize));
+    readLocalSize += readSize;
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, readSize);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf + readSize, readBuf, readSize));
+    readLocalSize += readSize;
     // not serial
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf, readBuf, readSize));
+    readLocalSize += readSize;
 }
 
 TEST_F(FalconStoreUT, ReadLocalExceed)
@@ -469,8 +553,10 @@ TEST_F(FalconStoreUT, ReadLocalExceed)
     memset(readBuf, 0, readSize);
     int ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, size - 1);
     EXPECT_EQ(ret, 1);
+    readLocalSize += 1;
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, size);
     EXPECT_EQ(ret, 0);
+    readLocalSize += 0;
 }
 
 TEST_F(FalconStoreUT, ReadLocalHole)
@@ -478,6 +564,7 @@ TEST_F(FalconStoreUT, ReadLocalHole)
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_WRONLY);
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, size * 2);
     EXPECT_EQ(ret, 0);
+    writeLocalSize += size;
 
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDONLY);
     openInstance->originalSize = size * 3;
@@ -486,21 +573,43 @@ TEST_F(FalconStoreUT, ReadLocalHole)
     memset(readBuf, 0, readSize);
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, size);
     EXPECT_EQ(ret, readSize);
+    readLocalSize += readSize;
     void *zeroBlock = std::memset(new char[readSize], 0, readSize);
     bool result = std::memcmp(readBuf, zeroBlock, readSize) == 0;
     EXPECT_TRUE(result);
     delete[] static_cast<char *>(zeroBlock);
 }
 
+TEST_F(FalconStoreUT, ReadLocalStats)
+{
+    // wait until stats are updated
+    sleep(1);
+    std::vector<size_t> stats(STATS_END);
+    int ret = client->StatCluster(-1, stats, true);
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(stats[FUSE_READ_OPS], 0);
+    EXPECT_EQ(stats[FUSE_WRITE_OPS], 0);
+    EXPECT_EQ(stats[FUSE_READ], 0);
+    EXPECT_EQ(stats[FUSE_WRITE], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_READ], readLocalSize);
+    EXPECT_EQ(stats[BLOCKCACHE_WRITE], writeLocalSize);
+    EXPECT_EQ(stats[OBJ_GET], 0);
+    EXPECT_EQ(stats[OBJ_PUT], 0);
+}
+
 /* ------------------------------------------- read remote -------------------------------------------*/
+
+size_t readRemoteSize = 0;
 
 TEST_F(FalconStoreUT, ReadRemoteSeqSmall)
 {
+    writeRemoteSize = 0;
     NewOpenInstance(20000, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteSmall", O_WRONLY | O_CREAT);
     ResetBuf(false);
 
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, 0);
     EXPECT_EQ(ret, 0);
+    writeRemoteSize += size;
 
     NewOpenInstance(20000, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteSmall", O_RDONLY);
     openInstance->originalSize = size;
@@ -510,6 +619,8 @@ TEST_F(FalconStoreUT, ReadRemoteSeqSmall)
     openInstance->readBufferSize = size;
     ret = FalconStore::GetInstance()->ReadSmallFiles(openInstance.get());
     EXPECT_EQ(ret, 0);
+    readRemoteSize += size;
+    EXPECT_EQ(FalconStats::GetInstance().stats[BLOCKCACHE_READ], readRemoteSize);
 
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
@@ -529,6 +640,8 @@ TEST_F(FalconStoreUT, ReadRemoteRandomSmall)
     openInstance->readBufferSize = size;
     int ret = FalconStore::GetInstance()->ReadSmallFiles(openInstance.get());
     EXPECT_EQ(ret, 0);
+    readRemoteSize += size;
+    EXPECT_EQ(FalconStats::GetInstance().stats[BLOCKCACHE_READ], readRemoteSize);
 
     memset(readBuf, 0, readSize);
 
@@ -538,6 +651,24 @@ TEST_F(FalconStoreUT, ReadRemoteRandomSmall)
     ret = FalconStore::GetInstance()->ReadFile(openInstance.get(), readBuf, readSize, 0);
     EXPECT_EQ(ret, readSize);
     EXPECT_EQ(0, memcmp(writeBuf, readBuf, readSize));
+}
+
+TEST_F(FalconStoreUT, ReadRemoteStats)
+{
+    // large remote file has preread, unable to determine actual read value
+    // wait until stats are updated
+    sleep(1);
+    std::vector<size_t> stats(STATS_END);
+    int ret = client->StatCluster(-1, stats, true);
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(stats[FUSE_READ_OPS], 0);
+    EXPECT_EQ(stats[FUSE_WRITE_OPS], 0);
+    EXPECT_EQ(stats[FUSE_READ], 0);
+    EXPECT_EQ(stats[FUSE_WRITE], 0);
+    EXPECT_EQ(stats[BLOCKCACHE_READ], readRemoteSize);
+    EXPECT_EQ(stats[BLOCKCACHE_WRITE], writeRemoteSize);
+    EXPECT_EQ(stats[OBJ_GET], 0);
+    EXPECT_EQ(stats[OBJ_PUT], 0);
 }
 
 TEST_F(FalconStoreUT, ReadRemoteSeqLarge)
@@ -1201,6 +1332,7 @@ TEST_F(FalconStoreUT, WriteTruncateOpenInstanceRemote)
     EXPECT_EQ(ret, 0);
     EXPECT_EQ(openInstance->originalSize, 1000);
     EXPECT_EQ(openInstance->currentSize, 1000);
+    sleep(2);
 }
 
 int main(int argc, char **argv)

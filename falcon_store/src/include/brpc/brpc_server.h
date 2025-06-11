@@ -69,6 +69,11 @@ class RemoteIOServiceImpl : public RemoteIOService {
                          const CheckConnectionRequest *request,
                          ErrorCodeOnlyReply *response,
                          google::protobuf::Closure *done) override;
+
+    void StatCluster(google::protobuf::RpcController *cntl_base,
+                         const StatClusterRequest *request,
+                         StatClusterReply *response,
+                         google::protobuf::Closure *done) override;
 };
 
 class RemoteIOServer {

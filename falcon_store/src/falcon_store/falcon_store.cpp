@@ -50,7 +50,6 @@ int FalconStore::InitStore()
     uint32_t threadNum = config->GetUint32(FalconPropertyKey::FALCON_THREAD_NUM);
     float storageThreshold = GetStorageThreshold(persistToStorage);
     parentPathLevel = GetParentPathLevel();
-    bool ifStat = config->GetBool(FalconPropertyKey::FALCON_STAT);
     isInference = config->GetBool(FalconPropertyKey::FALCON_IS_INFERENCE);
     toLocal = config->GetBool(FalconPropertyKey::FALCON_TO_LOCAL);
     std::string mountPath = config->GetString(FalconPropertyKey::FALCON_MOUNT_PATH);
@@ -102,10 +101,6 @@ int FalconStore::InitStore()
         return ret;
     }
 #endif
-    /* start the stats thread */
-    if (ifStat) {
-        statsThread = std::jthread([mountPath](std::stop_token stoken) { PrintStats(mountPath, stoken); });
-    }
 
     return 0;
 }
@@ -1421,5 +1416,51 @@ int FalconStore::TruncateOpenInstance(OpenInstance *openInstance, off_t size)
     std::unique_lock<std::shared_mutex> sizeLock(openInstance->fileMutex);
     openInstance->currentSize = size;
     openInstance->originalSize = size;
+    return 0;
+}
+
+int FalconStore::StatCluster(int nodeId, std::vector<size_t> &currentStats, bool scatter)
+{
+    if (nodeId != -1 && !StoreNode::GetInstance()->IsLocal(nodeId)) {
+        return 0;
+    }
+
+    /* Get local stats */
+    currentStats.clear();
+    currentStats.resize(STATS_END);
+    currentStats.assign(FalconStats::GetInstance().storedStats, FalconStats::GetInstance().storedStats + STATS_END);
+    if (!scatter) {
+        return 0;
+    }
+
+    /* Get remote stats */
+    auto nodeVector = StoreNode::GetInstance()->GetAllNodeId();
+    for (auto nodeId : nodeVector) {
+        if (StoreNode::GetInstance()->IsLocal(nodeId)) {
+            continue;
+        }
+        auto ioClient = StoreNode::GetInstance()->GetRpcConnection(nodeId);
+        int ret = -EHOSTUNREACH;
+        std::vector<size_t> remoteStats(STATS_END);
+        if (ioClient != nullptr) {
+            ret = ioClient->StatCluster(nodeId, remoteStats, false);
+        }
+        if (ret != 0) {
+            FALCON_LOG(LOG_WARNING) << "StatCluster rpc failed: " << strerror(-ret) << " for node " << nodeId;
+            continue;
+        }
+        for (int i = FUSE_OPS; i < OPS_END; i++) {
+            currentStats[i] += remoteStats[i];
+        }
+        for (int i = FUSE_LAT; i < LAT_END; i += 2) {
+            currentStats[i] += remoteStats[i];
+        }
+        for (int i = FUSE_LAT_MAX; i < LAT_END; i += 2) {
+            currentStats[i] = std::max(currentStats[i], remoteStats[i]);
+        }
+        for (int i = FUSE_READ; i < STATS_END; i++) {
+            currentStats[i] += remoteStats[i];
+        }
+    }
     return 0;
 }

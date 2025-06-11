@@ -50,6 +50,8 @@ set(DYNAMIC_LIB
     dl
     z
     glog
+    prometheus-cpp-pull
+    prometheus-cpp-core
 )
 
 # protobuf generated

@@ -398,6 +398,24 @@ void RemoteIOServiceImpl::CheckConnection(google::protobuf::RpcController * /*cn
     response->set_error_code(0);
 }
 
+void RemoteIOServiceImpl::StatCluster(google::protobuf::RpcController *cntl_base,
+                                      const StatClusterRequest *request,
+                                      StatClusterReply *response,
+                                      google::protobuf::Closure *done)
+{
+    brpc::ClosureGuard doneGuard(done);
+    
+    bool scatter = request->scatter();
+    int nodeId = request->node_id();
+
+    std::vector<size_t> currentStats;
+    int ret = FalconStore::GetInstance()->StatCluster(nodeId, currentStats, scatter);
+    for (auto &e : currentStats) {
+        response->add_stats(e);
+    }
+    response->set_error_code(ret);
+}
+
 int RemoteIOServer::Run()
 {
     falcon::brpc_io::RemoteIOServiceImpl remoteIOServiceImpl;

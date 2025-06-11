@@ -13,6 +13,9 @@
 #include "init/falcon_init.h"
 #include "remote_connection_utils/error_code_def.h"
 
+static std::jthread statsThread;
+static std::shared_ptr<FalconIOClient> client = nullptr;
+
 class FalconStoreUT : public testing::Test {
   public:
     static void SetUpTestSuite()
@@ -73,6 +76,20 @@ class FalconStoreUT : public testing::Test {
             println(std::cerr, "init failed, check the log.");
             exit(1);
         }
+
+        bool statMax = config->GetBool(FalconPropertyKey::FALCON_STAT_MAX);
+        setStatMax(statMax);
+        statsThread = std::jthread([](std::stop_token stoken) {
+            FalconStats::GetInstance().storeStatforGet(stoken);
+        });
+
+        auto channel = std::make_shared<brpc::Channel>();
+        brpc::ChannelOptions options;
+        if (channel->Init("localhost:56039", &options) != 0) {
+            std::cerr << "Falied to initialize channel" << std::endl;
+            exit(1);
+        }
+        client = std::make_shared<FalconIOClient>(channel);
     }
 
     static void TearDownTestSuite()
