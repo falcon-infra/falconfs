@@ -452,9 +452,9 @@ int main(int argc, char *argv[])
     if (strncmp(argv[1], "stats", 5) == 0) {
         bool scatter;
         if (strcmp(argv[1], "stats") == 0) {
-            scatter = true;
-        } else if (strcmp(argv[1], "stats-all") == 0) {
             scatter = false;
+        } else if (strcmp(argv[1], "stats-all") == 0) {
+            scatter = true;
         } else {
             std::println(stderr, "Invalid argv[1], should be stats or stats-all");
             return 1;
