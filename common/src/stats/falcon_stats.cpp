@@ -216,32 +216,32 @@ std::vector<std::string> convertStatstoString(const std::vector<size_t> &stats)
 
 void printStatsVector(const std::vector<std::string> &stats)
 {
-    std::string fuseOps = stats[FUSE_OPS];
-    std::cout << std::setw(fuseOps.size()) << fuseOps;
+    const std::string &fuseOps = stats[FUSE_OPS];
+    std::cout << fuseOps;
     std::cout << std::setw(14 - fuseOps.size()) << stats[FUSE_LAT] << "/" << std::setw(6) << stats[FUSE_LAT_MAX] << "|";
-    std::string fuseReadOps = stats[FUSE_READ_OPS];
-    std::cout << std::setw(fuseReadOps.size()) << fuseReadOps;
-    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_READ_LAT] << "/" << std::setw(6) << stats[FUSE_READ_LAT_MAX] << " ";
+    const std::string &fuseReadOps = stats[FUSE_READ_OPS];
+    std::cout << fuseReadOps;
+    std::cout << std::setw(13 - fuseReadOps.size()) << stats[FUSE_READ_LAT] << "/" << std::setw(6) << stats[FUSE_READ_LAT_MAX] << " ";
     std::cout << std::setw(6) << stats[FUSE_READ] << "|";
-    std::string fuseWriteOps = stats[FUSE_WRITE_OPS];
-    std::cout << std::setw(fuseWriteOps.size()) << fuseWriteOps;
-    std::cout << std::setw(13 - fuseOps.size()) << stats[FUSE_WRITE_LAT] << "/" << std::setw(6) << stats[FUSE_WRITE_LAT_MAX] << " ";
+    const std::string &fuseWriteOps = stats[FUSE_WRITE_OPS];
+    std::cout << fuseWriteOps;
+    std::cout << std::setw(13 - fuseWriteOps.size()) << stats[FUSE_WRITE_LAT] << "/" << std::setw(6) << stats[FUSE_WRITE_LAT_MAX] << " ";
     std::cout << std::setw(6) << stats[FUSE_WRITE] << "|";
 
-    std::string metaOps = stats[META_OPS];
-    std::cout << std::setw(metaOps.size()) << metaOps;
+    const std::string &metaOps = stats[META_OPS];
+    std::cout << metaOps;
     std::cout << std::setw(13 - metaOps.size()) << stats[META_LAT] << "/" << std::setw(6) << stats[META_LAT_MAX] << "|";
-    std::string metaOpenOps = stats[META_OPEN];
-    std::cout << std::setw(metaOpenOps.size()) << metaOpenOps;
+    const std::string &metaOpenOps = stats[META_OPEN];
+    std::cout << metaOpenOps;
     std::cout << std::setw(13 - metaOpenOps.size()) << stats[META_OPEN_LAT] << "/" << std::setw(6) << stats[META_OPEN_LAT_MAX] << "|";
-    std::string metaCloseOps = stats[META_RELEASE];
-    std::cout << std::setw(metaCloseOps.size()) << metaCloseOps;
+    const std::string &metaCloseOps = stats[META_RELEASE];
+    std::cout << metaCloseOps;
     std::cout << std::setw(13 - metaCloseOps.size()) << stats[META_RELEASE_LAT] << "/" << std::setw(6) << stats[META_RELEASE_LAT_MAX] << "|";
-    std::string metaStatOps = stats[META_STAT];
-    std::cout << std::setw(metaStatOps.size()) << metaStatOps;
+    const std::string &metaStatOps = stats[META_STAT];
+    std::cout << metaStatOps;
     std::cout << std::setw(13 - metaStatOps.size()) << stats[META_STAT_LAT] << "/" << std::setw(6) << stats[META_STAT_LAT_MAX] << "|";
-    std::string metaCreateOps = stats[META_CREATE];
-    std::cout << std::setw(metaCreateOps.size()) << metaCreateOps;
+    const std::string &metaCreateOps = stats[META_CREATE];
+    std::cout << metaCreateOps;
     std::cout << std::setw(13 - metaCreateOps.size()) << stats[META_CREATE_LAT] << "/" << std::setw(6) << stats[META_CREATE_LAT_MAX] << "|";
 
     std::cout << std::setw(5) << stats[BLOCKCACHE_READ] << " " << std::setw(5) << stats[BLOCKCACHE_WRITE] << "|";
