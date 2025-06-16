@@ -195,6 +195,7 @@ void DiskCache::CleanupForEvict(uint64_t preAllocSize)
 
     for (auto it = cacheItems.begin(); it != cacheItems.end();) {
         if (it->refs > 0) {
+            ++it;
             continue;
         }
         uint64_t key = it->inode;
@@ -250,6 +251,7 @@ void DiskCache::Cleanup()
 
     for (auto it = cacheItems.begin(); it != cacheItems.end();) {
         if (it->refs > 0) {
+            ++it;
             continue;
         }
         uint64_t key = it->inode;
