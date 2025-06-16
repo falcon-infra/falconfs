@@ -60,6 +60,7 @@ class FalconCM:
         self._data_dir = os.environ.get("data_dir", "/home/falconMeta/data")
         self._check_meta_period = int(os.environ.get("CHECK_META_PERIOD", "2")) * 3600
         self._send_msg_dst = os.environ.get("REPORT_DST", "None")
+        self._use_error_report = int(os.environ.get("USE_ERROR_REPORT", "0"))
     def connect_zk(self):
         try:
             self._zk_client = KazooClient(hosts=self._hosts, timeout=self._timeout)
@@ -901,7 +902,7 @@ class FalconCM:
                 time.sleep(10)
 
     def handle_meta_error_report(self):
-        while self._thread_running:
+        while self._thread_running and self._use_error_report == 1:
             self.logger.info(f"check meta status")
             cluster_is_healthy = False
             retry_num = 10
