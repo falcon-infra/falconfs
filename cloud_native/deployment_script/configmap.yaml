@@ -14,3 +14,12 @@ data:
   # (dn_num - dn_sup_num) / 3 is the number of primary dn in our cluster
   dn_num: "4" #number of total dn pod
   dn_sup_num: "1" #number of dn supplement
+  # config for meta server replication error report
+  # USE_ERROR_REPORT: "0"       # whether to enable meta server replication error report (default: 0)
+  # REPORT_DST: "xxx"           # where to report the meta error (such as xiaoluban in Huawei)
+  # CHECK_META_PERIOD "2"       # the period to check the meta error(hours, default: 2)
+  # if you choose to use xiaoluban for meta server replication error report, you need to specify the following configration
+  # LUBAN_URL: "example.com"    # URL for xiaoluban
+  # MONITOR_CLUSTER_NAME : "xxx" # Cluster name
+  # LUBAN_TOKEN: "xxx"          # token for xiaoluban
+  # LUBAN_RECEIVER: "xxx"       # receiver ID for error report

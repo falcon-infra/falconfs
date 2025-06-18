@@ -104,7 +104,9 @@ bash $FALCON_PATH/cloud_native/deployment_script/prepare.sh
 
 3. Modify the ```[PVC]``` setting in ```$FALCON_PATH/cloud_native/deployment_script/zk.yaml```
 
-4. Set up FalconFS
+4. Modify the configmap.yaml if you want to enable the meta server replication error report.
+
+5. Set up FalconFS
 - Set up configmap
 ```bash
 kubectl apply -f configmap.yaml
