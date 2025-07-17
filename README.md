@@ -109,7 +109,7 @@ cd falconfs
 ./build.sh build falcon --debug # build falconfs with debug
 ```
 ## Publication
-**FalconFS: Distributed File System for Large-Scale Deep Learning Pipeline**. Jingwei Xu, Junbin Kang, Mingkai Dong, Mingyu Liu, Lu Zhang, Shaohong Guo, Ziyan Qiu, Mingzhen You, Ziyi Tian, Anqi Yu, Tianhong Ding, Xinwei Hu, and Haibo Chen. To appear in the 23rd USENIX Symposium on Networked Systems Design and Implementation (NSDI), 2026
+**FalconFS: Distributed File System for Large-Scale Deep Learning Pipeline**. Jingwei Xu, Junbin Kang, Mingkai Dong, Mingyu Liu, Lu Zhang, Shaohong Guo, Ziyan Qiu, Mingzhen You, Ziyi Tian, Anqi Yu, Tianhong Ding, Xinwei Hu, and Haibo Chen. To appear in the 23rd USENIX Symposium on Networked Systems Design and Implementation (NSDI), 2026. [Preprint](https://arxiv.org/abs/2507.10367)
 
 
 ## Copyright
