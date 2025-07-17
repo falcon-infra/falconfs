@@ -136,7 +136,10 @@ FalconErrorCode Connection::ProcessRequest(falcon::meta_proto::MetaServiceType p
     }
 
     auto metaResponse = falcon::meta_fbs::GetMetaResponse((uint8_t *)response.buffer + SERIALIZED_DATA_ALIGNMENT);
-    if (metaResponse->error_code() != SUCCESS) {
+    // If Create returns FILE_EXISTS, we should call responseHandler too.
+    if (metaResponse->error_code() != SUCCESS &&
+        !(metaResponse->response_type() == falcon::meta_fbs::AnyMetaResponse::AnyMetaResponse_CreateResponse
+          && metaResponse->error_code() == FILE_EXISTS)) {
         if (metaResponse->error_code() < LAST_FALCON_ERROR_CODE)
             return (FalconErrorCode)metaResponse->error_code();
         return PROGRAM_ERROR;
