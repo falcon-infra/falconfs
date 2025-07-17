@@ -18,8 +18,11 @@ Through the above advantages, FalconFS delivers an ideal storage solution for mo
 - [FalconFS Design](./docs/design.md)
 - [FalconFS Cluster Test Setup Guide](./docs/setup.md)
 
+
+
 ## Architecture
 ![FalconFS Architecture](https://github.com/user-attachments/assets/5ff1e80a-4cce-4b05-a35d-8da54191fb30)
+
 
 ## Performance
 
@@ -105,9 +108,9 @@ cd falconfs
 ./build.sh clean falcon # only clean falconfs
 ./build.sh build falcon --debug # build falconfs with debug
 ```
-
 ## Publication
-FalconFS: Distributed File System for Large-Scale Deep Learning Pipeline. Jingwei Xu, Junbin Kang, Mingkai Dong, Mingyu Liu, Lu Zhang, Shaohong Guo, Ziyan Qiu, Mingzhen You, Ziyi Tian, Anqi Yu, Tianhong Ding, Xinwei Hu, and Haibo Chen. To appear in the 23rd USENIX Symposium on Networked Systems Design and Implementation, 2026
+**FalconFS: Distributed File System for Large-Scale Deep Learning Pipeline**. Jingwei Xu, Junbin Kang, Mingkai Dong, Mingyu Liu, Lu Zhang, Shaohong Guo, Ziyan Qiu, Mingzhen You, Ziyi Tian, Anqi Yu, Tianhong Ding, Xinwei Hu, and Haibo Chen. To appear in the 23rd USENIX Symposium on Networked Systems Design and Implementation (NSDI), 2026
+
 
 ## Copyright
 Copyright (c) 2025 Huawei Technologies Co., Ltd.
