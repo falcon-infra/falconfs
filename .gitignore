@@ -2,6 +2,10 @@
 .idea
 .vscode
 *.log
+*.a
+*.so
+*.egg-info
+__pycache__
 tmp/
 
 .cache

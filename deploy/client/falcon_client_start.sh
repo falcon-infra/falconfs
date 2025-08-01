@@ -4,11 +4,6 @@ set -euo pipefail
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 source "$DIR/falcon_client_config.sh"
 
-[ -d "${FALCONFS_HOME}/build" ] || {
-    echo "Error: Build directory not found" >&2
-    exit 1
-}
-
 # 检查是否已挂载
 if mount | grep -q "$MNT_PATH"; then
     echo "$MNT_PATH is already mounted"
@@ -27,8 +22,6 @@ for i in {0..100}; do
     mkdir -p "$CACHE_PATH/$i" 2>/dev/null || true
 done
 
-cd "${FALCONFS_HOME}/build" || exit 1
-
 CLIENT_OPTIONS=(
     "$MNT_PATH"
     -f
@@ -40,7 +33,7 @@ CLIENT_OPTIONS=(
     -socket_max_unwritten_bytes=268435456
 )
 
-nohup ./bin/falcon_client "${CLIENT_OPTIONS[@]}" >falcon_client.log 2>&1 &
+nohup falcon_client "${CLIENT_OPTIONS[@]}" >falcon_client.log 2>&1 &
 
 sleep 1
 if ! pgrep -f "falcon_client" >/dev/null; then

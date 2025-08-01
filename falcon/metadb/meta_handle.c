@@ -40,6 +40,12 @@ static StringInfo GetXattrShardName(int shardId);
 static StringInfo GetXattrIndexShardName(int shardId);
 
 static Oid GetRelationOidByName_FALCON(const char *relationName);
+enum ModeCheckType
+{
+    MODE_CHECK_NONE,
+    MODE_CHECK_MUST_BE_FILE,
+    MODE_CHECK_MUST_BE_DIRECTORY
+};
 static bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                           Relation workerInodeRelation,
                                           const char *workerInodeRelationIndexName,
@@ -55,6 +61,7 @@ static bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                           const int nlinkChangeNum,
                                           mode_t *mode,
                                           const mode_t *newExecMode,
+                                          int modeCheckType,
                                           uint32_t *newUid,
                                           uint32_t *newGid,
                                           const char *newEtag,
@@ -501,6 +508,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                                           0,
                                                           &info->st_mode,
                                                           NULL,
+                                                          MODE_CHECK_NONE,
                                                           NULL,
                                                           NULL,
                                                           NULL,
@@ -564,6 +572,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                                   0,
                                                   NULL,
                                                   NULL,
+                                                  MODE_CHECK_NONE,
                                                   NULL,
                                                   NULL,
                                                   info->etag,
@@ -772,6 +781,7 @@ void FalconOpenHandle(MetaProcessInfo *infoArray, int count)
                                                            0,
                                                            &info->st_mode,
                                                            NULL,
+                                                           MODE_CHECK_NONE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -882,6 +892,7 @@ void FalconCloseHandle(MetaProcessInfo *infoArray, int count)
                                                            0,
                                                            NULL,
                                                            NULL,
+                                                           MODE_CHECK_NONE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -950,7 +961,8 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
 
     HASH_SEQ_STATUS status;
     hash_seq_init(&status, batchMetaProcessInfoListPerShard);
-    while ((entry = hash_seq_search(&status)) != 0) {
+    while ((entry = hash_seq_search(&status)) != 0) 
+    {
         StringInfo inodeShardName = GetInodeShardName(entry->shardId);
         StringInfo inodeIndexShardName = GetInodeIndexShardName(entry->shardId);
 
@@ -977,6 +989,7 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
                                                            -1,
                                                            &mode,
                                                            NULL,
+                                                           MODE_CHECK_MUST_BE_FILE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -987,7 +1000,9 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
                                                            NULL);
             if (!fileExist)
                 info->errorCode = FILE_NOT_EXISTS;
-            else if (nlink != 1 || !S_ISREG(mode))
+            else if (!S_ISREG(mode))
+                info->errorCode = PATH_VERIFY_FAILED;
+            else if (nlink != 1)
                 info->errorCode = PROGRAM_ERROR;
             else
                 info->errorCode = SUCCESS;
@@ -1354,6 +1369,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    -1,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1362,13 +1378,13 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    NULL,
                                                    NULL,
                                                    NULL);
-    if (nlink != 1)
-        FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
     if (!fileExist)
         FALCON_ELOG_ERROR_EXTENDED(FILE_NOT_EXISTS,
                                    UINT64_PRINT_SYMBOL ":%s is not existed in inode_table.",
                                    parentId_partId,
                                    name);
+    if (nlink != 1)
+        FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
 
     info->errorCode = SUCCESS;
 }
@@ -1774,6 +1790,7 @@ void FalconUtimeNsHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1833,6 +1850,7 @@ void FalconChownHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    &info->st_uid,
                                                    &info->st_gid,
                                                    NULL,
@@ -1894,6 +1912,7 @@ void FalconChmodHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    &newExecMode,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1975,6 +1994,7 @@ static bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                           const int nlinkChangeNum,
                                           mode_t *mode,
                                           const mode_t *newExecMode,
+                                          int modeCheckType,
                                           uint32_t *newUid,
                                           uint32_t *newGid,
                                           const char *newEtag,
@@ -2023,8 +2043,21 @@ static bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
     Datum updateDatumArray[Natts_pg_dfs_inode_table];
     bool isNullArray[Natts_pg_dfs_inode_table];
     bool doUpdateArray[Natts_pg_dfs_inode_table];
-    memset(doUpdateArray, false, sizeof(doUpdateArray));
+    if (doUpdate)
+        memset(doUpdateArray, false, sizeof(doUpdateArray));
     bool isNull;
+    if (mode) {
+        *mode = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_st_mode, tupleDesc, &isNull));
+        if ((modeCheckType == MODE_CHECK_MUST_BE_FILE && !S_ISREG(*mode)) || 
+            (modeCheckType == MODE_CHECK_MUST_BE_DIRECTORY && !S_ISDIR(*mode))) {
+            systable_endscan(scanDescriptor);
+            if (!workerInodeRelation) {
+                table_close(workerInodeRel, doUpdate ? RowExclusiveLock : AccessShareLock);
+            }
+            // file exists, but is not the type expected
+            return true;
+        }
+    }
     if (inodeId) {
         *inodeId = DatumGetUInt64(heap_getattr(heapTuple, Anum_pg_dfs_file_st_ino, tupleDesc, &isNull));
     }
@@ -2060,9 +2093,6 @@ static bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                 needCatalogTupleUpdate = true;
             }
         }
-    }
-    if (mode) {
-        *mode = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_st_mode, tupleDesc, &isNull));
     }
     if (primaryNodeId) {
         *primaryNodeId = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_primary_nodeid, tupleDesc, &isNull));

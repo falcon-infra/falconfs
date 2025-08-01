@@ -20,7 +20,7 @@
 #include "connection.h"
 
 constexpr int START_FD = 3;
-constexpr int MAX_OPENINSTANCE_NUM = 4000;
+constexpr int MAX_OPENINSTANCE_NUM = 40000;
 
 struct DirOpenInstance
 {

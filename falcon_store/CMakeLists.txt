@@ -9,6 +9,7 @@ add_library(FalconStore STATIC
     ${BRPC_SRC}
     ${BRPC_HEADER}
 )
+set_target_properties(FalconStore PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_dependencies(FalconStore GeneratedFlatBuffers)
 
 target_include_directories(FalconStore PUBLIC
