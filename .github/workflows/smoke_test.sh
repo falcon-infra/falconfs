@@ -70,3 +70,6 @@ fio --directory=$1 --iodepth=32 --ioengine=libaio --direct=1 --unlink=1 --rw=ran
 fio --directory=$1 -iodepth=64 --ioengine=libaio --direct=1 --unlink=1 --rw=randread --bs=4k --size=1M --numjobs=4 --runtime=10 --group_reporting --name=test-rand-read
 # 2.2.6 随机读写
 fio --directory=$1 --iodepth=64 --ioengine=libaio --direct=1 --unlink=1 --rw=randrw --bs=4k --size=1M --numjobs=4 --runtime=10 --group_reporting --name=test-rand-readwrite
+
+# mdtest
+mdtest -n 1000 -d $1 -i 3 -u -N 1 -x $1/mdtest.out -r -t -T
