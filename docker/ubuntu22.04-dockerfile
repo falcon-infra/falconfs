@@ -1,4 +1,4 @@
-FROM ghcr.io/falcon-infra/dev:0.1.0
+FROM ghcr.io/falcon-infra/dev:v0.1.0
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
@@ -68,12 +68,19 @@ ARG OBS_INSTALL_PREFIX=/usr/local/obs
 RUN wget -O- "${OBS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
     cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
     cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
-    export SPDLOG_VERSION=spdlog-1.12.0 && bash build.sh sdk && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && \
+    # Detect architecture and use appropriate build script
+    if [ "$(uname -m)" = "aarch64" ]; then \
+        bash build_aarch.sh sdk; \
+    else \
+        bash build.sh sdk; \
+    fi && \
     mkdir -p "${OBS_INSTALL_PREFIX}" && \
     tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
-    rm ${OBS_INSTALL_PREFIX}/lib/libcurl.so* && \
+    # Cleanup
+    rm -f ${OBS_INSTALL_PREFIX}/lib/libcurl.so* && \
     rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
-    ln -s ${OBS_INSTALL_PREFIX}/lib/libiconv.so ${OBS_INSTALL_PREFIX}/lib/libiconv.so.0 && \
+    ln -sf ${OBS_INSTALL_PREFIX}/lib/libiconv.so ${OBS_INSTALL_PREFIX}/lib/libiconv.so.0 && \
     cat <<EOF >> ~/.zshrc
 export OBS_INSTALL_PREFIX=${OBS_INSTALL_PREFIX}
 export LD_LIBRARY_PATH=\$OBS_INSTALL_PREFIX/lib:\$LD_LIBRARY_PATH
