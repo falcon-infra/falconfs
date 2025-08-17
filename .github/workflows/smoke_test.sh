@@ -72,4 +72,4 @@ fio --directory=$1 -iodepth=64 --ioengine=libaio --direct=1 --unlink=1 --rw=rand
 fio --directory=$1 --iodepth=64 --ioengine=libaio --direct=1 --unlink=1 --rw=randrw --bs=4k --size=1M --numjobs=4 --runtime=10 --group_reporting --name=test-rand-readwrite
 
 # 3. mdtest
-mpirun -np 16 mdtest -n 5000 -C -T -r -d $1
+mpirun --oversubscribe -np 16 mdtest -n 5000 -C -T -r -d $1
