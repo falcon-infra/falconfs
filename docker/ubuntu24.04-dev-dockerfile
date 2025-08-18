@@ -1,4 +1,4 @@
-FROM ghcr.io/falcon-infra/dev:v0.1.0
+FROM ghcr.io/falcon-infra/dev:ubuntu24.04
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib

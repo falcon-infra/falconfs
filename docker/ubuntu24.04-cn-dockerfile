@@ -1,0 +1,118 @@
+FROM ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 AS builder
+
+# 系统基础设置
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        tzdata \
+        locales \
+        ca-certificates \
+        jq \
+        python3 \
+        python3-pip \
+        libreadline-dev \
+        liblz4-dev \
+        libzstd-dev \
+        libssl-dev \
+        libpq5 \
+        && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen en_US.UTF-8 && \
+    pip3 install --no-cache-dir --break-system-packages \
+        psycopg2==2.9.9 \
+        kazoo==2.8.0 \
+        requests==2.31.0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# 环境变量
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    FALCONFS_DIR=/root/code/falconfs
+
+# 创建工作目录
+WORKDIR ${FALCONFS_DIR}
+COPY . .
+
+# 构建FalconFS
+RUN ./patches/apply.sh && \
+    ./build.sh clean && \
+    ./build.sh build pg && ./build.sh install && \
+    ./build.sh build falcon --with-zk-init --with-prometheus
+
+# 准备运行时文件
+RUN mkdir -p /output/store/falconfs/{bin,lib} && \
+    mkdir -p /output/cn /output/dn && \
+    # 复制库文件
+    ./cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/store/falconfs/lib/ && \
+    ./cloud_native/docker_build/ldd_copy.sh -b ${FALCONFS_DIR}/build/bin/falcon_client -t /output/store/falconfs/lib/ && \
+    # 复制二进制文件
+    cp -f ${FALCONFS_DIR}/build/bin/falcon_client /output/store/falconfs/bin/ && \
+    # 复制metadb和falcon_cm
+    cp -rf /root/metadb /output/cn/ && \
+    cp -rf /root/metadb /output/dn/ && \
+    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/cn/ && \
+    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/dn/ && \
+    # 生成配置文件
+    cp -f ${FALCONFS_DIR}/config/config.json /output/store/ && \
+    jq '.main.falcon_log_dir = "/opt/log"' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_cache_root = "/opt/falcon"' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_mount_path = "/mnt/data"' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_log_reserved_num = 50' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_log_reserved_time = 168' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_stat_max = true' /output/store/config.json | sponge /output/store/config.json && \
+    jq '.main.falcon_use_prometheus = true' /output/store/config.json | sponge /output/store/config.json && \
+    # 设置权限
+    chmod -R 777 /output/cn/metadb && \
+    chmod -R 777 /output/cn/falcon_cm && \
+    chmod -R 777 /output/dn/metadb && \
+    chmod -R 777 /output/dn/falcon_cm && \
+    chmod -R 777 /output/store/falconfs
+
+# 运行时镜像
+FROM ubuntu:24.04
+
+# 系统基础设置
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libpq5 \
+        python3 \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# 创建目录结构
+RUN mkdir -p \
+    /opt/falcon/{bin,lib} \
+    /mnt/data \
+    /opt/log \
+    /opt/cn/{metadb,falcon_cm} \
+    /opt/dn/{metadb,falcon_cm}
+
+# 从构建阶段复制文件
+COPY --from=builder /output/store/falconfs/bin/ /opt/falcon/bin/
+COPY --from=builder /output/store/falconfs/lib/ /opt/falcon/lib/
+COPY --from=builder /output/store/config.json /opt/falcon/
+COPY --from=builder /output/cn/metadb/ /opt/cn/metadb/
+COPY --from=builder /output/cn/falcon_cm/ /opt/cn/falcon_cm/
+COPY --from=builder /output/dn/metadb/ /opt/dn/metadb/
+COPY --from=builder /output/dn/falcon_cm/ /opt/dn/falcon_cm/
+
+# 复制脚本文件
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/docker-entrypoint.sh /opt/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/start.sh /opt/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/stop.sh /opt/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/check_liveness.sh /opt/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/rm_logs.sh /opt/
+
+# 设置权限
+RUN chmod +x /opt/*.sh && \
+    chmod -R 777 /opt/cn /opt/dn /opt/falcon
+
+# 环境变量
+ENV LD_LIBRARY_PATH=/opt/falcon/lib \
+    PATH="/opt:${PATH}"
+
+WORKDIR /opt
+ENTRYPOINT ["/opt/docker-entrypoint.sh"]

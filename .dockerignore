@@ -1,0 +1,18 @@
+# 排除版本控制相关
+.git/
+.gitignore
+.gitmodules
+.gitattributes
+
+# 排除开发环境文件
+.vscode/
+
+# 排除构建产物
+build/
+*.log
+
+# 其他不需要的文件
+.cache
+compile_commands.json
+log/falcon.*
+stats.out

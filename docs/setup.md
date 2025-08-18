@@ -199,7 +199,7 @@ bash clean.sh
 
 no root check debug, suppose at the `~/code` dir
 ``` bash
-docker run --privileged -d -it --name falcon-dev -v `pwd`:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:v0.1.0
+docker run --privileged -d -it --name falcon-dev -v `pwd`:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04
 docker exec -it --detach-keys="ctrl-z,z" falcon-dev /bin/zsh
 git -C third_party/postgres apply ../../patches/no_root_check.patch
 ./build.sh clean
