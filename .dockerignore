@@ -1,9 +1,3 @@
-# 排除版本控制相关
-.git/
-.gitignore
-.gitmodules
-.gitattributes
-
 # 排除开发环境文件
 .vscode/
 

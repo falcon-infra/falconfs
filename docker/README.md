@@ -33,9 +33,11 @@ docker run -it --rm -v `pwd`/..:/root/code ghcr.io/falcon-infra/falconfs-dev /bi
 ## build and depoly cn
 
 ```bash
+cd ~/code/falconfs
 docker buildx build --platform linux/amd64,linux/arm64 \
     -t ghcr.io/falcon-infra/falconfs-cn:ubuntu24.04 \
     -t ghcr.io/falcon-infra/falconfs-cn:v0.2.0-ubuntu24.04 \
-    -f ubuntu24.04-cn-dockerfile \
-    . --push
+    -f docker/ubuntu24.04-cn-dockerfile \
+    . \
+    --push
 ```

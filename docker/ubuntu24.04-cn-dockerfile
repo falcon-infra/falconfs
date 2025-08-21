@@ -1,53 +1,32 @@
 FROM ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 AS builder
 
-# 系统基础设置
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        tzdata \
-        locales \
-        ca-certificates \
-        jq \
-        python3 \
-        python3-pip \
-        libreadline-dev \
-        liblz4-dev \
-        libzstd-dev \
-        libssl-dev \
-        libpq5 \
-        && \
-    echo "Asia/Shanghai" > /etc/timezone && \
-    ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
-    sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
-    locale-gen en_US.UTF-8 && \
-    pip3 install --no-cache-dir --break-system-packages \
-        psycopg2==2.9.9 \
-        kazoo==2.8.0 \
-        requests==2.31.0 && \
-    rm -rf /var/lib/apt/lists/*
-
 # 环境变量
 ENV TZ=Asia/Shanghai \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8 \
-    FALCONFS_DIR=/root/code/falconfs
+    FALCONFS_DIR=/root/code/falconfs \
+    LD_LIBRARY_PATH=/usr/local/obs/lib
 
 # 创建工作目录
+WORKDIR /root/code
+RUN mkdir -p falconfs
+COPY . ./falconfs/
 WORKDIR ${FALCONFS_DIR}
-COPY . .
 
 # 构建FalconFS
-RUN ./patches/apply.sh && \
-    ./build.sh clean && \
-    ./build.sh build pg && ./build.sh install && \
-    ./build.sh build falcon --with-zk-init --with-prometheus
+RUN ${FALCONFS_DIR}/patches/apply.sh && \
+    ${FALCONFS_DIR}/build.sh clean && \
+    ${FALCONFS_DIR}/build.sh build pg && ./build.sh install && \
+    ${FALCONFS_DIR}/build.sh build falcon --with-zk-init --with-prometheus
 
 # 准备运行时文件
+RUN apt install jq moreutils -y
 RUN mkdir -p /output/store/falconfs/{bin,lib} && \
     mkdir -p /output/cn /output/dn && \
     # 复制库文件
-    ./cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/store/falconfs/lib/ && \
-    ./cloud_native/docker_build/ldd_copy.sh -b ${FALCONFS_DIR}/build/bin/falcon_client -t /output/store/falconfs/lib/ && \
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/store/falconfs/lib/ && \
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b ${FALCONFS_DIR}/build/bin/falcon_client -t /output/store/falconfs/lib/ && \
     # 复制二进制文件
     cp -f ${FALCONFS_DIR}/build/bin/falcon_client /output/store/falconfs/bin/ && \
     # 复制metadb和falcon_cm
@@ -73,46 +52,50 @@ RUN mkdir -p /output/store/falconfs/{bin,lib} && \
 
 # 运行时镜像
 FROM ubuntu:24.04
+RUN apt update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt install -y locales && locale-gen en_US.UTF-8
 
-# 系统基础设置
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        libpq5 \
-        python3 \
-        && \
-    rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+RUN apt update && apt install -y gdb vim tar python3 python3-pip libreadline-dev liblz4-dev libzstd-dev libssl-dev
 
-# 创建目录结构
-RUN mkdir -p \
-    /opt/falcon/{bin,lib} \
-    /mnt/data \
-    /opt/log \
-    /opt/cn/{metadb,falcon_cm} \
-    /opt/dn/{metadb,falcon_cm}
+# 创建非root用户
+ARG USER_NAME=falconMeta
+RUN useradd -m -s /bin/bash $USER_NAME
+USER $USER_NAME
 
-# 从构建阶段复制文件
-COPY --from=builder /output/store/falconfs/bin/ /opt/falcon/bin/
-COPY --from=builder /output/store/falconfs/lib/ /opt/falcon/lib/
-COPY --from=builder /output/store/config.json /opt/falcon/
-COPY --from=builder /output/cn/metadb/ /opt/cn/metadb/
-COPY --from=builder /output/cn/falcon_cm/ /opt/cn/falcon_cm/
-COPY --from=builder /output/dn/metadb/ /opt/dn/metadb/
-COPY --from=builder /output/dn/falcon_cm/ /opt/dn/falcon_cm/
+# 复制文件到用户目录
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/metadb/ /home/falconMeta/metadb/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/falcon_cm/ /home/falconMeta/falcon_cm/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/store/falconfs/bin/falcon_client /home/falconMeta/metadb/bin/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/store/falconfs/lib/ /home/falconMeta/metadb/lib/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/store/config.json /home/falconMeta/
 
 # 复制脚本文件
-COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/docker-entrypoint.sh /opt/
-COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/start.sh /opt/
-COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/stop.sh /opt/
-COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/check_liveness.sh /opt/
-COPY --from=builder /root/code/falconfs/cloud_native/docker_build/cn/rm_logs.sh /opt/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/docker-entrypoint.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/start.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/stop.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/check_liveness.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/rm_logs.sh /home/falconMeta/
 
-# 设置权限
-RUN chmod +x /opt/*.sh && \
-    chmod -R 777 /opt/cn /opt/dn /opt/falcon
+# 创建必要的目录
+RUN mkdir -p /home/falconMeta/readiness/ /home/falconMeta/data/
 
 # 环境变量
-ENV LD_LIBRARY_PATH=/opt/falcon/lib \
-    PATH="/opt:${PATH}"
+ENV PATH=/home/falconMeta/metadb/bin/:$PATH
+ENV LD_LIBRARY_PATH=/home/falconMeta/metadb/lib/
+ENV TMOUT=0
 
-WORKDIR /opt
-ENTRYPOINT ["/opt/docker-entrypoint.sh"]
+# 安装Python依赖
+RUN pip3 install --break-system-packages psycopg2 && \
+    pip3 install --break-system-packages kazoo && \
+    pip3 install --break-system-packages requests
+
+# 设置脚本权限
+RUN chmod +x /home/falconMeta/docker-entrypoint.sh
+
+# 设置工作目录和入口点
+WORKDIR /home/falconMeta
+ENTRYPOINT ["/home/falconMeta/docker-entrypoint.sh"]
