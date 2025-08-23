@@ -30,13 +30,26 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 docker run -it --rm -v `pwd`/..:/root/code ghcr.io/falcon-infra/falconfs-dev /bin/zsh
 ```
 
-## build and depoly cn
+## build and depoly cn, dn, store
+
+### base builder
 
 ```bash
 cd ~/code/falconfs
 docker buildx build --platform linux/amd64,linux/arm64 \
+    -t ghcr.io/falcon-infra/falconfs-base-builder:ubuntu24.04 \
+    -t ghcr.io/falcon-infra/falconfs-base-builder:v0.2.1-ubuntu24.04 \
+    -f docker/ubuntu24.04-base-builder-dockerfile \
+    . \
+    --push
+```
+
+### cn
+```bash
+cd ~/code/falconfs
+docker buildx build --platform linux/amd64,linux/arm64 \
     -t ghcr.io/falcon-infra/falconfs-cn:ubuntu24.04 \
-    -t ghcr.io/falcon-infra/falconfs-cn:v0.2.0-ubuntu24.04 \
+    -t ghcr.io/falcon-infra/falconfs-cn:v0.2.1-ubuntu24.04 \
     -f docker/ubuntu24.04-cn-dockerfile \
     . \
     --push
