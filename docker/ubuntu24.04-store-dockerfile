@@ -9,7 +9,7 @@ ENV TZ=Asia/Shanghai \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8
-RUN apt-get install -y vim fuse gdb pstack
+RUN apt update && apt install -y vim fuse gdb
 
 RUN mkdir /opt/log && mkdir /opt/falcon/ && mkdir /opt/conf/ && mkdir /mnt/falcon/
 
