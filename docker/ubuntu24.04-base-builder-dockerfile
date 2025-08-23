@@ -1,5 +1,5 @@
 FROM ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 AS builder
-
+ARG FALCONFS_TAG=v0.1.0-alpha
 # 环境变量
 ENV TZ=Asia/Shanghai \
     LANG=en_US.UTF-8 \
@@ -8,16 +8,16 @@ ENV TZ=Asia/Shanghai \
     FALCONFS_DIR=/root/code/falconfs \
     LD_LIBRARY_PATH=/usr/local/obs/lib
 
-# 创建工作目录
-WORKDIR /root/code
-RUN mkdir -p falconfs
-COPY . ./falconfs/
-WORKDIR ${FALCONFS_DIR}
+# Clone and setup falconfs
+RUN git clone https://github.com/falcon-infra/falconfs.git ${FALCONFS_DIR} && \
+    cd ${FALCONFS_DIR} && \
+    git checkout ${FALCONFS_TAG} && \
+    git submodule update --init --recursive
 
 # 构建FalconFS
 RUN ${FALCONFS_DIR}/patches/apply.sh && \
     ${FALCONFS_DIR}/build.sh clean && \
-    ${FALCONFS_DIR}/build.sh build pg && ./build.sh install && \
+    ${FALCONFS_DIR}/build.sh build pg && ${FALCONFS_DIR}/build.sh install && \
     ${FALCONFS_DIR}/build.sh build falcon --with-zk-init --with-prometheus
 
 # 准备运行时文件

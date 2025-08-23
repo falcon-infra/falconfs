@@ -1,0 +1,29 @@
+FROM ghcr.io/falcon-infra/falconfs-base-builder:v0.1.0-alpha-ubuntu24.04 AS builder
+
+# 运行时镜像
+FROM ubuntu:24.04
+RUN apt update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt install -y locales && locale-gen en_US.UTF-8
+
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+RUN apt-get install -y vim fuse gdb pstack
+
+RUN mkdir /opt/log && mkdir /opt/falcon/ && mkdir /opt/conf/ && mkdir /mnt/falcon/
+
+
+COPY --from=builder /output/store/config.json /opt/conf/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/store/start.sh /root/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/store/stop.sh /root/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/store/check_liveness.sh /root/
+COPY --from=builder /root/code/falconfs/cloud_native/docker_build/store/docker-entrypoint.sh /root/
+COPY --from=builder /output/store/falconfs /root/falconfs
+RUN chmod a+x /root/docker-entrypoint.sh
+
+ENV LD_LIBRARY_PATH=/root/falconfs/lib/
+ENV CONFIG_FILE=/opt/conf/config.json
+
+EXPOSE 50039
+ENTRYPOINT ["/root/docker-entrypoint.sh"]

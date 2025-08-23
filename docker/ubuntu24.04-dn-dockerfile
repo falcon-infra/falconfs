@@ -17,15 +17,15 @@ RUN useradd -m -s /bin/bash $USER_NAME
 USER $USER_NAME
 
 # 复制文件到用户目录
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/metadb/ /home/falconMeta/metadb/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/falcon_cm/ /home/falconMeta/falcon_cm/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/dn/metadb/ /home/falconMeta/metadb/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/dn/falcon_cm/ /home/falconMeta/falcon_cm/
 
 # 复制脚本文件
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/docker-entrypoint.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/start.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/stop.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/check_liveness.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/rm_logs.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/docker-entrypoint.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/start.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/stop.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/check_liveness.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/rm_logs.sh /home/falconMeta/
 
 # 创建必要的目录
 RUN mkdir -p /home/falconMeta/readiness/ /home/falconMeta/data/
