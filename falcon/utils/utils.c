@@ -94,6 +94,7 @@ static void InitializeDirectoryTableScanCache(void);
 static void InitializeInodeTableScanCache(void);
 static void InitializeInodeTableIndexParentIdPartIdNameScanCache(void);
 static void InitializeXattrTableScanCache(void);
+static void InitializeKvmetaTableScanCache(void);
 
 static MemoryContext ScanCacheMemoryContext = NULL;
 
@@ -249,6 +250,18 @@ static void InitializeXattrTableScanCache(void)
     XattrTableScanKey[XATTR_TABLE_XKEY_EQ].sk_attno = Anum_falcon_xattr_table_xkey;
 }
 
+ScanKeyData KvmetaTableScanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+static void InitializeKvmetaTableScanCache(void)
+{
+    memset(KvmetaTableScanKey, 0, sizeof(KvmetaTableScanKey));
+
+    fmgr_info_cxt(F_TEXTEQ, &KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_func, ScanCacheMemoryContext);
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_strategy = BTEqualStrategyNumber;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_subtype = TEXTOID;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_attno = Anum_falcon_kvmeta_table_userkey;
+}
+
 /*
  * InitializeInvalidationCallbacks() registers invalidation handlers
  */
@@ -280,6 +293,7 @@ void SetUpScanCaches(void)
             InitializeInodeTableScanCache();
             InitializeInodeTableIndexParentIdPartIdNameScanCache();
             InitializeXattrTableScanCache();
+            InitializeKvmetaTableScanCache();
         }
         PG_CATCH();
         {

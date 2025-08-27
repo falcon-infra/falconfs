@@ -291,3 +291,14 @@ CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count i
     LANGUAGE C STRICT
     AS 'MODULE_PATHNAME', $$falcon_meta_call_by_serialized_data$$;
 COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count int, param bytea) IS 'falcon meta call by serialized data';
+
+
+----------------------------------------------------------------
+-- falcon_create_kvmeta_table
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_kvmeta_table()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_kvmeta_table$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_kvmeta_table()
+    IS 'falcon build kvmeta shard table';

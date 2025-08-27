@@ -23,6 +23,7 @@
 #include "metadb/inode_table.h"
 #include "metadb/shard_table.h"
 #include "metadb/xattr_table.h"
+#include "metadb/kvmeta_table.h"
 
 #define INT32_PRINT_SYMBOL "%d"
 #define UINT32_PRINT_SYMBOL "%u"
@@ -63,6 +64,7 @@ extern ScanKeyData InodeTableScanKey[LAST_FALCON_INODE_TABLE_SCANKEY_TYPE];
 extern ScanKeyData
     InodeTableIndexParentIdPartIdNameScanKey[LAST_FALCON_INODE_TABLE_INDEX_PARENT_ID_PART_ID_NAME_SCANKEY_TYPE];
 extern ScanKeyData XattrTableScanKey[LAST_FALCON_XATTR_TABLE_SCANKEY_TYPE];
+extern ScanKeyData KvmetaTableScanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
 
 bool ArrayTypeArrayToDatumArrayAndSize(ArrayType *arrayObject, Datum **datumArray, int *datumArrayLength);
 

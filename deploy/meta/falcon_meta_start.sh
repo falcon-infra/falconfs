@@ -135,6 +135,7 @@ if [[ "$cnIp" == "$localIp" ]]; then
 
         psql -d postgres -h "${server_ip_list[i]}" -p "${server_port_list[i]}" <<EOF
 select falcon_create_distributed_data_table();
+select falcon_create_kvmeta_table();
 select falcon_start_background_service();
 EOF
     done

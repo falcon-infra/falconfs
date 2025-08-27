@@ -1950,6 +1950,20 @@ static StringInfo __attribute__((unused)) GetXattrIndexShardName(int shardId)
     return xattrIndexShardName;
 }
 
+static StringInfo GetKvmetaShardName(int shardId)
+{
+    StringInfo kvmetaShardName = makeStringInfo();
+    appendStringInfo(kvmetaShardName, "%s_%d", KvmetaTableName, shardId);
+    return kvmetaShardName;
+}
+
+static StringInfo GetKvmetaIndexShardName(int shardId)
+{
+    StringInfo kvmetaIndexShardName = makeStringInfo();
+    appendStringInfo(kvmetaIndexShardName, "%s_%d_%s", KvmetaTableName, shardId, "index");
+    return kvmetaIndexShardName;
+}
+
 static Oid GetRelationOidByName_FALCON(const char *relationName)
 {
     Oid res = InvalidOid;
@@ -2187,4 +2201,179 @@ static bool InsertIntoInodeTable(Relation relation,
     heap_freetuple(heapTuple);
     CommandCounterIncrement();
     return true;
+}
+
+void FalconKvmetaPutHandle(Form_falcon_kvmeta_table info)
+{
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+    TupleDesc tupleDesc = RelationGetDescr(kvmetaRel);
+
+    Datum values[Natts_falcon_kvmeta_table];
+    bool isNulls[Natts_falcon_kvmeta_table];
+    memset(values, 0, sizeof(values));
+    memset(isNulls, false, sizeof(isNulls));
+
+    values[Anum_falcon_kvmeta_table_userkey - 1] = CStringGetTextDatum(info->userkey);
+    values[Anum_falcon_kvmeta_table_valuelen - 1] = UInt32GetDatum(info->valuelen);
+    values[Anum_falcon_kvmeta_table_slicenum - 1] = UInt16GetDatum(info->slicenum);
+
+    ArrayType *arr = NULL;
+    int size = info->slicenum;
+    Datum *dkeys = palloc(size * sizeof(Datum));
+
+    for (int i = 0; i < size; i ++) {
+        dkeys[i] = UInt64GetDatum(info->valuekey[i]);
+    }
+    arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+    values[Anum_falcon_kvmeta_table_valuekey - 1] = PointerGetDatum(arr);
+
+    for (int i = 0; i < size; i ++) {
+        dkeys[i] = UInt64GetDatum(info->location[i]);
+    }
+    arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+    values[Anum_falcon_kvmeta_table_location - 1] = PointerGetDatum(arr);
+
+    for (int i = 0; i < size; i ++) {
+        dkeys[i] = UInt32GetDatum(info->slicelen[i]);
+    }
+    arr = construct_array(dkeys, size, INT4OID, sizeof(uint32_t), true, 'i');
+    values[Anum_falcon_kvmeta_table_slicelen - 1] = PointerGetDatum(arr);
+
+    pfree(dkeys);
+
+    HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
+    CatalogTupleInsert(kvmetaRel, heapTuple);
+    heap_freetuple(heapTuple);
+
+    table_close(kvmetaRel, RowExclusiveLock);
+}
+
+void FalconKvmetaGetHandle(Form_falcon_kvmeta_table info)
+{
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    SetUpScanCaches();
+
+    ScanKeyData scanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+    scanKey[KVMETA_TABLE_USERKEY_EQ] = KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ];
+    scanKey[KVMETA_TABLE_USERKEY_EQ].sk_argument = CStringGetTextDatum(info->userkey);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    StringInfo kvmetaIndexShardName = GetKvmetaIndexShardName(shardId);
+
+    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), AccessShareLock);
+    SysScanDesc scanDesc = systable_beginscan(kvmetaRel,
+                                              GetRelationOidByName_FALCON(kvmetaIndexShardName->data),
+                                              true,
+                                              GetTransactionSnapshot(),
+                                              LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE,
+                                              scanKey);
+    TupleDesc tupleDesc = RelationGetDescr(kvmetaRel);
+    HeapTuple heapTuple = systable_getnext(scanDesc);
+    if (!HeapTupleIsValid(heapTuple)) {
+        systable_endscan(scanDesc);
+        table_close(kvmetaRel, AccessShareLock);
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "FalconKvmetaGetHandle has received invalid input.");
+    }
+
+    bool isNull;
+    ArrayType *arr = NULL;
+    info->valuelen = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_valuelen, tupleDesc, &isNull));
+    info->slicenum = DatumGetUInt16(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_slicenum, tupleDesc, &isNull));
+
+    int ndim;
+    int nitems;
+    int16 typlen;
+    bool typbyval;
+    char typalign;
+    int* dims = NULL;
+    Datum *array = NULL;
+
+    info->valuekey = (int64_t*)palloc(info->slicenum * sizeof(uint64_t));
+    info->location = (int64_t*)palloc(info->slicenum * sizeof(uint64_t));
+    info->slicelen = (int32_t*)palloc(info->slicenum * sizeof(uint32_t));
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_valuekey, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT8OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->valuekey[i] = DatumGetUInt64(array[i]);
+    }
+    pfree(array);
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_location, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT8OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->location[i] = DatumGetUInt64(array[i]);
+    }
+    pfree(array);
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_slicelen, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT4OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->slicelen[i] = DatumGetUInt32(array[i]);
+    }
+    pfree(array);
+
+    systable_endscan(scanDesc);
+    table_close(kvmetaRel, AccessShareLock);
+}
+
+void FalconKvmetaDelHandle(Form_falcon_kvmeta_table info)
+{
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    SetUpScanCaches();
+
+    ScanKeyData scanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+    scanKey[KVMETA_TABLE_USERKEY_EQ] = KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ];
+    scanKey[KVMETA_TABLE_USERKEY_EQ].sk_argument = CStringGetTextDatum(info->userkey);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    StringInfo kvmetaIndexShardName = GetKvmetaIndexShardName(shardId);
+
+    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+    SysScanDesc scanDesc = systable_beginscan(kvmetaRel,
+                                              GetRelationOidByName_FALCON(kvmetaIndexShardName->data),
+                                              true,
+                                              GetTransactionSnapshot(),
+                                              LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE,
+                                              scanKey);
+    HeapTuple heapTuple = systable_getnext(scanDesc);
+    if (!HeapTupleIsValid(heapTuple)) {
+        systable_endscan(scanDesc);
+        table_close(kvmetaRel, RowExclusiveLock);
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "FalconKvmetaDelHandle has received invalid input.");
+    }
+
+    CatalogTupleDelete(kvmetaRel, &heapTuple->t_self);
+
+    systable_endscan(scanDesc);
+    table_close(kvmetaRel, RowExclusiveLock);
 }
