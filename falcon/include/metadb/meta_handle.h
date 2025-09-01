@@ -34,6 +34,9 @@ typedef enum FalconSupportMetaService {
     UTIMENS,
     CHOWN,
     CHMOD,
+    PUT,
+    GET,
+    DELETE,
     NOT_SUPPORTED
 } FalconSupportMetaService;
 

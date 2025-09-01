@@ -25,6 +25,9 @@ enum MetaServiceType {
     UTIMENS = 17;
     CHOWN = 18;
     CHMOD = 19;
+    PUT = 20;
+    GET = 21;
+    DELETE = 22;
 }
 
 message MetaRequest {

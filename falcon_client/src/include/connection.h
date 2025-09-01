@@ -57,6 +57,21 @@ class ConnectionCache {
     ~ConnectionCache() { SerializedDataDestroy(&serializedDataBuffer); }
 };
 
+struct FormData_Slice
+{
+    uint64_t valueKey; // 全局的Key生成器
+    uint64_t location;
+    uint32_t size;
+};
+
+struct FormData_kv_index
+{
+    std::string key;  // input key
+    uint32_t valueLen;
+    uint16_t sliceNum;  // 2MB 拆分, number of slices
+    std::vector<FormData_Slice> dataSlices;
+};
+
 static thread_local ConnectionCache ThreadLocalConnectionCache;
 
 class Connection {
@@ -136,4 +151,7 @@ class Connection {
     FalconErrorCode UtimeNs(const char *path, int64_t atime = -1, int64_t mtime = -1, ConnectionCache *cache = nullptr);
     FalconErrorCode Chown(const char *path, uint32_t uid, uint32_t gid, ConnectionCache *cache = nullptr);
     FalconErrorCode Chmod(const char *path, uint32_t mode, ConnectionCache *cache = nullptr);
+    FalconErrorCode Put(FormData_kv_index &kv_index, ConnectionCache *cache = nullptr);
+    FalconErrorCode Get(FormData_kv_index &kv_index, ConnectionCache *cache = nullptr);
+    FalconErrorCode Delete(std::string &key, ConnectionCache *cache = nullptr);
 };

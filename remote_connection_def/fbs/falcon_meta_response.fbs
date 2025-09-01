@@ -85,6 +85,13 @@ table RenameSubRenameLocallyResponse {
     st_ctim: uint64;
     node_id: int32;
 }
+table GetKVMetaResponse {
+    value_len: uint32;
+    slice_num: uint16;
+    value_key: [uint64];
+    location: [uint64];
+    size: [uint32];
+}
 union AnyMetaResponse {
     PlainCommandResponse,
     CreateResponse,
@@ -93,7 +100,8 @@ union AnyMetaResponse {
     UnlinkResponse,
     ReadDirResponse,
     OpenDirResponse,
-    RenameSubRenameLocallyResponse
+    RenameSubRenameLocallyResponse,
+    GetKVMetaResponse
 }
 table MetaResponse {
     error_code: uint32;

@@ -2203,7 +2203,7 @@ static bool InsertIntoInodeTable(Relation relation,
     return true;
 }
 
-void FalconKvmetaPutHandle(Form_falcon_kvmeta_table info)
+void FalconKvmetaPutHandle(KvMetaProcessInfo info)
 {
     int shardId, workerId;
     uint16_t partId = HashPartId(info->userkey);
@@ -2255,7 +2255,7 @@ void FalconKvmetaPutHandle(Form_falcon_kvmeta_table info)
     table_close(kvmetaRel, RowExclusiveLock);
 }
 
-void FalconKvmetaGetHandle(Form_falcon_kvmeta_table info)
+void FalconKvmetaGetHandle(KvMetaProcessInfo info)
 {
     int shardId, workerId;
     uint16_t partId = HashPartId(info->userkey);
@@ -2341,7 +2341,7 @@ void FalconKvmetaGetHandle(Form_falcon_kvmeta_table info)
     table_close(kvmetaRel, AccessShareLock);
 }
 
-void FalconKvmetaDelHandle(Form_falcon_kvmeta_table info)
+void FalconKvmetaDelHandle(KvMetaProcessInfo info)
 {
     int shardId, workerId;
     uint16_t partId = HashPartId(info->userkey);

@@ -53,6 +53,12 @@ FalconSupportMetaService MetaServiceTypeDecode(int32_t type)
         return FalconSupportMetaService::CHOWN;
     case falcon::meta_proto::MetaServiceType::CHMOD:
         return FalconSupportMetaService::CHMOD;
+    case falcon::meta_proto::MetaServiceType::PUT:
+        return FalconSupportMetaService::PUT;
+    case falcon::meta_proto::MetaServiceType::GET:
+        return FalconSupportMetaService::GET;
+    case falcon::meta_proto::MetaServiceType::DELETE:
+        return FalconSupportMetaService::DELETE;
     default:
         return FalconSupportMetaService::NOT_SUPPORTED;
     }
@@ -99,6 +105,12 @@ int32_t MetaServiceTypeEncode(FalconSupportMetaService metaService)
         return falcon::meta_proto::MetaServiceType::CHOWN;
     case FalconSupportMetaService::CHMOD:
         return falcon::meta_proto::MetaServiceType::CHMOD;
+    case FalconSupportMetaService::PUT:
+        return falcon::meta_proto::MetaServiceType::PUT;
+    case FalconSupportMetaService::GET:
+        return falcon::meta_proto::MetaServiceType::GET;
+    case FalconSupportMetaService::DELETE:
+        return falcon::meta_proto::MetaServiceType::DELETE;
     default:
         return -1;
     }
@@ -303,6 +315,56 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
 
         p += size;
+    }
+    return true;
+}
+
+bool SerializedKvDataMetaParamDecode(FalconSupportMetaService metaService, SerializedData *param,
+    KvMetaProcessInfo infoData)
+{
+    uint8_t *buffer = (uint8_t *)param->buffer;
+    sd_size_t size = SerializedDataNextSeveralItemSize(param, 0, 1);
+    if (size == (sd_size_t)-1) {
+        printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+        return false;
+    }
+    uint8_t *itemBuffer = (uint8_t *)buffer + SERIALIZED_DATA_ALIGNMENT;
+    size_t itemSize = size - SERIALIZED_DATA_ALIGNMENT;
+    flatbuffers::Verifier verifier(itemBuffer, itemSize);
+    if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>(NULL)) {
+        printf("[debug] itemSize = %lu, serialized kv param is corrupt: %s:%d\n", itemSize, __FILE__, __LINE__);
+        return false;
+    }
+    auto metaParam = falcon::meta_fbs::GetMetaParam(itemBuffer);
+    switch (metaService) {
+        case FalconSupportMetaService::PUT: {
+            if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_KVParam) {
+                printf("[debug] serialized kv param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                return false;
+            }
+            auto kvParam = metaParam->param_as_KVParam();
+            infoData->userkey = kvParam->key()->c_str();
+            infoData->valuelen = kvParam->value_len();
+            infoData->slicenum = kvParam->slice_num();
+            // vector
+            infoData->valuekey = const_cast<uint64_t*>(kvParam->value_key()->data());
+            infoData->location = const_cast<uint64_t*>(kvParam->location()->data());
+            infoData->slicelen = const_cast<uint32_t*>(kvParam->size()->data());
+            break;
+        }
+        case FalconSupportMetaService::GET:
+        case FalconSupportMetaService::DELETE: {
+            // key only param
+            if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_KeyOnlyParam) {
+                printf("[debug] serialized kv param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                return false;
+            }
+            infoData->userkey = metaParam->param_as_KeyOnlyParam()->key()->c_str();
+            break;
+        }
+        default:
+            printf("[debug] serialized kv param is corrupt: %s:%d\n", __FILE__, __LINE__);
+            return false;
     }
     return true;
 }
@@ -652,10 +714,63 @@ static bool SerializedDataMetaResponseEncode(FalconSupportMetaService metaServic
     return true;
 }
 
+static bool SerializedDataMetaResponseEncodeForKV(FalconSupportMetaService metaService,
+                                                  KvMetaProcessInfo infoData,
+                                                  flatbuffers::FlatBufferBuilder &builder,
+                                                  SerializedData *response)
+{
+    builder.Clear();
+    flatbuffers::Offset<falcon::meta_fbs::MetaResponse> metaResponse;
+    if (infoData->errorCode != SUCCESS && infoData->errorCode != FILE_EXISTS) {
+        metaResponse = falcon::meta_fbs::CreateMetaResponse(builder, infoData->errorCode);
+    } else {
+        switch (metaService) {
+        case FalconSupportMetaService::PUT:
+        case FalconSupportMetaService::DELETE: {
+            // error code only response
+            metaResponse = falcon::meta_fbs::CreateMetaResponse(builder, infoData->errorCode);
+            break;
+        }
+        case FalconSupportMetaService::GET: {
+            auto valueKeyFB = builder.CreateVector(infoData->valuekey, infoData->slicenum);
+            auto locationFB = builder.CreateVector(infoData->location, infoData->slicenum);
+            auto slicelenFB = builder.CreateVector(infoData->slicelen, infoData->slicenum);
+            auto getkvmetaReponse = falcon::meta_fbs::CreateGetKVMetaResponse(builder,
+                                                                              infoData->valuelen,
+                                                                              infoData->slicenum,
+                                                                              valueKeyFB,
+                                                                              locationFB,
+                                                                              slicelenFB);
+           metaResponse = falcon::meta_fbs::CreateMetaResponse(builder,
+                                                               infoData->errorCode,
+                                                               falcon::meta_fbs::AnyMetaResponse_GetKVMetaResponse,
+                                                               getkvmetaReponse.Union());
+            break;
+        }
+        default:
+            return false;
+        }
+    }
+    builder.Finish(metaResponse);
+
+    char *buffer = SerializedDataApplyForSegment(response, builder.GetSize());
+    memcpy(buffer, builder.GetBufferPointer(), builder.GetSize());
+    return true;
+}
+
 bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
                                                                      int count,
                                                                      MetaProcessInfoData *infoArray,
                                                                      SerializedData *response)
 {
     return SerializedDataMetaResponseEncode(metaService, count, infoArray, FlatBufferBuilderPerProcess, response);
+}
+
+bool SerializedKvDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+                                                                          KvMetaProcessInfo infoData,
+                                                                          SerializedData *response)
+
+
+{
+    return SerializedDataMetaResponseEncodeForKV(metaService, infoData, FlatBufferBuilderPerProcess, response);
 }

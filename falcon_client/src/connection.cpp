@@ -48,6 +48,11 @@ inline falcon::meta_fbs::AnyMetaParam ToFlatBuffersType(falcon::meta_proto::Meta
         return falcon::meta_fbs::AnyMetaParam_ChownParam;
     case falcon::meta_proto::CHMOD:
         return falcon::meta_fbs::AnyMetaParam_ChmodParam;
+    case falcon::meta_proto::PUT:
+        return falcon::meta_fbs::AnyMetaParam_KVParam;
+    case falcon::meta_proto::GET:
+    case falcon::meta_proto::DELETE:
+        return falcon::meta_fbs::AnyMetaParam_KeyOnlyParam;
     default:
         throw std::runtime_error("Unknown service type");
     }
@@ -454,4 +459,73 @@ FalconErrorCode Connection::Chmod(const char *path, uint32_t mode, ConnectionCac
     };
 
     return ProcessRequest(falcon::meta_proto::CHMOD, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::Put(FormData_kv_index &kv_index, ConnectionCache *cache)
+{
+    auto paramBuilder = [kv_index](flatbuffers::FlatBufferBuilder &builder) {
+        std::vector<uint64_t> valueKeys;
+        std::vector<uint64_t> locations;
+        std::vector<uint32_t> sizes;
+        for(auto& item : kv_index.dataSlices) {
+            valueKeys.push_back(item.valueKey);
+            locations.push_back(item.location);
+            sizes.push_back(item.size);
+        }
+        const char *keyFB = kv_index.key.c_str();
+        return falcon::meta_fbs::CreateKVParamDirect(builder, keyFB, kv_index.valueLen,
+            kv_index.sliceNum, &valueKeys, &locations, &sizes);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        if (metaResponse->error_code() < LAST_FALCON_ERROR_CODE) {
+            return static_cast<FalconErrorCode>(metaResponse->error_code());
+        }
+        return PROGRAM_ERROR;
+    };
+    return ProcessRequest(falcon::meta_proto::PUT, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::Get(FormData_kv_index &kv_index, ConnectionCache *cache)
+{
+    auto paramBuilder = [kv_index](flatbuffers::FlatBufferBuilder &builder) {
+        const char *keyFB = kv_index.key.c_str();
+        return falcon::meta_fbs::CreateKeyOnlyParamDirect(builder, keyFB);
+    };
+
+    auto responseHandler = [&kv_index](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        if (metaResponse->response_type() != falcon::meta_fbs::AnyMetaResponse::AnyMetaResponse_GetKVMetaResponse) {
+            return PROGRAM_ERROR;
+        }
+
+        auto kvMetaResponse = metaResponse->response_as_GetKVMetaResponse();
+        kv_index.valueLen = kvMetaResponse->value_len();
+        kv_index.sliceNum = kvMetaResponse->slice_num();
+        for(uint32_t i = 0; i < kv_index.sliceNum; i++) {
+            FormData_Slice dataSlice;
+            dataSlice.valueKey = kvMetaResponse->value_key()->Get(i),
+            dataSlice.location = kvMetaResponse->location()->Get(i),
+            dataSlice.size = kvMetaResponse->size()->Get(i);
+            kv_index.dataSlices.emplace_back(dataSlice);
+        }
+        return (FalconErrorCode)metaResponse->error_code();
+        
+    };
+    return ProcessRequest(falcon::meta_proto::GET, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::Delete(std::string &key, ConnectionCache *cache)
+{
+    auto paramBuilder = [key](flatbuffers::FlatBufferBuilder &builder) {
+        const char *keyFB = key.c_str();
+        return falcon::meta_fbs::CreateKeyOnlyParamDirect(builder, keyFB);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        if (metaResponse->error_code() < LAST_FALCON_ERROR_CODE) {
+            return static_cast<FalconErrorCode>(metaResponse->error_code());
+        }
+        return PROGRAM_ERROR;
+    };
+    return ProcessRequest(falcon::meta_proto::DELETE, paramBuilder, responseHandler, cache);
 }

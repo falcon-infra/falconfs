@@ -87,6 +87,17 @@ table ChmodParam {
     path: string;
     st_mode: uint64;
 }
+table KeyOnlyParam {
+    key: string;
+}
+table KVParam {
+    key: string;
+    value_len: uint32;
+    slice_num: uint16;
+    value_key: [uint64];
+    location: [uint64];
+    size: [uint32];
+}
 union AnyMetaParam {
     PlainCommandParam,
     PathOnlyParam,
@@ -101,7 +112,9 @@ union AnyMetaParam {
     RenameSubCreateParam,
     UtimeNsParam,
     ChownParam,
-    ChmodParam
+    ChmodParam,
+    KVParam,
+    KeyOnlyParam,
 }
 table MetaParam {
     param: AnyMetaParam;

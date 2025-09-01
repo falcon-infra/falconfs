@@ -37,6 +37,13 @@ bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSuppo
                                                                      MetaProcessInfoData *infoArray,
                                                                      SerializedData *response);
 
+bool SerializedKvDataMetaParamDecode(FalconSupportMetaService metaService, SerializedData *param,
+                                        KvMetaProcessInfo infoData);
+
+bool SerializedKvDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+                                                                          KvMetaProcessInfo infoData,
+                                                                          SerializedData *response);
+
 #ifdef __cplusplus
 }
 #endif

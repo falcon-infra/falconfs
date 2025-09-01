@@ -61,6 +61,19 @@ typedef struct MetaProcessInfoData
 } MetaProcessInfoData;
 typedef MetaProcessInfoData *MetaProcessInfo;
 
+typedef struct KvMetaProcessInfoData
+{
+    const char *userkey;
+    uint32_t valuelen;
+    uint16_t slicenum;
+    uint64_t *valuekey;
+    uint64_t *location;
+    uint32_t *slicelen;
+    FalconErrorCode errorCode;
+} KvMetaProcessInfoData;
+
+typedef KvMetaProcessInfoData *KvMetaProcessInfo;
+
 int pg_qsort_meta_process_info_by_path_cmp(const void *a, const void *b);
 
 #endif

@@ -7,19 +7,7 @@
 
 #include "metadb/metadata.h"
 #include "utils/error_code.h"
-
-typedef struct FormData_falcon_kvmeta_table
-{
-    const char *userkey;
-    uint32_t valuelen;
-    uint16_t slicenum;
-    uint64_t *valuekey;
-    uint64_t *location;
-    uint32_t *slicelen;
-    FalconErrorCode errorCode;
-} FormData_falcon_kvmeta_table;
-
-typedef FormData_falcon_kvmeta_table *Form_falcon_kvmeta_table;
+#include "meta_process_info.h"
 
 #define Natts_falcon_kvmeta_table 6
 #define Anum_falcon_kvmeta_table_userkey 1
@@ -38,8 +26,8 @@ extern const char *KvmetaTableName;
 
 void ConstructCreateKvmetaTableCommand(StringInfo command, const char *name);
 
-void FalconKvmetaPutHandle(Form_falcon_kvmeta_table info);
-void FalconKvmetaGetHandle(Form_falcon_kvmeta_table info);
-void FalconKvmetaDelHandle(Form_falcon_kvmeta_table info);
+void FalconKvmetaPutHandle(KvMetaProcessInfo info);
+void FalconKvmetaGetHandle(KvMetaProcessInfo info);
+void FalconKvmetaDelHandle(KvMetaProcessInfo info);
 
 #endif

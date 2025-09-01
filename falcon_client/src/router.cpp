@@ -107,6 +107,28 @@ std::shared_ptr<Connection> Router::GetWorkerConnByPath(std::string_view path)
     throw std::runtime_error("no such server.");
 }
 
+std::shared_ptr<Connection> Router::GetWorkerConnByKey(std::string_view key)
+{
+    if (key.empty()) {
+        return nullptr;
+    }
+
+    // Find shard
+    std::shared_lock<std::shared_mutex> lock(mapMtx);
+    uint16_t partId = HashPartId(key.data());
+    auto shardIt = shardTable.lower_bound(HashInt8(partId));
+    if (shardIt == shardTable.end()) {
+        throw std::runtime_error("shard table is corrupt.");
+    }
+
+    // Return connection
+    if (auto connIt = routeMap.find(shardIt->second); connIt != routeMap.end()) {
+        return connIt->second;
+    }
+
+    throw std::runtime_error("no such server.");
+}
+
 int Router::GetAllWorkerConnection(std::unordered_map<std::string, std::shared_ptr<Connection>> &workerInfo)
 {
     std::shared_lock<std::shared_mutex> lock(mapMtx);

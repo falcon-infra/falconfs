@@ -52,6 +52,8 @@ class Router {
 
     std::shared_ptr<Connection> GetWorkerConnByPath(std::string_view path);
 
+    std::shared_ptr<Connection> GetWorkerConnByKey(std::string_view key);
+
     int GetAllWorkerConnection(std::unordered_map<std::string, std::shared_ptr<Connection>> &workerInfo);
 
     std::shared_ptr<Connection> TryToUpdateCNConn(std::shared_ptr<Connection> conn);
