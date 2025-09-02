@@ -3,11 +3,16 @@
 set -euo pipefail
 
 BUILD_TYPE="Release"
-BUILD_TEST=true
+BUILD_TEST=false
 WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
 WITH_RDMA=false
 WITH_PROMETHEUS=false
+
+FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
+export FALCONFS_INSTALL_DIR=$FALCONFS_INSTALL_DIR
+export PATH=$FALCONFS_INSTALL_DIR/bin:$FALCONFS_INSTALL_DIR/python/bin:${PATH:-}
+export LD_LIBRARY_PATH=$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib:$FALCONFS_INSTALL_DIR/python/lib:${LD_LIBRARY_PATH:-}
 
 # Default command is build
 COMMAND=${1:-build}
@@ -20,8 +25,10 @@ export CONFIG_FILE="$FALCONFS_DIR/config/config.json"
 # Set build directory
 BUILD_DIR="${BUILD_DIR:-$FALCONFS_DIR/build}"
 
-# Set default PostgreSQL install directory
-PG_INSTALL_DIR="${PG_INSTALL_DIR:-$HOME/metadb}"
+# Set default install directory
+PG_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_metadb"
+FALCON_CLIENT_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_client"
+PYTHON_SDK_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_python_interface"
 
 gen_proto() {
     mkdir -p "$BUILD_DIR"
@@ -55,7 +62,8 @@ build_pg() {
     fi
 
     # 生成配置并构建
-    ./configure --prefix=${PG_INSTALL_DIR} "${CONFIGURE_OPTS[@]}" &&
+    ./configure --prefix=${PG_INSTALL_DIR} "${CONFIGURE_OPTS[@]}" \
+        --enable-rpath LDFLAGS="-Wl,-rpath,$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib" &&
         make -j$(nproc) &&
         cd "$POSTGRES_SRC_DIR/contrib" && make -j
     echo "PostgreSQL build complete."
@@ -76,6 +84,7 @@ build_falconfs() {
     gen_proto
     echo "Building FalconFS (mode: $BUILD_TYPE)..."
     cmake -B "$BUILD_DIR" -GNinja "$FALCONFS_DIR" \
+        -DCMAKE_INSTALL_PREFIX=$FALCON_CLIENT_INSTALL_DIR \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
         -DPOSTGRES_SRC_DIR="$POSTGRES_SRC_DIR" \
@@ -106,7 +115,31 @@ install_pg() {
     cd "$POSTGRES_SRC_DIR" &&
         make install
     cd "$POSTGRES_SRC_DIR/contrib" && make install
+    bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $PG_INSTALL_DIR $FALCONFS_INSTALL_DIR
     echo "PostgreSQL installed to $PG_INSTALL_DIR"
+}
+
+install_falcon_client() {
+    echo "Installing FalconFS client to $FALCON_CLIENT_INSTALL_DIR..."
+    cd "$BUILD_DIR" && ninja install
+    bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $FALCON_CLIENT_INSTALL_DIR $FALCONFS_INSTALL_DIR
+    echo "FalconFS client installed to $FALCON_CLIENT_INSTALL_DIR"
+}
+
+install_falcon_python_sdk() {
+    echo "Installing FalconFS python sdk to $PYTHON_SDK_INSTALL_DIR..."
+    rm -rf "$PYTHON_SDK_INSTALL_DIR"
+    cp -r "$FALCONFS_DIR/python_interface" "$PYTHON_SDK_INSTALL_DIR"
+    echo "FalconFS python sdk installed to $PYTHON_SDK_INSTALL_DIR"
+}
+
+install_deploy_scripts() {
+    echo "Installing deploy scripts to $FALCONFS_INSTALL_DIR..."
+    rm -rf "$FALCONFS_INSTALL_DIR/deploy"
+    rm -rf "$FALCONFS_INSTALL_DIR/config"
+    rsync -av --exclude='tmp' "$FALCONFS_DIR/deploy" "$FALCONFS_INSTALL_DIR"
+    rsync -av --exclude='tmp' "$FALCONFS_DIR/config" "$FALCONFS_INSTALL_DIR"
+    echo "deploy scripts installed to $FALCONFS_INSTALL_DIR"
 }
 
 clean_dist() {
@@ -337,6 +370,9 @@ test)
     ;;
 install)
     install_pg
+    install_falcon_client
+    install_falcon_python_sdk
+    install_deploy_scripts
     ;;
 *)
     print_help "build"
