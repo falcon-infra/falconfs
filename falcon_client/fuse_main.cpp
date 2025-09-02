@@ -29,6 +29,10 @@
 #include "prometheus/prometheus.h"
 #endif
 
+#include "log/logging.h"
+#include "kv_meta.h"
+#include "hcom/kv_dlopen_init.h"
+
 static bool g_persist = false;
 
 int DoGetAttr(const char *path, struct stat *stbuf)
@@ -565,6 +569,23 @@ int main(int argc, char *argv[])
 #endif
 
     std::println("{}", ret);
+
+    /* ------------kv cache---------------- */
+
+    std::string hcomLibPath = "/home/wxt/libhcom.so";
+    ret = InitKvHcomIpcDl(hcomLibPath, hcomLibPath.size());
+    if (ret != FALCON_SUCCESS) {
+        std::println(stderr, "Falcon kv ipc init failed");
+        return ret;
+    }
+
+    ret = FalconKvShmAndIpcServiceInit();
+    if (ret != FALCON_SUCCESS) {
+        std::println(stderr, "Falcon kv shard file init failed");
+        return ret;
+    }
+
+    /* ------------kv cache---------------- */
     ret = fuse_main(args.argc, args.argv, &falconOperations, nullptr);
     fuse_opt_free_args(&args);
     return ret;
