@@ -98,6 +98,23 @@ table KVParam {
     location: [uint64];
     size: [uint32];
 }
+table SliceInfoParam {
+    filename: string;
+    slicenum: uint32;
+    inodeid: [uint64];
+    chunkid: [uint32];
+    sliceid: [uint64];
+    slicesize: [uint32];
+    sliceoffset: [uint32];
+    slicelen: [uint32];
+    sliceloc1: [uint32];
+    sliceloc2: [uint32];
+}
+table SliceIndexParam {
+    filename: string;
+    inodeid: uint64;
+    chunkid: uint32;
+}
 union AnyMetaParam {
     PlainCommandParam,
     PathOnlyParam,
@@ -115,6 +132,8 @@ union AnyMetaParam {
     ChmodParam,
     KVParam,
     KeyOnlyParam,
+    SliceInfoParam,
+    SliceIndexParam
 }
 table MetaParam {
     param: AnyMetaParam;

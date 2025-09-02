@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 
 #include <brpc/channel.h>
-
+#include "falcon_slice_meta.h"
 #include "falcon_meta_response_generated.h"
 #include "falcon_meta_rpc.pb.h"
 #include "remote_connection_utils/error_code_def.h"
@@ -154,4 +154,7 @@ class Connection {
     FalconErrorCode Put(FormData_kv_index &kv_index, ConnectionCache *cache = nullptr);
     FalconErrorCode Get(FormData_kv_index &kv_index, ConnectionCache *cache = nullptr);
     FalconErrorCode Delete(std::string &key, ConnectionCache *cache = nullptr);
+    FalconErrorCode SlicePut(const char *filename, std::vector<SliceInfo> &info, ConnectionCache *cache = nullptr);
+    FalconErrorCode SliceGet(const char *filename, uint64_t inodeId, uint32_t chunkId, std::vector<SliceInfo> &info, ConnectionCache *cache = nullptr);
+    FalconErrorCode SliceDel(const char *filename, uint64_t inodeId, uint32_t chunkId, ConnectionCache *cache = nullptr);
 };

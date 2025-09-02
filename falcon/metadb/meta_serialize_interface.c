@@ -12,12 +12,11 @@
 #include "connection_pool/connection_pool.h"
 #include "metadb/meta_serialize_interface_helper.h"
 #include "utils/error_log.h"
-#include "metadb/kvmeta_table.h"
 
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_shmem_internal);
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_data);
 
-static SerializedData MetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
+static SerializedData FileMetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
 {
     if (count != 1 && !(metaService == MKDIR || metaService == MKDIR_SUB_MKDIR || metaService == MKDIR_SUB_CREATE ||
                         metaService == CREATE || metaService == STAT || metaService == OPEN || metaService == CLOSE ||
@@ -107,11 +106,6 @@ static SerializedData MetaProcess(FalconSupportMetaService metaService, int coun
     return response;
 }
 
-bool IsKVMetaService(FalconSupportMetaService metaService)
-{
-    return (metaService == PUT || metaService == GET || metaService == DELETE);
-}
-
 static SerializedData KVMetaProcess(FalconSupportMetaService metaService, char *paramBuffer)
 {
     SerializedData param;
@@ -120,29 +114,87 @@ static SerializedData KVMetaProcess(FalconSupportMetaService metaService, char *
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "SerializedDataInit failed.");
     
     KvMetaProcessInfoData infoData = {0};
-    if (!SerializedKvDataMetaParamDecode(metaService, &param, &infoData))
+    if (!SerializedKvMetaParamDecode(metaService, &param, &infoData))
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "serialized param is corrupt.");
 
     switch (metaService) {
-    case PUT:
-        FalconKvmetaPutHandle(&infoData);
-        break;
-    case GET:
-        FalconKvmetaGetHandle(&infoData);
-        break;
-    case DELETE:
-        FalconKvmetaDelHandle(&infoData);
-        break;
-    default:
-        FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "unexpected metaService: %d", metaService);
+        case KV_PUT:
+            FalconKvmetaPutHandle(&infoData);
+            break;
+        case KV_GET:
+            FalconKvmetaGetHandle(&infoData);
+            break;
+        case KV_DEL:
+            FalconKvmetaDelHandle(&infoData);
+            break;
+        default:
+            FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "unexpected metaService: %d", metaService);
     }
 
     SerializedData response;
     SerializedDataInit(&response, NULL, 0, 0, &PgMemoryManager);
-    if (!SerializedKvDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(metaService, &infoData, &response))
+    if (!SerializedKvMetaResponseEncodeWithPerProcessFlatBufferBuilder(metaService, &infoData, &response))
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "failed when serializing response.");
 
     return response;
+}
+
+static SerializedData SliceMetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
+{
+    SerializedData param;
+
+    if (!SerializedDataInit(&param, paramBuffer, SD_SIZE_T_MAX, SD_SIZE_T_MAX, NULL))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "SerializedDataInit failed.");
+
+    void *data = palloc((sizeof(SliceProcessInfoData) + sizeof(SliceProcessInfo)) * count);
+    SliceProcessInfoData *infoDataArray = data;
+    SliceProcessInfo *infoArray = (SliceProcessInfo *)(infoDataArray + count);
+    if (!SerializedSliceParamDecode(metaService, count, &param, infoDataArray))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "serialized param is corrupt.");
+
+    for (int i = 0; i < count; i++) {
+        infoArray[i] = infoDataArray + i;
+    }
+
+    switch (metaService) {
+        case SLICE_PUT:
+            FalconSlicePutHandle(infoArray, count);
+            break;
+        case SLICE_GET:
+            FalconSliceGetHandle(infoArray, count);
+            break;
+        case SLICE_DEL:
+            FalconSliceDelHandle(infoArray, count);
+            break;
+        default:
+            FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "unexpected metaService: %d", metaService);
+    }
+
+    SerializedData response;
+    SerializedDataInit(&response, NULL, 0, 0, &PgMemoryManager);
+    if (!SerializedSliceResponseEncodeWithPerProcessFlatBufferBuilder(metaService, count, infoDataArray, &response))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "failed when serializing response.");
+
+    return response;
+}
+
+static SerializedData MetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
+{
+    if (metaService >= PLAIN_COMMAND && metaService <= CHMOD) {
+        return FileMetaProcess(metaService, count, paramBuffer);
+    }
+
+    if (metaService >= KV_PUT && metaService <= KV_DEL) {
+        return KVMetaProcess(metaService, paramBuffer);
+    }
+
+    if (metaService >= SLICE_PUT && metaService <= SLICE_DEL) {
+        return SliceMetaProcess(metaService, count, paramBuffer);
+    }
+
+    FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "metaService %d doesn't support operation.", metaService);
+    SerializedData param;
+    return param;
 }
 
 Datum falcon_meta_call_by_serialized_shmem_internal(PG_FUNCTION_ARGS)
@@ -159,12 +211,8 @@ Datum falcon_meta_call_by_serialized_shmem_internal(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
 
-    SerializedData response;
-    if (IsKVMetaService(metaService)) {
-        response = KVMetaProcess(metaService, paramBuffer);
-    } else {
-        response = MetaProcess(metaService, count, paramBuffer);
-    }
+    SerializedData response = MetaProcess(metaService, count, paramBuffer);
+
     uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response.size);
     if (responseShmemShift == 0)
         FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocMalloc failed. Size: %u.", response.size);

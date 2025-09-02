@@ -294,6 +294,17 @@ COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, cou
 
 
 ----------------------------------------------------------------
+-- falcon_create_slice_table
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_slice_table()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_slice_table$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_slice_table()
+    IS 'falcon build slice table';
+
+
+----------------------------------------------------------------
 -- falcon_create_kvmeta_table
 ----------------------------------------------------------------
 CREATE FUNCTION pg_catalog.falcon_create_kvmeta_table()

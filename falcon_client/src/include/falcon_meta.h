@@ -5,11 +5,8 @@
 #pragma once
 
 #include <stdint.h>
-#include <memory>
+#include "falcon_router.h"
 
-#include "router.h"
-
-extern std::shared_ptr<Router> router;
 
 struct FalconFuseInfo
 {

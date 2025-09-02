@@ -92,6 +92,17 @@ table GetKVMetaResponse {
     location: [uint64];
     size: [uint32];
 }
+table SliceInfoResponse {
+    slicenum: uint32;
+    inodeid: [uint64];
+    chunkid: [uint32];
+    sliceid: [uint64];
+    slicesize: [uint32];
+    sliceoffset: [uint32];
+    slicelen: [uint32];
+    sliceloc1: [uint32];
+    sliceloc2: [uint32];
+}
 union AnyMetaResponse {
     PlainCommandResponse,
     CreateResponse,
@@ -101,7 +112,8 @@ union AnyMetaResponse {
     ReadDirResponse,
     OpenDirResponse,
     RenameSubRenameLocallyResponse,
-    GetKVMetaResponse
+    GetKVMetaResponse,
+    SliceInfoResponse
 }
 table MetaResponse {
     error_code: uint32;

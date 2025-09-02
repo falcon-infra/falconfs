@@ -34,9 +34,12 @@ typedef enum FalconSupportMetaService {
     UTIMENS,
     CHOWN,
     CHMOD,
-    PUT,
-    GET,
-    DELETE,
+    KV_PUT,
+    KV_GET,
+    KV_DEL,
+    SLICE_PUT,
+    SLICE_GET,
+    SLICE_DEL,
     NOT_SUPPORTED
 } FalconSupportMetaService;
 
@@ -60,5 +63,13 @@ void FalconRenameSubCreateHandle(MetaProcessInfo info);
 void FalconUtimeNsHandle(MetaProcessInfo info);
 void FalconChownHandle(MetaProcessInfo info);
 void FalconChmodHandle(MetaProcessInfo info);
+
+void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count);
+void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count);
+void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count);
+
+void FalconKvmetaPutHandle(KvMetaProcessInfo info);
+void FalconKvmetaGetHandle(KvMetaProcessInfo info);
+void FalconKvmetaDelHandle(KvMetaProcessInfo info);
 
 #endif

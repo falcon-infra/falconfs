@@ -72,12 +72,8 @@ std::shared_ptr<Connection> Router::GetCoordinatorConn()
     return coordinatorConn;
 }
 
-std::shared_ptr<Connection> Router::GetWorkerConnByPath(std::string_view path)
+std::string_view Router::GetFilenameByPath(std::string_view path)
 {
-    if (path.empty() || path[0] != '/') {
-        return nullptr;
-    }
-
     // Normalize path
     if (path.size() > 1 && path.back() == '/') {
         path.remove_suffix(1);
@@ -90,6 +86,17 @@ std::shared_ptr<Connection> Router::GetWorkerConnByPath(std::string_view path)
     if (filename.empty() && dir.empty()) {
         filename = "/";
     }
+
+    return filename;
+}
+
+std::shared_ptr<Connection> Router::GetWorkerConnByPath(std::string_view path)
+{
+    if (path.empty() || path[0] != '/') {
+        return nullptr;
+    }
+
+    auto filename = GetFilenameByPath(path);
 
     // Find shard
     std::shared_lock<std::shared_mutex> lock(mapMtx);

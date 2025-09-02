@@ -10,6 +10,7 @@
 #include "metadb/metadata.h"
 
 void FalconCreateDistributedDataTable(void);
+void FalconCreateSliceTable(void);
 void FalconCreateKvmetaTable(void);
 void FalconPrepareCommands(void);
 

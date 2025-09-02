@@ -50,6 +50,8 @@ class Router {
 
     std::shared_ptr<Connection> GetCoordinatorConn();
 
+    std::string_view GetFilenameByPath(std::string_view path);
+
     std::shared_ptr<Connection> GetWorkerConnByPath(std::string_view path);
 
     std::shared_ptr<Connection> GetWorkerConnByKey(std::string_view key);

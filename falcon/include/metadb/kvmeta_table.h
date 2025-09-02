@@ -7,7 +7,6 @@
 
 #include "metadb/metadata.h"
 #include "utils/error_code.h"
-#include "meta_process_info.h"
 
 #define Natts_falcon_kvmeta_table 6
 #define Anum_falcon_kvmeta_table_userkey 1
@@ -25,9 +24,5 @@ typedef enum FalconKvmetaTableScankeyType {
 extern const char *KvmetaTableName;
 
 void ConstructCreateKvmetaTableCommand(StringInfo command, const char *name);
-
-void FalconKvmetaPutHandle(KvMetaProcessInfo info);
-void FalconKvmetaGetHandle(KvMetaProcessInfo info);
-void FalconKvmetaDelHandle(KvMetaProcessInfo info);
 
 #endif

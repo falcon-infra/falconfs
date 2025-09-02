@@ -94,6 +94,7 @@ static void InitializeDirectoryTableScanCache(void);
 static void InitializeInodeTableScanCache(void);
 static void InitializeInodeTableIndexParentIdPartIdNameScanCache(void);
 static void InitializeXattrTableScanCache(void);
+static void InitializeSliceTableScanCache(void);
 static void InitializeKvmetaTableScanCache(void);
 
 static MemoryContext ScanCacheMemoryContext = NULL;
@@ -250,6 +251,24 @@ static void InitializeXattrTableScanCache(void)
     XattrTableScanKey[XATTR_TABLE_XKEY_EQ].sk_attno = Anum_falcon_xattr_table_xkey;
 }
 
+ScanKeyData SliceTableScanKey[LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE];
+static void InitializeSliceTableScanCache(void)
+{
+    memset(SliceTableScanKey, 0, sizeof(SliceTableScanKey));
+
+    fmgr_info_cxt(F_INT8EQ, &SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_func, ScanCacheMemoryContext);
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_strategy = BTEqualStrategyNumber;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_subtype = INT8OID;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_attno = Anum_falcon_slice_table_inodeid;
+
+    fmgr_info_cxt(F_INT4EQ, &SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_func, ScanCacheMemoryContext);
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_strategy = BTEqualStrategyNumber;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_subtype = INT4OID;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_attno = Anum_falcon_slice_table_chunkid;
+}
+
 ScanKeyData KvmetaTableScanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
 static void InitializeKvmetaTableScanCache(void)
 {
@@ -293,6 +312,7 @@ void SetUpScanCaches(void)
             InitializeInodeTableScanCache();
             InitializeInodeTableIndexParentIdPartIdNameScanCache();
             InitializeXattrTableScanCache();
+            InitializeSliceTableScanCache();
             InitializeKvmetaTableScanCache();
         }
         PG_CATCH();
