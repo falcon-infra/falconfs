@@ -261,6 +261,7 @@ class FalconCM:
                         self._cluster_leader_ip,
                         self._meta_port,
                         self._user_name,
+                        self._host_node_name,
                     )
                     self._zk_client.set(host_path, value=str.encode(""))
                     self._zk_client.create(membership_path)
@@ -277,6 +278,7 @@ class FalconCM:
                             self._user_name,
                             self._pod_ip,
                             self._meta_port,
+                            self._host_node_name,
                         )
                         self._zk_client.create(membership_path)
                     else:
@@ -285,6 +287,7 @@ class FalconCM:
                             self._cluster_leader_ip,
                             self._meta_port,
                             self._user_name,
+                            self._host_node_name,
                         )
         else:
             postgresql.demote_for_start(
@@ -292,6 +295,7 @@ class FalconCM:
                 self._cluster_leader_ip,
                 self._meta_port,
                 self._user_name,
+                self._host_node_name,
             )
         self._zk_client.create(replica_path, ephemeral=True)
         self.watch_leader_and_candidates()
@@ -514,6 +518,7 @@ class FalconCM:
                     self._cluster_leader_ip,
                     self._meta_port,
                     self._user_name,
+                    self._host_node_name,
                 )
             else:
                 try:
@@ -531,6 +536,7 @@ class FalconCM:
                     self._user_name,
                     self._pod_ip,
                     self._meta_port,
+                    self._host_node_name,
                 )
                 self._zk_client.create(
                     "{}/{}/membership/{}".format(
@@ -837,6 +843,12 @@ class FalconCM:
                             pass
                     self._zk_client.delete(host_nodes_path + "/" + name)
                     self._zk_client.delete(host_membership_path + "/" + name)
+                    postgresql.clear_replication_slot(
+                        self._cluster_leader_ip,
+                        self._meta_port,
+                        self._user_name,
+                        name,
+                    )
                     del self._lost_node_time[name]
             isCheckStatus = False
         return isCheckStatus

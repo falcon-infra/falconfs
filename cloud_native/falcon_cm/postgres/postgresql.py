@@ -97,7 +97,7 @@ def try_fetch_one(connection_string, sql):
     return res, err
 
 
-def alter_postgres_sql_config(connection_string, config_name, val):
+def alter_postgresql_config(connection_string, config_name, val):
     """Update Postgresql config value using ALTER SYSTEM SET command"""
     conn = None
     try:
@@ -214,23 +214,34 @@ def pg_promote(data_dir):
     logging.getLogger("logger").info("Promote postgres")
 
 
-def pg_basebackup(data_dir, host, port, user):
+def pg_basebackup(data_dir, host, port, user, slot_name):
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
     )
-    logging.getLogger("logger").info("remark checkpoint before basebackup")
-    t1 = threading.Thread(target=send_checkpoint, args=(connection_string,))
-    t1.start()
-    logging.getLogger("logger").info("invoke basebackup")
+    logging.getLogger("logger").info("start basebackup")
     shell.exec_cmd(
-        "pg_basebackup -D {} -Fp -Pv -Xs -R -h {} -p {} -U {}".format(
-            data_dir, host, port, user
+        "pg_basebackup -D {} -Fp -Pv -Xs -c fast -R -h {} -p {} -U {} --slot={}".format(
+            data_dir, host, port, user, slot_name
         )
     )
 
 
-def pg_rewind(data_dir, host, port, user):
+def create_physical_replication_slot(leader_host, leader_port, user, slot_name):
+    leader_port = str(leader_port)
+    connection_string = "host={} port={} user={} dbname=postgres".format(
+        leader_host, leader_port, user
+    )
+    sql = "SELECT * FROM pg_drop_replication_slot('{}');".format(slot_name)
+    execute(connection_string, sql)
+    sql = "SELECT * FROM pg_create_physical_replication_slot('{}');".format(
+        slot_name
+    )
+    execute(connection_string, sql)
+    logging.getLogger("logger").info("create physical replication slot: {}".format(slot_name))
+
+
+def pg_rewind(data_dir, host, port, user, slot_name):
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
@@ -245,6 +256,11 @@ def pg_rewind(data_dir, host, port, user):
             connection_string, os.path.join(data_dir, "postgresql.auto.conf")
         )
     )
+    shell.exec_cmd(
+        "echo \"primary_slot_name = '{}'\" >> {}".format(
+            slot_name, os.path.join(data_dir, "postgresql.auto.conf")
+        )
+    )
 
 
 def is_standby_ready(connection_string):
@@ -256,11 +272,46 @@ def is_standby_ready(connection_string):
     return True
 
 
-def do_demote(data_dir, host, port, user, local_host, local_port):
+def clear_replication_slot(host, port, user, slot_host_name):
+    port = str(port)
+    connection_string = "host={} port={} user={} dbname=postgres".format(
+        host, port, user
+    )
+    slot_name = slot_host_name.replace(".", "_").replace("-", "_")
+    sql = "SELECT * FROM pg_drop_replication_slot('{}');".format(slot_name)
+    execute(connection_string, sql)
+    logging.getLogger("logger").info("Clear replication slot: {}".format(slot_name))
+
+
+def clear_all_replication_slot(host, port, user):
+    port = str(port)
+    connection_string = "host={} port={} user={} dbname=postgres".format(
+        host, port, user
+    )
+    sql = "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE NOT active;"
+    execute(connection_string, sql)
+    logging.getLogger("logger").info("Clear all replication slot")
+
+
+def do_checkpoint(host, port, user):
+    port = str(port)
+    connection_string = "host={} port={} user={} dbname=postgres".format(
+        host, port, user
+    )
+    sql = "CHECKPOINT;"
+    execute(connection_string, sql)
+    logging.getLogger("logger").info("Do checkpoint")
+
+
+def do_demote(data_dir, host, port, user, local_host, local_port, local_host_node):
     logging.getLogger("logger").info("Demote the DB to standby using pg_rewind")
     clear_liveness_file()
+    clear_all_replication_slot(local_host, local_port, user)
+    do_checkpoint(local_host, local_port, user)
     pg_stop(data_dir)
-    pg_rewind(data_dir, host, port, user)
+    slot_name = local_host_node.replace(".", "_").replace("-", "_")
+    create_physical_replication_slot(host, port, user, slot_name)
+    pg_rewind(data_dir, host, port, user, slot_name)
     pg_start(data_dir, "~/logfile")
     logging.getLogger("logger").info("Wait for the DB to be ready")
     time.sleep(10)
@@ -280,7 +331,7 @@ def do_demote(data_dir, host, port, user, local_host, local_port):
         )
         pg_stop(data_dir)
         shell.exec_cmd("rm -rf {}/*".format(data_dir))
-        pg_basebackup(data_dir, host, port, user)
+        pg_basebackup(data_dir, host, port, user, slot_name)
         pg_start(data_dir, "~/logfile")
         time.sleep(10)
         ready = is_standby_ready(connection_string)
@@ -296,12 +347,15 @@ def do_promote(data_dir, host, port, user):
     logging.getLogger("logger").info("Promote the DB to primary")
     pg_promote(data_dir)
     shell.exec_cmd("> {}".format(os.path.join(data_dir, "postgresql.auto.conf")))
-    alter_postgres_sql_config(connection_string, "synchronous_commit", "on")
-    alter_postgres_sql_config(connection_string, "synchronous_standby_names", "*")
+    alter_postgresql_config(connection_string, "synchronous_commit", "on")
+    alter_postgresql_config(connection_string, "synchronous_standby_names", "*")
     logging.getLogger("logger").info("Promote the DB to primary successfully.")
 
 
-def change_following_leader(data_dir, leader_host, leader_port, user):
+def change_following_leader(data_dir, leader_host, leader_port, user, local_host_node):
+    logging.getLogger("logger").info("Change following leader")
+    slot_name = local_host_node.replace(".", "_").replace("-", "_")
+    create_physical_replication_slot(leader_host, leader_port, user, slot_name)
     leader_port = str(leader_port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         leader_host, leader_port, user
@@ -313,6 +367,11 @@ def change_following_leader(data_dir, leader_host, leader_port, user):
     shell.exec_cmd(
         "echo \"primary_conninfo = '{}'\" >> {}".format(
             connection_string, os.path.join(data_dir, "postgresql.auto.conf")
+        )
+    )
+    shell.exec_cmd(
+        "echo \"primary_slot_name = '{}'\" >> {}".format(
+            slot_name, os.path.join(data_dir, "postgresql.auto.conf")
         )
     )
     pg_reload(data_dir)
@@ -361,12 +420,14 @@ def get_lsn(host, port, user):
     return max_lsn
 
 
-def demote_for_start(data_dir, host, port, user):
+def demote_for_start(data_dir, host, port, user, local_host_node):
     logging.getLogger("logger").info("Demote the DB using pg_basebackup for start")
     clear_liveness_file()
     pg_stop(data_dir)
+    slot_name = local_host_node.replace(".", "_").replace("-", "_")
+    create_physical_replication_slot(host, port, user, slot_name)
     shell.exec_cmd("rm -rf {}/*".format(data_dir))
-    pg_basebackup(data_dir, host, port, user)
+    pg_basebackup(data_dir, host, port, user, slot_name)
     pg_start(data_dir, "~/logfile")
     restore_liveness_file()
     logging.getLogger("logger").info(
@@ -380,7 +441,9 @@ def stop_replication(host, port, user):
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
     )
-    res = alter_postgres_sql_config(connection_string, "primary_conninfo", "")
+    res1 = alter_postgresql_config(connection_string, "primary_conninfo", "")
+    res2 = alter_postgresql_config(connection_string, "primary_slot_name", "")
+    res = res1 and res2
     return res
 
 
