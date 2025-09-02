@@ -15,3 +15,7 @@ cloud_native/docker_build/cn/falcon_cm
 cloud_native/docker_build/dn/metadb
 cloud_native/docker_build/dn/falcon_cm
 cloud_native/docker_build/store/falconfs
+
+falcon_client/test/demo
+
+cmake-build-debug
