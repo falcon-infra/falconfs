@@ -303,6 +303,20 @@ def do_checkpoint(host, port, user):
     logging.getLogger("logger").info("Do checkpoint")
 
 
+def is_wal_receiver_working(connection_string):
+    sql = "SELECT flushed_lsn FROM pg_stat_wal_receiver;"
+    lsn1, err1 = try_fetch_one(connection_string, sql)
+    lsn_num1 = lsn_to_num(lsn1)
+    time.sleep(10)
+    lsn2, err2 = try_fetch_one(connection_string, sql)
+    lsn_num2 = lsn_to_num(lsn2)
+    if is_standby_ready(connection_string):
+        return True
+    if lsn_num2 > lsn_num1:
+        return True
+    return False
+    
+
 def do_demote(data_dir, host, port, user, local_host, local_port, local_host_node):
     logging.getLogger("logger").info("Demote the DB to standby using pg_rewind")
     clear_liveness_file()
@@ -313,22 +327,18 @@ def do_demote(data_dir, host, port, user, local_host, local_port, local_host_nod
     create_physical_replication_slot(host, port, user, slot_name)
     pg_rewind(data_dir, host, port, user, slot_name)
     pg_start(data_dir, "~/logfile")
-    logging.getLogger("logger").info("Wait for the DB to be ready")
-    time.sleep(10)
     logging.getLogger("logger").info("Check if the DB is ready")
     local_port = str(local_port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         local_host, local_port, user
     )
-    ready = is_standby_ready(connection_string)
-    if ready:
-        logging.getLogger("logger").info("DB is ready")
+    if is_wal_receiver_working(connection_string):
+        logging.getLogger("logger").info("Demote the DB using pg_rewind successfully.")
         restore_liveness_file()
         return
+    logging.getLogger("logger").info("pg_rewind failed, demote the DB using pg_basebackup now")
+    ready = False
     while not ready:
-        logging.getLogger("logger").info(
-            "DB is not ready, Demote the DB using pg_basebackup now"
-        )
         pg_stop(data_dir)
         shell.exec_cmd("rm -rf {}/*".format(data_dir))
         pg_basebackup(data_dir, host, port, user, slot_name)
