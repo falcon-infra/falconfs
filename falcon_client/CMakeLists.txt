@@ -6,6 +6,7 @@ add_library(FalconClient
     ${PROTO_SRC}
 )
 
+set_target_properties(FalconClient PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # add_library(bio_sdk SHARED IMPORTED)
 # set_target_properties(bio_sdk PROPERTIES IMPORTED_LOCATION /opt/boostio/lib/libbio_sdk.so)
 

@@ -106,6 +106,9 @@ int32_t KvClientOperation::KvGetShmData(const std::string& key, void* vaule)
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call get shm data info failed, result " << resp.result;
         return -1;
     }
+
+    FALCON_LOG(LOG_INFO) << " get resp info: " << resp.ToString();
+
     auto len = resp.valueLen;
     
     // 从SHM copy到value
@@ -132,12 +135,6 @@ int32_t KvClientOperation::KvPutShmData(const std::string &key, const void* vaul
         FALCON_LOG(LOG_ERROR) << "memcpy_s failed, err " << err;
         return -1;
     }
-
-    uint8_t read_buffer[256] = {5};
-    std::memcpy(read_buffer, reinterpret_cast<void *>(mSharedFileAddress), len);
-    FALCON_LOG(LOG_INFO) << "client wrirte Data from shared memory";
-    std::string str_data(reinterpret_cast<char *>(read_buffer), len);
-    FALCON_LOG(LOG_INFO) << "data: " << str_data;
 
     KvOperationReq req;
     req.flags = 0;
@@ -186,6 +183,7 @@ int32_t KvClientOperation::ConnectMmapProcess(void)
     FALCON_LOG(LOG_INFO) << "shared file info " << resp.ToString();
 
     mIpcClient->ReceiveFD(mSharedFd);
+    
     /* mmap */
     auto mappedAddress = mmap(nullptr, mShardFileSize, PROT_READ | PROT_WRITE, MAP_SHARED, mSharedFd, 0);
     if (mappedAddress == MAP_FAILED) {

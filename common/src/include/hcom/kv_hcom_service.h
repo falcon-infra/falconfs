@@ -318,8 +318,8 @@ void *Service_GetMessageData(Service_Context context);
 uint32_t Service_GetMessageDataLen(Service_Context context);
 
 // V2 SHM临时新增  for shared file
-int SendFds(Hcom_Channel channel, int fds[], uint32_t len);
-int ReceiveFds(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec);
+int Channel_SendFds(Hcom_Channel channel, int fds[], uint32_t len);
+int Channel_ReceiveFds(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec);
 
 /*
  * @brief Set external logger function

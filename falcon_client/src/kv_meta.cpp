@@ -9,7 +9,14 @@ static KvClientOperation *g_kvClientOperation = KvClientOperation::Instance();
 
 int FalconKvInit(std::string &path)
 {
-    std::string hcomLibPath = "/home/wxt/libhcom.so";
+    char *WORKSPACE_PATH = std::getenv("WORKSPACE_PATH");
+    if (!WORKSPACE_PATH) {
+        FALCON_LOG(LOG_ERROR) << "worker path not set";
+        return -1;
+    }
+    std::string workerPath = WORKSPACE_PATH ? WORKSPACE_PATH : "";
+    std::string hcomLibPath = workerPath + "/libhcom.so";
+    
     auto ret = InitKvHcomIpcDl(hcomLibPath, hcomLibPath.size());
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "Falcon kv ipc init failed";

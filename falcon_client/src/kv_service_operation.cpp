@@ -14,6 +14,7 @@
 #include "kv_ipc_server.h"
 #include "log/logging.h"
 #include "kv_utils.h"
+#include "falcon_kv_server.h"
 
 uint64_t KvServiceOperation::mSharedFileSize = 0;
 uintptr_t KvServiceOperation::mSharedFileAddress = 0;
@@ -123,12 +124,16 @@ int32_t KvServiceOperation::HandleKvDeleteKey(Service_Context ctx, uint64_t usrC
 
     FALCON_LOG(LOG_INFO) << " Kv delete req " << req->ToString();
 
-    // TODO 回处理响应消息
-    // 调用kv server处理接口，删除指定key
-    // auto ret = Delete(key);
+    auto key = req->Key();
+    // 调用kv server处理接口，删除元数据key
+    KVServer &kv = KVServer::getInstance();
+    auto ret = kv.Delete(key);
+    if (ret != 0) {
+        FALCON_LOG(LOG_ERROR) << "Kv delete failed, ret " << ret;
+    }
 
     KvOperationResp resp;
-    resp.result = 0;
+    resp.result = ret;
 
     Hcom_Channel channel;
     if (Service_GetChannel(ctx, &channel) != 0) {
@@ -141,7 +146,7 @@ int32_t KvServiceOperation::HandleKvDeleteKey(Service_Context ctx, uint64_t usrC
         FALCON_LOG(LOG_ERROR) << "Get response ctx failed";
         return -1;
     }
-    replyCtx.errorCode = 0;
+    replyCtx.errorCode = ret;
 
     Channel_Request response = { static_cast<void *>(&resp), sizeof(KvOperationResp), 0 };
 
@@ -177,24 +182,17 @@ int32_t KvServiceOperation::HandleKvGetDataFromShm(Service_Context ctx, uint64_t
     FALCON_LOG(LOG_INFO) << " Kv get req " << req->ToString();
 
     auto key = req->Key();
-
-    // TODO 回处理响应消息
-    // uint32_t& valueLen;
-    // TODO 调用kv server处理接口，读取bio数据到SHM
-    // auto ret = Get(key, mSharedFileAddress, valueLen);
-    // KvOperationResp resp;
-    // resp.result = ret;
-    // resp.valueLen = valueLen;
-
-    // 模拟往共享内存写入数据，client从共享内存读数据，校验数据一致性
-    const uint8_t value[] = { 'h', 'e', 'l', 'l', 'o', 'w', 'x', 't' };
-    size_t len = 8;
-    std::memcpy(reinterpret_cast<void *>(mSharedFileAddress), value, len);
+    uint32_t valueLen = 0;
+    KVServer &kv = KVServer::getInstance();
+    // 调用kv server处理接口，读取bio数据到SHM
+    auto ret = kv.Get(key, reinterpret_cast<void *>(mSharedFileAddress), valueLen);
+    if (ret != 0) {
+        FALCON_LOG(LOG_ERROR) << "get data from bio failed, ret " << ret;
+    }
 
     KvOperationResp resp;
-    resp.result = 0;
-    resp.valueLen = len;
-    resp.flags = 0;
+    resp.result = ret;
+    resp.valueLen = valueLen;
 
     Hcom_Channel channel;
     if (Service_GetChannel(ctx, &channel) != 0) {
@@ -207,7 +205,7 @@ int32_t KvServiceOperation::HandleKvGetDataFromShm(Service_Context ctx, uint64_t
         FALCON_LOG(LOG_ERROR) << "Get response ctx failed";
         return -1;
     }
-    replyCtx.errorCode = 0;
+    replyCtx.errorCode = ret;
 
     Channel_Request response = { static_cast<void *>(&resp), sizeof(KvOperationResp), 0 };
 
@@ -246,20 +244,15 @@ int32_t KvServiceOperation::HandleKvPutData2Shm(Service_Context ctx, uint64_t us
     uint32_t valueLen = req->valueLen;
     std::string key = req->Key();
 
-    // TODO 调用kv server处理接口，读取内存共享数据，写入bio
-    // auto ret = Put(key, mSharedFileAddress, valueLen);
-
-    // 模拟service从共享内存读取数据 校验数据一致性
-    uint8_t read_buffer[256] = { 5 };
-    std::memcpy(read_buffer, reinterpret_cast<void *>(mSharedFileAddress), valueLen);
-    FALCON_LOG(LOG_INFO) << "Read Data from shared memory";
-    std::string str_data(reinterpret_cast<char *>(read_buffer), valueLen);
-    FALCON_LOG(LOG_INFO) << "data: " << str_data;
-
-    // TODO 回处理响应消息
+    // 调用kv server处理接口，读取内存共享数据，写入bio
+    KVServer &kv = KVServer::getInstance();
+    auto ret = kv.Put(key, reinterpret_cast<void *>(mSharedFileAddress), valueLen);
+    if (ret != 0) {
+        FALCON_LOG(LOG_ERROR) << "put data to bio failed, ret: " << ret;
+    }
 
     KvOperationResp resp;
-    resp.result = 0;
+    resp.result = ret;
 
     Hcom_Channel channel;
     if (Service_GetChannel(ctx, &channel) != 0) {
@@ -272,7 +265,7 @@ int32_t KvServiceOperation::HandleKvPutData2Shm(Service_Context ctx, uint64_t us
         FALCON_LOG(LOG_ERROR) << "Get response ctx failed";
         return -1;
     }
-    replyCtx.errorCode = 0;
+    replyCtx.errorCode = ret;
 
     Channel_Request response = { static_cast<void *>(&resp), sizeof(KvOperationResp), 0 };
 
@@ -354,8 +347,13 @@ int32_t KvServiceOperation::RegisterHandlers(void)
 
 int32_t KvServiceOperation::Initialize(void)
 {
-    // TODO 工作目录后续改成环境变量读取 （系统设置export）
-    std::string path = "/home/wxt/worker/falconfs_kv_socket.s";
+    char *WORKSPACE_PATH = std::getenv("WORKSPACE_PATH");
+    if (!WORKSPACE_PATH) {
+        FALCON_LOG(LOG_ERROR) << "WORKSPACE_PATH not set";
+        return -1;
+    }
+    std::string workerPath = WORKSPACE_PATH ? WORKSPACE_PATH : "";
+    std::string socketPath = workerPath + "/falconfs_kv_socket.s";
 
     std::lock_guard<std::mutex> guard(mMutex);
     if (mInited) {
@@ -363,7 +361,7 @@ int32_t KvServiceOperation::Initialize(void)
         return 0;
     }
 
-    mIpcServer = std::make_shared<KvIpcServer>(path);
+    mIpcServer = std::make_shared<KvIpcServer>(socketPath);
     if (UNLIKELY(mIpcServer == nullptr)) {
         FALCON_LOG(LOG_ERROR) << "Failed to new IpcServer, probably out memory";
         return -1;

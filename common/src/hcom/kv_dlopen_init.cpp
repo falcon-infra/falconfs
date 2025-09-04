@@ -30,8 +30,8 @@ using GetMessageDataLen = uint32_t (*)(Service_Context context);
 using GetContextTpye = int (*)(Service_Context context, Service_ContextType *type);
 using Reply = int (*)(Hcom_Channel channel, Channel_Request req, Channel_ReplyContext ctx, Channel_Callback *cb);
 
-using kvSendFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len);
-using KvReceiveFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec);
+using SendFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len);
+using ReceiveFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec);
 
 static constexpr uint16_t DL_SYMBOL_FUNC_ARR_LEN = 4;
 
@@ -44,8 +44,8 @@ using HcomFunc = struct {
     Start start;
     Destroy destroy;
     Connect connect;
-    kvSendFds sendFds;
-    KvReceiveFds receiveFds;
+    SendFds sendFds;
+    ReceiveFds receiveFds;
     DisConnect disConnect;
     GetChannel getChannel;
     GetResult getResult;
@@ -195,12 +195,12 @@ static int KvDlsymServiceLayerChannelHandleFunc(void)
         return -1;
     }
 
-    ret = KvLoadSymbol(g_hcomDl, "SendFds", reinterpret_cast<void **>(&g_hcomFunc.sendFds));
+    ret = KvLoadSymbol(g_hcomDl, "Channel_SendFds", reinterpret_cast<void **>(&g_hcomFunc.sendFds));
     if (ret != 0) {
         return -1;
     }
 
-    ret = KvLoadSymbol(g_hcomDl, "ReceiveFds", reinterpret_cast<void **>(&g_hcomFunc.receiveFds));
+    ret = KvLoadSymbol(g_hcomDl, "Channel_ReceiveFds", reinterpret_cast<void **>(&g_hcomFunc.receiveFds));
     if (ret != 0) {
         return -1;
     }
@@ -482,7 +482,7 @@ int Channel_Reply(Hcom_Channel channel, Channel_Request req, Channel_ReplyContex
     return ret;
 }
 
-int SendFds(Hcom_Channel channel, int fds[], uint32_t len)
+int Channel_SendFds(Hcom_Channel channel, int fds[], uint32_t len)
 {
     int ret = 0;
     if (g_hcomFunc.sendFds != nullptr) {
@@ -493,7 +493,7 @@ int SendFds(Hcom_Channel channel, int fds[], uint32_t len)
     return ret;
 }
 
-int ReceiveFds(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec)
+int Channel_ReceiveFds(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec)
 {
     int ret = 0;
     if (g_hcomFunc.receiveFds != nullptr) {

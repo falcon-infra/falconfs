@@ -76,8 +76,8 @@ int32_t KvIpcClient::Connect()
 
     mTimeout = CHANNEL_DEFAULT_TIMEOUT;
     Channel_SetChannelTimeOut(mChannel, mTimeout, mTimeout);
-    FALCON_LOG(LOG_INFO) << "connect to server success, channelId " << Channel_GetId(mChannel) << ", set timeout(s)"
-                         << mTimeout;
+    FALCON_LOG(LOG_INFO) << "connect to server success, channelId " << Channel_GetId(mChannel) << ", set timeout "
+                         << mTimeout << "s";
     return 0;
 }
 
@@ -205,7 +205,7 @@ int KvIpcClient::ReceiveFD(int32_t &fd)
         return -1;
     }
     int fds[1]{};
-    auto ret = ReceiveFds(mChannel, fds, 1, 10000);
+    auto ret = Channel_ReceiveFds(mChannel, fds, 1, 10000);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "Failed to receive shared fd from server, ret " << ret;
         return -1;

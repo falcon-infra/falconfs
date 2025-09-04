@@ -58,15 +58,16 @@ static void KvInit(const char* workspace, const char* runningConfigFile)
     pyConfig.close();
 
     setenv("CONFIG_FILE", pyConfigFile.c_str(), 1);
+    setenv("WORKSPACE_PATH", workspace, 1);
 
     int ret = -1;
     ret = GetInit().Init();
     if (ret != FALCON_SUCCESS)
         throw std::runtime_error("Falcon init failed. Error: " + std::to_string(ret));
 
-    std::string sockPath = std::string(workspace) + "/falconfs_kv_socket.s";
+    std::string socketPath = std::string(workspace) + "/falconfs_kv_socket.s";
 
-    ret = FalconKvInit(sockPath);
+    ret = FalconKvInit(socketPath);
     if (ret != FALCON_SUCCESS)
         throw std::runtime_error("Falcon cluster failed." + std::to_string(ret));
 }

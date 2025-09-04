@@ -229,7 +229,7 @@ bool KVServer::putMeta(FormData_kv_index &kvmetainfo)
 int32_t KVServer::Get(const std::string &key, void *valPtr, uint32_t &valTotalSize)
 {
     // 0. validate argument
-    if (key.empty() || valPtr == nullptr || valTotalSize != 0) {
+    if (key.empty() || valPtr == nullptr) {
         FALCON_LOG(LOG_ERROR) << "[GET] Arguments invalid with key=" << key << ", valPtr=" << valPtr;
         return -1;
     }

@@ -571,8 +571,14 @@ int main(int argc, char *argv[])
     std::println("{}", ret);
 
     /* ------------kv cache---------------- */
+    char *WORKSPACE_PATH = std::getenv("WORKSPACE_PATH");
+    if (!WORKSPACE_PATH) {
+        std::println(stderr, "worker path not set");
+        return -1;
+    }
+    std::string workerPath = WORKSPACE_PATH ? WORKSPACE_PATH : "";
+    std::string hcomLibPath = workerPath + "/libhcom.so";
 
-    std::string hcomLibPath = "/home/wxt/libhcom.so";
     ret = InitKvHcomIpcDl(hcomLibPath, hcomLibPath.size());
     if (ret != FALCON_SUCCESS) {
         std::println(stderr, "Falcon kv ipc init failed");

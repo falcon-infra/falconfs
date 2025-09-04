@@ -93,7 +93,7 @@ int KvIpcServer::NewChannel(Hcom_Channel channel, uint64_t usrCtx, const char *p
 
     int fds[1]{};
     fds[0] = KvServiceOperation::GetShareMemoryFd();
-    int ret = SendFds(channel, fds, 1);
+    int ret = Channel_SendFds(channel, fds, 1);
     if (UNLIKELY(ret != 0)) {
         FALCON_LOG(LOG_ERROR) << "Failed to send fd to client";
         return ret;

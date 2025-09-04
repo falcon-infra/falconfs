@@ -21,10 +21,7 @@
 #define UNLIKELY(x) (__builtin_expect(!!(x), 0) != 0)
 #endif
 
-
-// TODO 后续适配Falcon Log
 void Print(int level, const char *msg);
-void ClientPrint(int level, const char *msg);
 
 void MultiReservePhysicalPage(uint8_t *mappedAddress, uint64_t size);
 
