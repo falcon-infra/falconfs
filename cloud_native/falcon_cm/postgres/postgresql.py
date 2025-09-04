@@ -304,14 +304,16 @@ def do_checkpoint(host, port, user):
 
 
 def is_wal_receiver_working(connection_string):
+    if is_standby_ready(connection_string):
+        return True
     sql = "SELECT flushed_lsn FROM pg_stat_wal_receiver;"
     lsn1, err1 = try_fetch_one(connection_string, sql)
     lsn_num1 = lsn_to_num(lsn1)
     time.sleep(10)
-    lsn2, err2 = try_fetch_one(connection_string, sql)
-    lsn_num2 = lsn_to_num(lsn2)
     if is_standby_ready(connection_string):
         return True
+    lsn2, err2 = try_fetch_one(connection_string, sql)
+    lsn_num2 = lsn_to_num(lsn2)
     if lsn_num2 > lsn_num1:
         return True
     return False
@@ -345,8 +347,8 @@ def do_demote(data_dir, host, port, user, local_host, local_port, local_host_nod
         pg_start(data_dir, "~/logfile")
         time.sleep(10)
         ready = is_standby_ready(connection_string)
-    logging.getLogger("logger").info("Demote the DB using pg_basebackup successfully.")
     restore_liveness_file()
+    logging.getLogger("logger").info("Demote the DB using pg_basebackup successfully.")
 
 
 def do_promote(data_dir, host, port, user):
@@ -362,7 +364,7 @@ def do_promote(data_dir, host, port, user):
     logging.getLogger("logger").info("Promote the DB to primary successfully.")
 
 
-def change_following_leader(data_dir, leader_host, leader_port, user, local_host_node):
+def change_following_leader(data_dir, leader_host, leader_port, user, local_host, local_port, local_host_node):
     logging.getLogger("logger").info("Change following leader")
     slot_name = local_host_node.replace(".", "_").replace("-", "_")
     create_physical_replication_slot(leader_host, leader_port, user, slot_name)
@@ -385,8 +387,25 @@ def change_following_leader(data_dir, leader_host, leader_port, user, local_host
         )
     )
     pg_reload(data_dir)
-    logging.getLogger("logger").info("Change following leader successfully.")
-
+    local_port = str(local_port)
+    local_connection_string = "host={} port={} user={} dbname=postgres".format(
+        local_host, local_port, user
+    )
+    if is_wal_receiver_working(local_connection_string):
+        logging.getLogger("logger").info("Change following leader successfully.")
+        return
+    logging.getLogger("logger").info("Cannot folow the new leader, need to use pg_basebackup")
+    clear_liveness_file()
+    ready = False
+    while not ready:
+        pg_stop(data_dir)
+        shell.exec_cmd("rm -rf {}/*".format(data_dir))
+        pg_basebackup(data_dir, leader_host, leader_port, user, slot_name)
+        pg_start(data_dir, "~/logfile")
+        time.sleep(10)
+        ready = is_standby_ready(local_connection_string)
+    restore_liveness_file()
+    logging.getLogger("logger").info("pg_basebackup successfully.")
 
 def lsn_to_num(lsn):
     if not lsn:
