@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 
 #include <brpc/channel.h>
+#include "falcon_kv_meta.h"
 #include "falcon_slice_meta.h"
 #include "falcon_meta_response_generated.h"
 #include "falcon_meta_rpc.pb.h"
@@ -57,20 +58,7 @@ class ConnectionCache {
     ~ConnectionCache() { SerializedDataDestroy(&serializedDataBuffer); }
 };
 
-struct FormData_Slice
-{
-    uint64_t valueKey; // 全局的Key生成器
-    uint64_t location;
-    uint32_t size;
-};
 
-struct FormData_kv_index
-{
-    std::string key;  // input key
-    uint32_t valueLen;
-    uint16_t sliceNum;  // 2MB 拆分, number of slices
-    std::vector<FormData_Slice> dataSlices;
-};
 
 static thread_local ConnectionCache ThreadLocalConnectionCache;
 

@@ -13,28 +13,7 @@
 
 #include "bio_c.h"
 #include "slice_key_gen.h"
-
-struct FormData_Slice
-{
-    uint64_t sliceKey; // 分布式系统中唯一的 slice key
-    uint32_t size;     // slice 大小，字节
-    uint64_t location; // bio 存储返回的位置
-
-    FormData_Slice(uint64_t key, uint32_t size, uint64_t location)
-        : sliceKey(key),
-          size(size),
-          location(location)
-    {
-    }
-};
-
-struct FormData_kv_index
-{
-    std::string key;
-    uint32_t valueLen; // 原始 value 大小，字节
-    uint16_t sliceNum; // slice 数量
-    std::vector<FormData_Slice> slicesMeta;
-};
+#include "falcon_kv_meta.h"
 
 // context for async put/get/remove
 struct SyncContext
@@ -110,7 +89,7 @@ class KVServer {
     bool getMeta(FormData_kv_index &kvMetaInfo);
 
     bool deleteSlices(FormData_kv_index &kvMetaInfo);
-    bool deleteMeta(const std::string &key);
+    bool deleteMeta(std::string &key);
 
     static void putCallback(void *context, int32_t result);
     static void getCallback(void *context, int32_t result, uint32_t sliceValSize);
@@ -120,5 +99,5 @@ class KVServer {
 
     int32_t Put(const std::string &key, const void *valPtr, uint32_t valSize);
     int32_t Get(const std::string &key, void *valPtr, uint32_t &valTotalSize);
-    int32_t Delete(const std::string &key);
+    int32_t Delete(std::string &key);
 };

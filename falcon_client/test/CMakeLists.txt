@@ -14,7 +14,7 @@ add_executable(test_slice_key_gen
     test_slice_key_gen.cpp
     ../src/slice_key_gen.cpp
     ../../common/src/log/logging.cpp
-    ../src/falcon_kv_meta_mock.cpp
+    ../src/falcon_kv_meta.cpp
 )
 target_include_directories(test_slice_key_gen PRIVATE
     ../src/include
@@ -31,7 +31,7 @@ set(
     SOURCES
     ../src/falcon_kv_server.cpp
     ../src/slice_key_gen.cpp
-    ../src/falcon_kv_meta_mock.cpp
+    ../src/falcon_kv_meta.cpp
     ../src/bio_c.cpp
     # falconlog相关的依赖实现
     ../../common/src/log/logging.cpp

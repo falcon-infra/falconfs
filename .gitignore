@@ -19,3 +19,7 @@ cloud_native/docker_build/store/falconfs
 falcon_client/test/demo
 
 cmake-build-debug
+
+python_interface/pyfalconfs/*.so
+
+*__pycache__*

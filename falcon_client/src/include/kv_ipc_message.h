@@ -17,9 +17,10 @@ constexpr uint32_t SEG_COUNT = 1024;
 constexpr uint32_t RECEIVE_SEG_SIZE = 1024;
 constexpr uint32_t MAX_MESSAGE_SIZE = 1048576;
 constexpr uint16_t CHANNEL_DEFAULT_TIMEOUT = 60;
+constexpr uint64_t MAX_SHARED_FILE_SIZE = 1099511627776L; /* 1TB */
 
 // TODO 后续配置文件读取 可设置
-constexpr uint64_t DEFAULT_SHARED_FILE_SIZE = 10 * 1024 * 1024 * 1024; /* mmap size 10G */
+constexpr uint64_t DEFAULT_SHARED_FILE_SIZE = 10ULL * 1024 * 1024 * 1024; /* mmap size 10G */
 constexpr uint32_t KEY_MAX_LEN = 2048;
 constexpr uint32_t PRINTABLE_WIDTH = 2;
 

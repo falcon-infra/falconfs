@@ -41,6 +41,7 @@ int32_t KvIpcServer::CreateService()
     Service_RegisterHandler(mService, C_SERVICE_READWRITE_DONE, KvIpcServer::OneSideDone, 1);
     Service_RegisterChannelBrokerHandler(mService, KvIpcServer::ChannelBroken, C_CHANNEL_BROKEN_ALL, 0);
     std::string urlProto = "uds://" + socketPath + ":0600";
+    FALCON_LOG(LOG_INFO) << "socketPath: " << socketPath;
     const char *url = urlProto.c_str();
     Service_Bind(mService, url, KvIpcServer::NewChannel);
     auto result = Service_Start(mService);

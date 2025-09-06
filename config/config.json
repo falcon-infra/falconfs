@@ -1,7 +1,7 @@
 {
     "main": {
         "falcon_log_dir": "/tmp",
-        "falcon_log_level": "WARNING",
+        "falcon_log_level": "INFO",
         "falcon_log_max_size_mb": 10,
         "falcon_cache_root": "/tmp/falcon_cache",
         "falcon_dir_num": 101,

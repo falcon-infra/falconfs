@@ -1,9 +1,7 @@
-#include "falcon_kv_server.h"
-
-#include "falcon_kv_meta_mock.h" // meta data storage
-
 #include "log/logging.h"
 #include "slice_key_gen.h"
+#include "falcon_kv_meta.h"
+#include "falcon_kv_server.h"
 
 KVServer &KVServer::getInstance()
 {
@@ -341,7 +339,7 @@ bool KVServer::getMeta(FormData_kv_index &kvMetaInfo)
     return false;
 }
 
-int32_t KVServer::Delete(const std::string &key)
+int32_t KVServer::Delete(std::string &key)
 {
     // validate argument
     if (key.empty()) {
@@ -419,7 +417,7 @@ bool KVServer::deleteSlices(FormData_kv_index &kvMetaInfo)
     return true;
 }
 
-bool KVServer::deleteMeta(const std::string &key)
+bool KVServer::deleteMeta(std::string &key)
 {
     int base_delay_ms = 100;
     int max_retries = 3;

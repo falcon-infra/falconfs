@@ -472,8 +472,8 @@ FalconErrorCode Connection::Put(FormData_kv_index &kv_index, ConnectionCache *ca
         std::vector<uint64_t> valueKeys;
         std::vector<uint64_t> locations;
         std::vector<uint32_t> sizes;
-        for(auto& item : kv_index.dataSlices) {
-            valueKeys.push_back(item.valueKey);
+        for(auto& item : kv_index.slicesMeta) {
+            valueKeys.push_back(item.sliceKey);
             locations.push_back(item.location);
             sizes.push_back(item.size);
         }
@@ -508,10 +508,10 @@ FalconErrorCode Connection::Get(FormData_kv_index &kv_index, ConnectionCache *ca
         kv_index.sliceNum = kvMetaResponse->slice_num();
         for(uint32_t i = 0; i < kv_index.sliceNum; i++) {
             FormData_Slice dataSlice;
-            dataSlice.valueKey = kvMetaResponse->value_key()->Get(i),
+            dataSlice.sliceKey = kvMetaResponse->value_key()->Get(i),
             dataSlice.location = kvMetaResponse->location()->Get(i),
             dataSlice.size = kvMetaResponse->size()->Get(i);
-            kv_index.dataSlices.emplace_back(dataSlice);
+            kv_index.slicesMeta.emplace_back(dataSlice);
         }
         return (FalconErrorCode)metaResponse->error_code();
         

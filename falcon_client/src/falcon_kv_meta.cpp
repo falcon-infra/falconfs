@@ -5,6 +5,8 @@
 #include "utils.h"
 #include "log/logging.h"
 
+extern std::shared_ptr<Router> router;
+
 int FalconPut(FormData_kv_index &kv_index)
 {
     std::shared_ptr<Connection> conn = router->GetWorkerConnByKey(kv_index.key);
@@ -66,4 +68,14 @@ int FalconDelete(std::string &key)
 #endif
     // todo:做一层缓存是否
     return errorCode;
+}
+
+std::pair<uint64_t, uint64_t> sliceKeyRangeFetch(uint32_t count) {
+    static std::mutex fetch_mtx;
+    static int global_key = 0;
+
+    std::lock_guard<std::mutex> lock(fetch_mtx);
+    int start = global_key;
+    global_key += count;
+    return {start, start + count - 1};
 }
