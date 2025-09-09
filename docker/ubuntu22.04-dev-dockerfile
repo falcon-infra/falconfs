@@ -1,0 +1,90 @@
+FROM ghcr.io/falcon-infra/dev:ubuntu22.04
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev
+
+# brpc
+RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool libibverbs-dev
+
+ARG PROTOBUF_VERSION=3.12.4
+ARG PROTOBUF_DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
+
+RUN wget -O- "${PROTOBUF_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
+    ./autogen.sh && \
+    CXXFLAGS="-fPIC" ./configure && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
+ARG BRPC_VERSION=1.12.1
+ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
+
+RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja -DWITH_GLOG=ON -DWITH_RDMA=ON .. && \
+    ninja && ninja install && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+RUN apt install -y libcurl4-openssl-dev
+ARG PROMETHEUS_CPP_VERSION=1.3.0
+ARG PROMETHEUS_DOWNLOAD_URL=https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_CPP_VERSION}/prometheus-cpp-with-submodules.tar.gz
+
+RUN wget -O- "${PROMETHEUS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/prometheus-cpp-with-submodules" && \
+    mkdir build && cd build && \
+    cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PULL=ON -DENABLE_COMPRESSION=OFF && \
+    make -j$(nproc) && make install && \
+    rm -rf "/tmp/prometheus-cpp-with-submodule"
+
+ARG FLATBUFFERS_VERSION=25.2.10
+ARG FLATBUFFERS_DOWNLOAD_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
+
+RUN wget -O- "${FLATBUFFERS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja .. && \
+    ninja && ninja install && \
+    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
+
+ARG JSONCPP_VERSION=1.9.6
+ARG JSONCPP_DOWNLOAD_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
+
+RUN wget -O- "${JSONCPP_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
+    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
+    mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    make install && \
+    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
+
+ARG OBS_VERSION=v3.24.12
+ARG OBS_DOWNLOAD_URL=https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/${OBS_VERSION}.tar.gz
+ARG OBS_INSTALL_PREFIX=/usr/local/obs
+
+RUN wget -O- "${OBS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && \
+    # Detect architecture and use appropriate build script
+    if [ "$(uname -m)" = "aarch64" ]; then \
+        bash build_aarch.sh sdk; \
+    else \
+        bash build.sh sdk; \
+    fi && \
+    mkdir -p "${OBS_INSTALL_PREFIX}" && \
+    tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
+    # Cleanup
+    rm -f ${OBS_INSTALL_PREFIX}/lib/libcurl.so* && \
+    rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    ln -sf ${OBS_INSTALL_PREFIX}/lib/libiconv.so ${OBS_INSTALL_PREFIX}/lib/libiconv.so.0 && \
+    cat <<EOF >> ~/.zshrc
+export OBS_INSTALL_PREFIX=${OBS_INSTALL_PREFIX}
+export LD_LIBRARY_PATH=\$OBS_INSTALL_PREFIX/lib:\$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=\$OBS_INSTALL_PREFIX/include:\$CPLUS_INCLUDE_PATH
+export USER=root
+
+EOF
