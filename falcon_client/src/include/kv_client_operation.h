@@ -35,6 +35,8 @@ public:
 
 private:
     KvClientOperation() = default;
+    bool LockAcquire();
+    void LockRelease();
     static KvIpcClientPtr mIpcClient;
     int mSharedFd = -1;
     uintptr_t mSharedFileAddress = 0;
@@ -42,10 +44,12 @@ private:
     std::uint64_t mShardFileSize = 0;
     std::mutex mMutex;
     bool mInited = false;
+    std::string mLockFile;
+    int mLockFd = -1;
 
 private:
     static std::mutex gLock;
     static KvClientOperation *gInstance;
 };
 
-#endif // FALCONFS_KV_CLIENT_OPERATION_H
+#endif  // FALCONFS_KV_CLIENT_OPERATION_H

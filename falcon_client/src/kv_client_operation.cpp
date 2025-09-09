@@ -87,10 +87,14 @@ int32_t KvClientOperation::KvDeleteKey(const std::string &key)
     return 0;
 }
 
-int32_t KvClientOperation::KvGetShmData(const std::string& key, void* vaule)
+int32_t KvClientOperation::KvGetShmData(const std::string &key, void *vaule)
 {
     if (mIpcClient == nullptr) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient is nullptr";
+        return -1;
+    }
+    if (!LockAcquire()) {
+        FALCON_LOG(LOG_ERROR) << " acquire lock file failed";
         return -1;
     }
     KvOperationReq req;
@@ -100,28 +104,32 @@ int32_t KvClientOperation::KvGetShmData(const std::string& key, void* vaule)
     auto ret = mIpcClient->SyncCall<KvOperationReq, KvOperationResp>(IPC_OP_KV_GET_FROM_SHM, req, resp);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call get shm data info failed";
+        LockRelease();
         return -1;
     }
     if (resp.result != 0) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call get shm data info failed, result " << resp.result;
+        LockRelease();
         return -1;
     }
 
     FALCON_LOG(LOG_INFO) << " get resp info: " << resp.ToString();
 
     auto len = resp.valueLen;
-    
+
     // 从SHM copy到value
     auto err = memcpy_s(vaule, len, reinterpret_cast<void *>(mSharedFileAddress), len);
     if (err != 0) {
         FALCON_LOG(LOG_ERROR) << "memcpy_s failed, err " << err;
+        LockRelease();
         return -1;
     }
+    LockRelease();
 
     return 0;
 }
 
-int32_t KvClientOperation::KvPutShmData(const std::string &key, const void* vaule, const size_t len)
+int32_t KvClientOperation::KvPutShmData(const std::string &key, const void *vaule, const size_t len)
 {
     if (mIpcClient == nullptr) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient is nullptr";
@@ -130,9 +138,14 @@ int32_t KvClientOperation::KvPutShmData(const std::string &key, const void* vaul
 
     FALCON_LOG(LOG_INFO) << "client mSharedFileAddress: " << mSharedFileAddress;
     // copy数据到SHM
+    if (!LockAcquire()) {
+        FALCON_LOG(LOG_ERROR) << " acquire lock file failed";
+        return -1;
+    }
     auto err = memcpy_s(reinterpret_cast<void *>(mSharedFileAddress), len, vaule, len);
     if (err != 0) {
         FALCON_LOG(LOG_ERROR) << "memcpy_s failed, err " << err;
+        LockRelease();
         return -1;
     }
 
@@ -144,12 +157,15 @@ int32_t KvClientOperation::KvPutShmData(const std::string &key, const void* vaul
     auto ret = mIpcClient->SyncCall<KvOperationReq, KvOperationResp>(IPC_OP_KV_PUT_SHM_FINISH, req, resp);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call send put data finish info failed";
+        LockRelease();
         return -1;
     }
     if (resp.result != 0) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call send put data finish info failed, result " << resp.result;
+        LockRelease();
         return -1;
     }
+    LockRelease();
     return 0;
 }
 
@@ -162,7 +178,8 @@ int32_t KvClientOperation::ConnectMmapProcess(void)
     KvSharedFileInfoReq req;
     req.flags = 0;
     KvSharedFileInfoResp resp;
-    auto ret = mIpcClient->SyncCall<KvSharedFileInfoReq, KvSharedFileInfoResp>(IPC_OP_KV_GET_SHARED_FILE_INFO, req, resp);
+    auto ret =
+        mIpcClient->SyncCall<KvSharedFileInfoReq, KvSharedFileInfoResp>(IPC_OP_KV_GET_SHARED_FILE_INFO, req, resp);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "KvIpcClient sync call get shared file info failed";
         return -1;
@@ -183,7 +200,7 @@ int32_t KvClientOperation::ConnectMmapProcess(void)
     FALCON_LOG(LOG_INFO) << "shared file info " << resp.ToString();
 
     mIpcClient->ReceiveFD(mSharedFd);
-    
+
     /* mmap */
     auto mappedAddress = mmap(nullptr, mShardFileSize, PROT_READ | PROT_WRITE, MAP_SHARED, mSharedFd, 0);
     if (mappedAddress == MAP_FAILED) {
@@ -219,4 +236,47 @@ void KvClientOperation::UnInitialize(void)
     mIpcClient = nullptr;
     mInited = false;
     DisConnectUnmapProcess();
+}
+
+bool KvClientOperation::LockAcquire(void)
+{
+    char *WORKSPACE_PATH = std::getenv("WORKSPACE_PATH");
+    if (!WORKSPACE_PATH) {
+        FALCON_LOG(LOG_ERROR) << "worker path not set";
+        return false;
+    }
+    std::string workerPath = WORKSPACE_PATH ? WORKSPACE_PATH : "";
+    std::string mLockFile = workerPath + "/.kvfile";
+
+    mLockFd = open(mLockFile.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+    if (mLockFd == -1) {
+        FALCON_LOG(LOG_ERROR) << "create or open lock file failed, errno: " << strerror(errno);
+        return false;
+    }
+    struct flock fl {};
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0;
+
+    if (fcntl(mLockFd, F_SETLKW, &fl) != 0) {
+        close(mLockFd);
+        return false;
+    }
+    return true;
+}
+
+void KvClientOperation::LockRelease(void)
+{
+    struct flock fl {};
+    fl.l_type = F_UNLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0;
+
+    if (fcntl(mLockFd, F_SETLKW, &fl) != 0) {
+        return;
+    }
+    close(mLockFd);
+    unlink(mLockFile.c_str());
 }
