@@ -96,8 +96,11 @@ class KVServer {
 
   public:
     static KVServer &getInstance();
-
-    int32_t Put(const std::string &key, const void *valPtr, uint32_t valSize);
-    int32_t Get(const std::string &key, void *valPtr, uint32_t &valTotalSize);
+    
+    // int32_t Put(const std::string &key, const void *valPtr, uint32_t valSize);
+    // int32_t Get(const std::string &key, void *valPtr, uint32_t &valTotalSize);
+    int32_t Put(const std::string &key, uint32_t valSize, const std::vector<void*> blockAddrs, uint32_t blockSize);
+    int32_t Get(const std::string &key, std::vector<void*> blockAddrs, uint32_t blockSize);
     int32_t Delete(std::string &key);
+    int32_t GetValueLen(const std::string &key, uint32_t &valTotalSize);
 };

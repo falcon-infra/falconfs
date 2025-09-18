@@ -60,12 +60,14 @@ void KVServer::getCallback(void *context, int32_t result, uint32_t sliceValSize)
                          << " and slice size=" << sliceValSize;
 };
 
-int32_t KVServer::Put(const std::string &key, const void *valPtr, uint32_t valSize)
+int32_t KVServer::Put(const std::string &key, uint32_t valSize, const std::vector<void*> blockAddrs, uint32_t blockSize)
 {
     // 0 validate arguments
-    if (key.empty() || valPtr == nullptr || valSize <= 0) {
-        FALCON_LOG(LOG_ERROR) << "[PUT] Arguments invalid with key=" << key << ", valPtr=" << valPtr
-                              << ", valSize=" << valSize;
+    if (key.empty() || valSize <= 0 || blockAddrs.empty() || blockSize <= 0) {
+        FALCON_LOG(LOG_ERROR) << "[PUT] Arguments invalid with key=" << key
+                              << ", valSize=" << valSize
+                              << ", blockSize=" << blockSize
+                              << ", len of blockAddrs=" << blockAddrs.size();
         return -1;
     }
 
@@ -114,8 +116,28 @@ int32_t KVServer::Put(const std::string &key, const void *valPtr, uint32_t valSi
         ++cur_slice_id;
     }
 
+    // 2 gather all block data
+    auto allData = std::make_shared<std::vector<uint8_t>>(valSize);
+    uint32_t copied = 0;
+    uint8_t* dst = allData->data();
+
+    for (const void* blkAddr : blockAddrs) {
+        if (copied >= valSize) break;
+
+        const uint8_t* src = static_cast<const uint8_t*>(blkAddr);
+        size_t copySize = std::min(blockSize, valSize - copied);
+
+        std::memcpy(dst + copied, src, copySize);
+        copied += copySize;
+    }
+
+    if (copied != valSize) {
+        FALCON_LOG(LOG_ERROR) << "Data copy incomplete. Copied: " << copied << ", Expected: " << valSize;
+        return -1;
+    }
+
     // 2 start putting to bio
-    const char *value_ptr = static_cast<const char *>(valPtr);
+    const char* value_ptr = reinterpret_cast<const char*>(allData->data());
     // call PutSlices, wait until all put finished
     bool ret = putSlices(kvmetainfo, value_ptr, ioConcurrency_, KVServer::putCallback);
     if (!ret) {
@@ -139,6 +161,8 @@ int32_t KVServer::Put(const std::string &key, const void *valPtr, uint32_t valSi
     }
 
     return 0;
+
+
 }
 
 bool KVServer::putSlices(FormData_kv_index &kvMetaInfo,
@@ -196,6 +220,14 @@ bool KVServer::putSlices(FormData_kv_index &kvMetaInfo,
         sync_ctx->wait_cv.wait(lock, [&sync_ctx]() { return (sync_ctx->pending_count.load() == 0); });
     }
 
+    // 5. check the async callback func result
+    for (uint16_t i = 0; i < ioctx_pool->size(); ++i){
+        if ((*ioctx_pool)[i].result != CResult::RET_CACHE_OK){
+            FALCON_LOG(LOG_ERROR) << "Async put for slice " << i << " is failed.";
+            return false;
+        }
+    }
+
     FALCON_LOG(LOG_INFO) << "Async put completed for all slices.";
 
     return true;
@@ -224,12 +256,24 @@ bool KVServer::putMeta(FormData_kv_index &kvmetainfo)
     return false;
 }
 
-int32_t KVServer::Get(const std::string &key, void *valPtr, uint32_t &valTotalSize)
+int32_t KVServer::Get(const std::string &key, std::vector<void*> blockAddrs, uint32_t blockSize)
 {
     // 0. validate argument
-    if (key.empty() || valPtr == nullptr) {
-        FALCON_LOG(LOG_ERROR) << "[GET] Arguments invalid with key=" << key << ", valPtr=" << valPtr;
+    uint32_t numBlocks = blockAddrs.size();
+
+    if (key.empty() || blockAddrs.empty() || blockSize <= 0) {
+        FALCON_LOG(LOG_ERROR) << "[GET] Arguments invalid with key=" << key
+                        << ", blockSize=" << blockSize
+                        << ", len of blockAddrs=" << numBlocks;
         return -1;
+    }
+    
+    for (uint32_t i = 0; i < numBlocks; ++i) {
+        if (blockAddrs[i] == nullptr) {
+            FALCON_LOG(LOG_ERROR) << "[GET] blockAddrs[" << i << "] is nullptr";
+            return -1;
+        }
+        // FALCON_LOG(LOG_INFO) << "blockAddrs[" << i << "] is " << blockAddrs[i];
     }
 
     // 1. get metakvinfo
@@ -242,11 +286,29 @@ int32_t KVServer::Get(const std::string &key, void *valPtr, uint32_t &valTotalSi
     }
 
     // 2. async get
-    char *value_ptr = static_cast<char *>(valPtr);
-    ret = getSlices(kvmetainfo, value_ptr, valTotalSize, ioConcurrency_, KVServer::getCallback);
+    // 2.1 allocate temp buffer used by getSlices
+    uint32_t valTotalSize = 0;
+    std::vector<char> tempBuffer(kvmetainfo.valueLen);
+    ret = getSlices(kvmetainfo, tempBuffer.data(), valTotalSize, ioConcurrency_, KVServer::getCallback);
     if (!ret) {
         FALCON_LOG(LOG_ERROR) << "[GET] getSlices failed";
         return -1;
+    }
+    // 2.2 copy value from temp buffer to blockAddrs
+    char* srcPtr = tempBuffer.data();
+    uint32_t copied = 0;
+    uint32_t bytesToCopy = 0;
+
+    for (uint32_t i = 0; i < numBlocks; ++i) {
+        if (i == (numBlocks-1)) {
+            bytesToCopy = kvmetainfo.valueLen - copied;
+        }else {
+            bytesToCopy = blockSize;
+        }
+        std::memcpy(blockAddrs[i], srcPtr, bytesToCopy);
+	// FALCON_LOG(LOG_INFO) << "copy from srcPtr=" << static_cast<void*>(srcPtr) << " to blockAddrs[" << i << "]=" << blockAddrs[i] <<", bytes to copy=" << bytesToCopy;
+        srcPtr += bytesToCopy;
+        copied += bytesToCopy;
     }
 
     return 0;
@@ -303,6 +365,10 @@ bool KVServer::getSlices(FormData_kv_index &kvMetaInfo,
     }
 
     for (auto &ctx : *ioctx_pool) {
+	if (ctx.result != CResult::RET_CACHE_OK){
+            FALCON_LOG(LOG_ERROR) << "Async get for at least one slice failed.";
+            return false;
+        }
         valTotalSize += ctx.sliceSize;
     }
     if (valTotalSize != kvMetaInfo.valueLen) {
@@ -337,6 +403,30 @@ bool KVServer::getMeta(FormData_kv_index &kvMetaInfo)
     }
     FALCON_LOG(LOG_ERROR) << "Failed to retrieve metadata after " << max_retries << " times retries.";
     return false;
+}
+
+int32_t KVServer::GetValueLen(const std::string &key, uint32_t &valTotalSize)
+{
+    // validate argument
+    if (key.empty()){
+        FALCON_LOG(LOG_ERROR) << "[GetValueLen] Arguments invalid with key=" << key;
+        return -1;
+    }
+
+    FALCON_LOG(LOG_INFO) << "Starting get value length for key=" << key;
+
+    // get meta info
+    FormData_kv_index kvmetainfo;
+    kvmetainfo.key = key;
+    bool ret = getMeta(kvmetainfo);
+    if (!ret) {
+        FALCON_LOG(LOG_ERROR) << "[GetValueLen] getMeta failed";
+        return -1;
+    }
+
+    valTotalSize = kvmetainfo.valueLen;
+
+    return 0;
 }
 
 int32_t KVServer::Delete(std::string &key)

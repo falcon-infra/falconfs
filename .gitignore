@@ -23,3 +23,4 @@ cmake-build-debug
 python_interface/pyfalconfs/*.so
 
 *__pycache__*
+*pyfalconfs.egg-info*
