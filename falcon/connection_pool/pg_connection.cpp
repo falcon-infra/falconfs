@@ -41,12 +41,9 @@ PGConnection::PGConnection(PGConnectionPool *parent, const char *ip, const int p
 void PGConnection::BackgroundWorker()
 {
     while (working) {
-        {
-            std::unique_lock<std::mutex> lk(this->execMutex);
-            cvExecing.wait(lk, [this]() -> bool { return this->taskToExec != nullptr || !working; });
-            if (!working)
-                break;
-        }
+        if (!working)
+            break;
+        this->tasksToExec.wait_dequeue(taskToExec);
 
         // 1. Reset status and check validity of input
         PGresult *res;
@@ -332,32 +329,24 @@ void PGConnection::BackgroundWorker()
         //
 
         this->parent->ReaddWorkingPGConnection(this);
-
         for (size_t i = 0; i < taskToExec->jobList.size(); ++i)
             delete taskToExec->jobList[i];
-        delete this->taskToExec;
-        {
-            std::unique_lock<std::mutex> lk(this->execMutex);
-            this->taskToExec = nullptr;
-        }
-        cvExecing.notify_one();
+        
+        this->taskToExec = nullptr;
     }
 }
 
-void PGConnection::Exec(Task *taskToExec)
+void PGConnection::Exec(std::shared_ptr<WorkerTask> taskToExec)
 {
-    {
-        std::unique_lock<std::mutex> lk(this->execMutex);
-        cvExecing.wait(lk, [this]() -> bool { return this->taskToExec == nullptr; });
-        this->taskToExec = taskToExec;
+    while (!this->tasksToExec.enqueue(taskToExec)) {
+        std::cout << "PGConnection::Exec: enqueue failed" << std::endl;
+        std::this_thread::yield();
     }
-    cvExecing.notify_one();
 }
 
 void PGConnection::Stop()
 {
     working = false;
-    cvExecing.notify_one();
 }
 
 PGConnection::~PGConnection()

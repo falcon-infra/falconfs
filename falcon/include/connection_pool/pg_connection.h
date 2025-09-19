@@ -12,6 +12,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <memory>
+#include "concurrentqueue/blockingconcurrentqueue.h"
 #include "connection_pool/pg_connection_pool.h"
 #include "libpq-fe.h"
 #include "remote_connection_utils/serialized_data.h"
@@ -27,10 +29,8 @@ class PGConnection {
     flatbuffers::FlatBufferBuilder flatBufferBuilder;
     SerializedData replyBuilder;
 
-    Task *taskToExec;
-
-    std::mutex execMutex;
-    std::condition_variable cvExecing;
+    std::shared_ptr<WorkerTask> taskToExec;
+    moodycamel::BlockingConcurrentQueue<std::shared_ptr<WorkerTask>> tasksToExec;
     std::thread thread;
 
   public:
@@ -41,7 +41,7 @@ class PGConnection {
 
     void BackgroundWorker();
 
-    void Exec(Task *taskToExec);
+    void Exec(std::shared_ptr<WorkerTask> taskToExec);
 
     void Stop();
 };

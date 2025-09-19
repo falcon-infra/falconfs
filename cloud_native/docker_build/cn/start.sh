@@ -23,8 +23,12 @@ else
     echo "log_rotation_age=1440" >> /home/falconMeta/data/metadata/postgresql.conf
     echo "log_rotation_size=1000000" >> /home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.port = 5442" >> /home/falconMeta/data/metadata/postgresql.conf
-    echo "falcon_connection_pool.pool_size = 256" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.pool_size = 64" >> /home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.shmem_size = 256" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.batch_size = 1024" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.wait_adjust = 1" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.wait_min = 1" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.wait_max = 500" >> /home/falconMeta/data/metadata/postgresql.conf
     pg_ctl start -D /home/falconMeta/data/metadata
 fi
 
