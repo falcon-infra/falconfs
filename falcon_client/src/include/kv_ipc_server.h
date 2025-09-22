@@ -72,7 +72,7 @@ public:
     }
 
 private:
-    static constexpr uint32_t MAX_NEW_REQ_HANDLER = 5;
+    static constexpr uint32_t MAX_NEW_REQ_HANDLER = 6;
     Service_Type mServiceType = C_SERVICE_SHM;
     Hcom_Service mService = 0;
     Hcom_Channel mChannel = 0;

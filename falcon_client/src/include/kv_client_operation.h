@@ -29,14 +29,16 @@ public:
     // kv操作集
     int32_t ConnectMmapProcess();
     void DisConnectUnmapProcess();
-    int32_t KvPutShmData(const std::string &key, const void *vaule, const size_t len);
+    int32_t KvAllocateMoreBlock4Put(const std::string &key, const size_t len, uint32_t &blkSize, uint32_t &blkCount, std::vector<uintptr_t> &blkMappedAddress);
+    int32_t KvPutShmData(const std::string &key, void *vaule, const size_t len);
     int32_t KvGetShmData(const std::string &key, void *vaule);
     int32_t KvDeleteKey(const std::string &key);
 
 private:
     KvClientOperation() = default;
-    bool LockAcquire();
-    void LockRelease();
+    int32_t KvCheckAllocateBlockResp(KvAllocateMoreBlockResp *resp, uint32_t len);
+    void KvWriteData2Shm(const uint32_t blkSize, const uint32_t blkCount, const size_t len, void *vaule, std::vector<uintptr_t> &blkMappedAddress);
+    void KvReadDataFromShm(const uint32_t blkSize, const uint32_t blkCount, const size_t len, void *vaule, std::vector<uintptr_t> &blkMappedAddress);
     static KvIpcClientPtr mIpcClient;
     int mSharedFd = -1;
     uintptr_t mSharedFileAddress = 0;
@@ -44,9 +46,6 @@ private:
     std::uint64_t mShardFileSize = 0;
     std::mutex mMutex;
     bool mInited = false;
-    std::string mLockFile;
-    int mLockFd = -1;
-
 private:
     static std::mutex gLock;
     static KvClientOperation *gInstance;

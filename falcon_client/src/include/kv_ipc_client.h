@@ -60,6 +60,46 @@ public:
         }
         return 0;
     }
+
+    template <typename TReq, typename TResp> int32_t SyncCall(KvOpCode opCode, TReq &req, TResp **resp, uint32_t &len)
+    {
+        if (resp == nullptr) {
+            return -1;
+        }
+        if (mChannel == 0) {
+            FALCON_LOG(LOG_ERROR) << "Channel is not initialized, try to restore connection";
+            RestoreConnection();
+        }
+        Channel_Request request = {.address = static_cast<void *>(&req), .size = sizeof(req), .opcode = opCode};
+        Channel_Response response = {};
+        static constexpr int32_t maxRetryTimes = 3;
+        for (auto i = 0; i < maxRetryTimes; i++) {
+            if (mChannel == 0) {
+                RestoreConnection();
+                continue;
+            }
+            auto result = Channel_Call(mChannel, request, &response, nullptr);
+            if (UNLIKELY(result == SerCode::SER_NOT_ESTABLISHED)) {
+                RestoreConnection();
+                continue;
+            }
+            if (UNLIKELY(result != 0 || response.errorCode != 0)) {
+                FALCON_LOG(LOG_ERROR) << "Failed to call server with op " << opCode << ", result " <<
+                    std::to_string(result) << ", error code " << response.errorCode;
+                return result;
+            }
+            break;
+        }
+
+        if (response.address == nullptr) {
+            FALCON_LOG(LOG_ERROR) << " channel call resp param error";
+            return -1;
+        }
+        *resp = reinterpret_cast<TResp* >(response.address);
+        len = response.size;
+        return 0;
+    }
+
     int ReceiveFD(int32_t &fd);
 public:
     int32_t CreateService();

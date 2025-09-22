@@ -20,16 +20,19 @@ constexpr uint16_t CHANNEL_DEFAULT_TIMEOUT = 60;
 constexpr uint64_t MAX_SHARED_FILE_SIZE = 1099511627776L; /* 1TB */
 
 // TODO 后续配置文件读取 可设置
-constexpr uint64_t DEFAULT_SHARED_FILE_SIZE = 10ULL * 1024 * 1024 * 1024; /* mmap size 10G */
+constexpr uint64_t DEFAULT_SHARED_FILE_SIZE = 30ULL * 1024 * 1024 * 1024; /* default mmap size 10G */
+constexpr uint64_t DEFAULT_BLOCK_SIZE = 128ULL * 1024 * 1024; /* default block size 128M*/
 constexpr uint32_t KEY_MAX_LEN = 2048;
 constexpr uint32_t PRINTABLE_WIDTH = 2;
+constexpr uint32_t ALLOCATE_BLOCKS_RETRY_MAX = 60;
 
 enum KvOpCode {
-    IPC_OP_KV_ALLOCATE_MORE_BLOCK = 0,
-    IPC_OP_KV_GET_SHARED_FILE_INFO = 1,
+    IPC_OP_KV_GET_SHARED_FILE_INFO = 0,
+    IPC_OP_KV_ALLOCATE_MORE_BLOCK = 1,
     IPC_OP_KV_PUT_SHM_FINISH = 2,
     IPC_OP_KV_GET_FROM_SHM = 3,
-    IPC_OP_KV_DELETE = 4,
+    IPC_OP_KV_GET_SHM_FINISH = 4,
+    IPC_OP_KV_DELETE = 5,
 
 };
 
@@ -81,18 +84,20 @@ struct KvSharedFileInfoReq {
 struct KvSharedFileInfoResp {
     int32_t result = 0;
     uint64_t shardFileSize;
+    uint64_t blockSize;
 
     std::string ToString() const
     {
         std::ostringstream oss;
-        oss << "result " << result << " shardFileSize: " << shardFileSize;
+        oss << "result " << result << " shardFileSize: " << shardFileSize << " blockSize: " << blockSize;
         return oss.str();
     }
 };
 
+
 struct KvOperationReq {
-    int32_t flags = 0; /* flags */
-    uint32_t valueLen = 0; /* value size */
+    int32_t flags = 0;       /* flags */
+    uint32_t valueLen = 0;   /* value size */
     char key[KEY_MAX_LEN]{}; /* key */
 
     DECLARE_CHAR_ARRAY_SET_FUNC(Key, key);
@@ -118,6 +123,30 @@ struct KvOperationResp {
         oss << "flags: " << flags << " result: " << result << " valueLen: " << valueLen;
         return oss.str();
     }
+};
+
+struct KvAllocateMoreBlockResp {
+    int32_t result = 0;
+    int32_t flags = 0;
+    uint32_t blockSize = 0;
+    uint32_t blockCount = 0;
+    uint32_t valueLen = 0;
+    uint64_t dataBlock[];
+
+    std::string ToString() const
+    {
+        std::ostringstream oss;
+        oss << "flags: " << flags << " result: " << result << " blockSize: " << blockSize <<" blockCount: " << blockCount <<" valueLen: " << valueLen;
+        return oss.str();
+    }
+
+};
+using KvAllocateMoreBlockReq = KvOperationReq;
+using KvGetMoreDataBlockResp = KvAllocateMoreBlockResp;
+using KvGetDataFinishedReq = KvOperationReq;
+
+struct KvGetDataFinishedResp {
+    int32_t result = 0;
 };
 
 #endif // FALCONFS_KV_IPC_MESSGAE_H

@@ -40,7 +40,7 @@ int FalconKvShmAndIpcServiceInit(void)
     return g_kvServiceOperation->KvShmAndIpcServiceInit();
 }
 
-int FalconKvPutData(const std::string &key, const void* vaule, const size_t len)
+int FalconKvPutData(const std::string &key, void* vaule, const size_t len)
 {
     if (key.empty() || vaule == nullptr || len == 0) {
         FALCON_LOG(LOG_ERROR) << "invalid param";

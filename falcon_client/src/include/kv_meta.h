@@ -5,7 +5,7 @@
 
 int FalconKvInit(std::string &path);
 int FalconKvShmAndIpcServiceInit(void);
-int FalconKvPutData(const std::string &key, const void* vaule, const size_t len);
+int FalconKvPutData(const std::string &key, void* vaule, const size_t len);
 int FalconKvGetData(const std::string &key, void* vaule);
 int FalconKvDeleteKey(const std::string &key);
 

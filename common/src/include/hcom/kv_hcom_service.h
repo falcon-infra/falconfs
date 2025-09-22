@@ -82,7 +82,8 @@ typedef enum {
 
 typedef enum {
     C_CLIENT_WORKER_POLL = 0,
-    C_CLIENT_SELF_POLL = 1,
+    C_CLIENT_SELF_POLL_BUSY = 1,
+    C_CLIENT_SELF_POLL_EVENT = 2,
 } Service_ClientPollingMode;
 
 typedef enum {
@@ -228,7 +229,7 @@ typedef struct {
 } Channel_OneSideRequest;
 
 typedef struct {
-    uint64_t intervalTimeMs;
+    uint16_t intervalTimeMs;
     uint64_t thresholdByte;
     Channel_FlowCtrlLevel flowCtrlLevel;
 } Channel_FlowCtrlOptions;
