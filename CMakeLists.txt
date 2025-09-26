@@ -27,6 +27,32 @@ if(WITH_PROMETHEUS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_PROMETHEUS")
 endif()
 
+# 新增：插件支持配置
+option(FALCON_ENABLE_PLUGINS "Enable plugin support" ON)
+
+# 检查插件所需依赖
+if(FALCON_ENABLE_PLUGINS)
+    # 检查dlopen支持
+    find_library(DL_LIBRARY dl)
+    if(NOT DL_LIBRARY)
+        message(FATAL_ERROR "dlopen library not found, required for plugin support")
+    endif()
+
+    # 检查filesystem支持 (C++17+)
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+        #include <filesystem>
+        int main() { std::filesystem::exists(\"/tmp\"); return 0; }
+    " HAS_FILESYSTEM)
+
+    if(NOT HAS_FILESYSTEM)
+        message(FATAL_ERROR "C++17 filesystem support required for plugin system")
+    endif()
+
+    # 添加预编译定义
+    add_definitions(-DFALCON_ENABLE_PLUGINS)
+endif()
+
 # ==================== Dependencies =================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(BRPC REQUIRED)
