@@ -71,7 +71,7 @@ void SliceKeyGenerator::backgroundPrefetch(uint32_t bs)
 
     while (true) {
         // 获取 mtx 锁
-        std::unique_lock<std::mutex> lock(mtx);
+        UniqueLock lock(mtx);
 
         // 等待唤醒或者退出
         cv.wait(lock, [this]() { return pending_fetch.load() || should_stop.load(); });
@@ -115,7 +115,7 @@ std::vector<uint64_t> SliceKeyGenerator::getKeys(uint16_t count)
         return std::vector<uint64_t>{};
 
     // 加锁避免多个线程同时调用 getKeys 函数
-    std::lock_guard<std::mutex> lock(mtx);
+    LockGuard lock(mtx);
 
     std::vector<uint64_t> result;
     result.reserve(count);

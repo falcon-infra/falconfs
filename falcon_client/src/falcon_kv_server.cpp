@@ -29,7 +29,7 @@ void KVServer::putCallback(void *context, int32_t result)
 
     uint16_t left = ctx->sync_ctx->pending_count.fetch_sub(1, std::memory_order_acq_rel);
     if (left == 1) { // all async bio get finished
-        std::unique_lock<std::mutex> lock(ctx->sync_ctx->wait_mutex);
+        UniqueLock lock(ctx->sync_ctx->wait_mutex);
 
         FALCON_LOG(LOG_INFO) << "All async bio put completed.";
 
@@ -49,7 +49,7 @@ void KVServer::getCallback(void *context, int32_t result, uint32_t sliceValSize)
 
     uint16_t left = ctx->sync_ctx->pending_count.fetch_sub(1, std::memory_order_acq_rel);
     if (left == 1) { // all async bio get finished
-        std::unique_lock<std::mutex> lock(ctx->sync_ctx->wait_mutex);
+        UniqueLock lock(ctx->sync_ctx->wait_mutex);
 
         FALCON_LOG(LOG_INFO) << "All async bio get completed.";
 
@@ -63,22 +63,50 @@ void KVServer::getCallback(void *context, int32_t result, uint32_t sliceValSize)
 int32_t KVServer::Put(const std::string &key, uint32_t valSize, const std::vector<void*> blockAddrs, uint32_t blockSize)
 {
     // 0 validate arguments
+    uint32_t numBlocks = blockAddrs.size();
+    FALCON_LOG(LOG_INFO) <<"Total numBlocks =" << numBlocks;
     if (key.empty() || valSize <= 0 || blockAddrs.empty() || blockSize <= 0) {
-        FALCON_LOG(LOG_ERROR) << "[PUT] Arguments invalid with key=" << key
+        FALCON_LOG(LOG_ERROR) <<"[PUT] Arguments invalid with key=" << key
                               << ", valSize=" << valSize
                               << ", blockSize=" << blockSize
-                              << ", len of blockAddrs=" << blockAddrs.size();
+                              << ", len of blockAddrs=" << numBlocks;
+        return -1;
+    }
+    if ((blockSize % SLICE_SIZE) != 0){
+        FALCON_LOG(LOG_WARNING) <<"[PUT] blockSize=" << blockSize << " can not be divided by SLICE_SIZE=" 
+                 << SLICE_SIZE << " which will cause multiple small slices and degrade performance."
+                 ;
+    }
+    uint32_t totalCapacity = numBlocks * blockSize;
+    if (totalCapacity < valSize) {
+        FALCON_LOG(LOG_ERROR) <<"[PUT] Total block capacity (" << totalCapacity 
+                      << ") < valSize (" << valSize << ")";
         return -1;
     }
 
     // 1 construct metadata information about kvcache and each slice
-    // 1.1 calculate slice_num
-    uint32_t tmp_slice_num = (valSize + SLICE_SIZE - 1) / SLICE_SIZE;
-    if (tmp_slice_num > UINT16_MAX) {
-        FALCON_LOG(LOG_ERROR) << "[PUT] Total slice number is greater than UINT16_MAX";
+    // calculate slice num and each slice size
+    std::vector<uint32_t> slices_size;
+    for (uint32_t blockId = 0; blockId < numBlocks; ++blockId) {
+        uint32_t blockStart = blockId * blockSize;
+        uint32_t blockDataSize = (blockStart + blockSize <= valSize)? blockSize: valSize - blockStart;
+
+        // cut cur block into mutiple slices
+        uint32_t remaining = blockDataSize;
+        while (remaining > 0) {
+            uint32_t sliceSize = (remaining >= SLICE_SIZE) ? SLICE_SIZE : remaining;
+            slices_size.push_back(sliceSize);
+            remaining -= sliceSize;
+        }
+    }
+    uint32_t tmp_total_slice_num = slices_size.size();
+    if (tmp_total_slice_num > UINT16_MAX) {
+        FALCON_LOG(LOG_ERROR) <<"[PUT] Total slice number is greater than UINT16_MAX";
         return -1;
     }
-    uint16_t slice_num = static_cast<uint16_t>(tmp_slice_num);
+    uint16_t slice_num = static_cast<uint16_t>(tmp_total_slice_num);
+    FALCON_LOG(LOG_INFO) <<"Total slice_num =" << slice_num;
+
 
     FormData_kv_index kvmetainfo;
     kvmetainfo.key = key;
@@ -88,60 +116,41 @@ int32_t KVServer::Put(const std::string &key, uint32_t valSize, const std::vecto
 
     std::vector<uint64_t> slice_keys = key_gen.getKeys(slice_num);
     if (slice_keys.empty()) {
-        FALCON_LOG(LOG_ERROR) << "[PUT] None of slice keys are generated";
+        FALCON_LOG(LOG_ERROR) <<"[PUT] None of slice keys are generated";
         return -1;
     }
 
     uint64_t cur_slice_key = -1;
-    uint64_t offset = 0;
+    uint32_t cur_slice_size = -1;
     uint16_t cur_slice_id = 0;
-    while (offset < valSize) {
+    for(uint32_t i = 0; i < slice_num; ++i) {
         // get key for current slice
         cur_slice_key = slice_keys[cur_slice_id];
 
-        uint64_t cur_slice_size = (offset + SLICE_SIZE < valSize) ? SLICE_SIZE : (valSize - offset);
-
+        cur_slice_size = slices_size[i];
         // get location for current slice
         std::unique_ptr<ObjLocation> location = std::make_unique<ObjLocation>();
         CResult status = BioCalcLocation(tenantId, cur_slice_key, location.get()); // 同步
         if (status != CResult::RET_CACHE_OK) {
-            FALCON_LOG(LOG_ERROR) << "[PUT] BioCalcLocation failed with returned status " << status;
+            FALCON_LOG(LOG_ERROR) <<"[PUT] BioCalcLocation failed with returned status " << status;
             return -1;
         }
 
         // construct current slice_meta and put into kvmetainfo
-        kvmetainfo.slicesMeta.emplace_back(cur_slice_key, cur_slice_size, location->location[0]);
+        FormData_Slice tmp;
+        tmp.sliceKey = cur_slice_key;
+        tmp.size = cur_slice_size;
+        tmp.location = location->location[0];
+        kvmetainfo.slicesMeta.emplace_back(tmp);
 
-        offset += cur_slice_size;
         ++cur_slice_id;
     }
 
-    // 2 gather all block data
-    auto allData = std::make_shared<std::vector<uint8_t>>(valSize);
-    uint32_t copied = 0;
-    uint8_t* dst = allData->data();
-
-    for (const void* blkAddr : blockAddrs) {
-        if (copied >= valSize) break;
-
-        const uint8_t* src = static_cast<const uint8_t*>(blkAddr);
-        size_t copySize = std::min(blockSize, valSize - copied);
-
-        std::memcpy(dst + copied, src, copySize);
-        copied += copySize;
-    }
-
-    if (copied != valSize) {
-        FALCON_LOG(LOG_ERROR) << "Data copy incomplete. Copied: " << copied << ", Expected: " << valSize;
-        return -1;
-    }
-
     // 2 start putting to bio
-    const char* value_ptr = reinterpret_cast<const char*>(allData->data());
     // call PutSlices, wait until all put finished
-    bool ret = putSlices(kvmetainfo, value_ptr, ioConcurrency_, KVServer::putCallback);
+    bool ret = putSlices(kvmetainfo, blockAddrs, blockSize, ioConcurrency_, KVServer::putCallback);
     if (!ret) {
-        FALCON_LOG(LOG_ERROR) << "[PUT] putSlices failed";
+        FALCON_LOG(LOG_ERROR) <<"[PUT] putSlices failed";
         return -1;
     }
 
@@ -152,27 +161,26 @@ int32_t KVServer::Put(const std::string &key, uint32_t valSize, const std::vecto
         // delete already put data
         ret = deleteSlices(kvmetainfo);
         if (!ret) {
-            FALCON_LOG(LOG_ERROR) << "[PUT] deleteSlices failed";
+            FALCON_LOG(LOG_ERROR) <<"[PUT] deleteSlices failed";
             return -1;
         }
 
-        FALCON_LOG(LOG_ERROR) << "[PUT] putMeta failed";
+        FALCON_LOG(LOG_ERROR) <<"[PUT] putMeta failed";
         return -1;
     }
 
     return 0;
-
-
 }
 
 bool KVServer::putSlices(FormData_kv_index &kvMetaInfo,
-                         const char *valPtr,
+                         const std::vector<void*>& blockAddrs,
+                         uint32_t blockSize,
                          uint16_t sem_limit,
                          BioLoadCallback putcallback)
 {
     uint16_t num_slices = kvMetaInfo.sliceNum;
 
-    FALCON_LOG(LOG_INFO) << "Starting async put for " << num_slices << " slices.";
+    FALCON_LOG(LOG_INFO) <<"Starting async put for " << num_slices << " slices.";
 
     // 1. create semaphore and initialized as sem_limit
     auto concurrency_sem = std::make_shared<Semaphore>(sem_limit);
@@ -183,7 +191,11 @@ bool KVServer::putSlices(FormData_kv_index &kvMetaInfo,
     auto ioctx_pool = std::make_shared<std::vector<AsyncPutContext>>(num_slices);
 
     // 3. parallel async bioput
+    uint64_t slice_offset = 0;
     for (uint16_t i = 0; i < num_slices; ++i) {
+
+        char* data_ptr = getPtrAtOffset(slice_offset, blockAddrs, blockSize);
+
         // 3.1 get context
         AsyncPutContext *ctx = &(*ioctx_pool)[i];
         ctx->concurrency_sem = concurrency_sem;
@@ -199,36 +211,41 @@ bool KVServer::putSlices(FormData_kv_index &kvMetaInfo,
         uint64_t slice_key = kvMetaInfo.slicesMeta[i].sliceKey;
         ctx->slice_key = slice_key;
         std::string slice_key_str = std::to_string(slice_key);
-        const char *slice_value_ptr = valPtr + (i * SLICE_SIZE);
         uint32_t length = kvMetaInfo.slicesMeta[i].size;
         ObjLocation location = {{kvMetaInfo.slicesMeta[i].location}};
 
-        FALCON_LOG(LOG_INFO) << "Async put for slice key=" << slice_key_str << " started.";
+        FALCON_LOG(LOG_INFO) <<"Async put for slice key=" << slice_key_str << " started.";
 
         CResult ret =
-            BioAsyncPut(tenantId, slice_key_str.c_str(), slice_value_ptr, (uint64_t)length, location, putcallback, ctx);
+            BioAsyncPut(tenantId, slice_key_str.c_str(), data_ptr, (uint64_t)length, location, putcallback, ctx);
         if (ret != CResult::RET_CACHE_OK) {
             sync_ctx->pending_count.fetch_sub(1, std::memory_order_acq_rel); // task submit failed
             concurrency_sem->post();
             return false;
         } // else start asyncput for the current slice
+
+        slice_offset += length;
     }
 
     // 4. wait until all async put finished
     {
-        std::unique_lock<std::mutex> lock(sync_ctx->wait_mutex);
-        sync_ctx->wait_cv.wait(lock, [&sync_ctx]() { return (sync_ctx->pending_count.load() == 0); });
+        UniqueLock lock(sync_ctx->wait_mutex);
+        if (!sync_ctx->wait_cv.wait_for(lock, std::chrono::seconds(60), 
+            [&sync_ctx]() { return (sync_ctx->pending_count.load() == 0); })) {
+            FALCON_LOG(LOG_ERROR) <<"[PUT] Async put timeout after 60s";
+            return false;
+        }
     }
 
     // 5. check the async callback func result
     for (uint16_t i = 0; i < ioctx_pool->size(); ++i){
         if ((*ioctx_pool)[i].result != CResult::RET_CACHE_OK){
-            FALCON_LOG(LOG_ERROR) << "Async put for slice " << i << " is failed.";
+            FALCON_LOG(LOG_ERROR) <<"Async put for slice " << i << " is failed.";
             return false;
         }
     }
 
-    FALCON_LOG(LOG_INFO) << "Async put completed for all slices.";
+    FALCON_LOG(LOG_INFO) <<"Async put completed for all slices.";
 
     return true;
 }
@@ -256,73 +273,61 @@ bool KVServer::putMeta(FormData_kv_index &kvmetainfo)
     return false;
 }
 
+
 int32_t KVServer::Get(const std::string &key, std::vector<void*> blockAddrs, uint32_t blockSize)
 {
     // 0. validate argument
     uint32_t numBlocks = blockAddrs.size();
-
     if (key.empty() || blockAddrs.empty() || blockSize <= 0) {
-        FALCON_LOG(LOG_ERROR) << "[GET] Arguments invalid with key=" << key
+        FALCON_LOG(LOG_ERROR) <<"[GET] Arguments invalid with key=" << key
                         << ", blockSize=" << blockSize
                         << ", len of blockAddrs=" << numBlocks;
         return -1;
     }
-    
     for (uint32_t i = 0; i < numBlocks; ++i) {
         if (blockAddrs[i] == nullptr) {
-            FALCON_LOG(LOG_ERROR) << "[GET] blockAddrs[" << i << "] is nullptr";
+            FALCON_LOG(LOG_ERROR) <<"[GET] blockAddrs[" << i << "] is nullptr";
             return -1;
         }
-        // FALCON_LOG(LOG_INFO) << "blockAddrs[" << i << "] is " << blockAddrs[i];
     }
+    
 
     // 1. get metakvinfo
     FormData_kv_index kvmetainfo;
     kvmetainfo.key = key;
     bool ret = getMeta(kvmetainfo);
     if (!ret) {
-        FALCON_LOG(LOG_ERROR) << "[GET] getMeta failed";
+        FALCON_LOG(LOG_ERROR) <<"[GET] getMeta failed";
+        return -1;
+    }
+    if (numBlocks * blockSize < kvmetainfo.valueLen) {
+        FALCON_LOG(LOG_ERROR) <<"[GET] Insufficient buffer space";
         return -1;
     }
 
     // 2. async get
     // 2.1 allocate temp buffer used by getSlices
     uint32_t valTotalSize = 0;
-    std::vector<char> tempBuffer(kvmetainfo.valueLen);
-    ret = getSlices(kvmetainfo, tempBuffer.data(), valTotalSize, ioConcurrency_, KVServer::getCallback);
+    
+    ret = getSlices(kvmetainfo, blockAddrs, blockSize, valTotalSize, ioConcurrency_, KVServer::getCallback);
     if (!ret) {
-        FALCON_LOG(LOG_ERROR) << "[GET] getSlices failed";
+        FALCON_LOG(LOG_ERROR) <<"[GET] getSlices failed";
         return -1;
-    }
-    // 2.2 copy value from temp buffer to blockAddrs
-    char* srcPtr = tempBuffer.data();
-    uint32_t copied = 0;
-    uint32_t bytesToCopy = 0;
-
-    for (uint32_t i = 0; i < numBlocks; ++i) {
-        if (i == (numBlocks-1)) {
-            bytesToCopy = kvmetainfo.valueLen - copied;
-        }else {
-            bytesToCopy = blockSize;
-        }
-        std::memcpy(blockAddrs[i], srcPtr, bytesToCopy);
-	// FALCON_LOG(LOG_INFO) << "copy from srcPtr=" << static_cast<void*>(srcPtr) << " to blockAddrs[" << i << "]=" << blockAddrs[i] <<", bytes to copy=" << bytesToCopy;
-        srcPtr += bytesToCopy;
-        copied += bytesToCopy;
     }
 
     return 0;
 }
 
 bool KVServer::getSlices(FormData_kv_index &kvMetaInfo,
-                         char *valPtr,
+                         std::vector<void*>& blockAddrs,
+                         uint32_t blockSize,
                          uint32_t &valTotalSize,
                          uint16_t sem_limit,
                          BioGetCallbackFunc getcallback)
 {
     uint16_t num_slices = kvMetaInfo.sliceNum;
 
-    FALCON_LOG(LOG_INFO) << "Starting async get for " << num_slices << " slices.";
+    FALCON_LOG(LOG_INFO) <<"Starting async get for " << num_slices << " slices.";
 
     // 1. create semaphore and initialized as sem_limit
     auto concurrency_sem = std::make_shared<Semaphore>(sem_limit);
@@ -332,7 +337,12 @@ bool KVServer::getSlices(FormData_kv_index &kvMetaInfo,
     // set iocontext pool
     auto ioctx_pool = std::make_shared<std::vector<AsyncGetContext>>(num_slices);
 
+    // accumulated offset
+    uint64_t currentOffset = 0;
     for (uint16_t i = 0; i < num_slices; ++i) {
+
+        char* data_ptr = getPtrAtOffset(currentOffset, blockAddrs, blockSize);
+
         AsyncGetContext *ctx = &(*ioctx_pool)[i];
         ctx->concurrency_sem = concurrency_sem;
         ctx->sync_ctx = sync_ctx;
@@ -346,38 +356,43 @@ bool KVServer::getSlices(FormData_kv_index &kvMetaInfo,
         std::string slice_key_str = std::to_string(slice_key);
         uint32_t length = kvMetaInfo.slicesMeta[i].size;
         ObjLocation location = {{kvMetaInfo.slicesMeta[i].location}};
-        char *slice_value_ptr = valPtr + (i * SLICE_SIZE);
 
-        FALCON_LOG(LOG_INFO) << "Async get for slice key=" << slice_key_str << " started.";
+        FALCON_LOG(LOG_INFO) <<"Async get for slice key=" << slice_key_str << " started.";
 
         CResult ret =
-            BioAsyncGet(tenantId, slice_key_str.c_str(), 0, length, location, slice_value_ptr, getcallback, ctx);
+            BioAsyncGet(tenantId, slice_key_str.c_str(), 0, length, location, data_ptr, getcallback, ctx);
         if (ret != CResult::RET_CACHE_OK) {
             sync_ctx->pending_count.fetch_sub(1, std::memory_order_acq_rel); // task submit failed
             concurrency_sem->post();
             return false;
         }
+
+        currentOffset += length;
     }
 
     {
-        std::unique_lock<std::mutex> lock(sync_ctx->wait_mutex);
-        sync_ctx->wait_cv.wait(lock, [&sync_ctx]() { return (sync_ctx->pending_count.load() == 0); });
+        UniqueLock lock(sync_ctx->wait_mutex);
+        if (!sync_ctx->wait_cv.wait_for(lock, std::chrono::seconds(60), 
+            [&sync_ctx]() { return (sync_ctx->pending_count.load() == 0); })) {
+            FALCON_LOG(LOG_ERROR) <<"[GET] Async get timeout after 60s";
+            return false;
+        }
     }
 
     for (auto &ctx : *ioctx_pool) {
-	if (ctx.result != CResult::RET_CACHE_OK){
-            FALCON_LOG(LOG_ERROR) << "Async get for at least one slice failed.";
+        if (ctx.result != CResult::RET_CACHE_OK){
+            FALCON_LOG(LOG_ERROR) <<"Async get for at least one slice failed.";
             return false;
         }
         valTotalSize += ctx.sliceSize;
     }
     if (valTotalSize != kvMetaInfo.valueLen) {
-        FALCON_LOG(LOG_ERROR) << "Total got slices size is not equal to expected. Expected=" << kvMetaInfo.valueLen
-                              << ", got=" << valTotalSize;
+        FALCON_LOG(LOG_ERROR) <<"Total got slices size is not equal to expected. Expected=" << kvMetaInfo.valueLen
+                                                                              << ", got=" << valTotalSize;
         return false; // total got slices size is not equal to expected
     }
 
-    FALCON_LOG(LOG_INFO) << "Async get completed for all slices. Total size=" << valTotalSize;
+    FALCON_LOG(LOG_INFO) <<"Async get completed for all slices. Total size=" << valTotalSize;
 
     return true;
 }

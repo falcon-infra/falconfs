@@ -7,6 +7,10 @@
 #include <thread>
 #include <vector>
 
+using MutexType = std::mutex;
+using LockGuard = std::lock_guard<MutexType>;
+using UniqueLock = std::unique_lock<MutexType>;
+
 struct KeyRange
 {
     uint64_t start;
@@ -45,7 +49,7 @@ class SliceKeyGenerator {
     void triggerPrefetch(uint32_t bs);    // 唤醒预取线程
 
     std::thread prefetchThread_;
-    std::mutex mtx; // 避免 getKeys 被同时调用 TODO: 更换 mutex
+    MutexType mtx; // 避免 getKeys 被同时调用
     std::condition_variable cv;  // 阻塞和唤醒预取线程中使用
     std::atomic<bool> should_stop;   // 任务结束时也没必要继续阻塞
     std::atomic<bool> pending_fetch; // 正在等待预取结束标志，避免重复预取

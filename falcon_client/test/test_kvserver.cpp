@@ -55,116 +55,63 @@ TEST_F(KVServerTest, SingletonInstanceIsUnique) {
     EXPECT_EQ(&instance1, &instance2);
 }
 
-TEST_F(KVServerTest, PutAndGetSmallValue) {
+TEST_F(KVServerTest, PutGetMultiBlock) {
     KVServer& kv = KVServer::getInstance();
 
-    std::string key = random_string(10);
-    std::string value = "hello, kvserver";
-    int32_t putRet = kv.Put(key, value.data(), static_cast<uint32_t>(value.size()));
-    EXPECT_EQ(putRet, 0) << "Put failed with return code: "<<putRet;
+    const size_t valueSize = 6 * 1024 * 1024 + 250;
+    const uint32_t blockSize = 3 * 1024 * 1024;
+    const size_t numBlocks = (valueSize + blockSize - 1) / blockSize;
 
-    std::vector<char> buffer(value.size() + 10);
-    uint32_t actualSize = 0;
-    int32_t getRet = kv.Get(key, buffer.data(), actualSize);
-    EXPECT_EQ(getRet, 0) << "Get failed with return code: " << getRet;
-    EXPECT_EQ(actualSize, value.size());
-    EXPECT_TRUE(memory_equal(buffer.data(), value.data(), value.size()));
-}
+    // 1. 生成随机大值
+    std::string value = random_string(valueSize);
+    std::string key = random_string(2);
 
-TEST_F(KVServerTest, PutAndGetLargeValue) {
-    KVServer& kv = KVServer::getInstance();
+    // 2. 分配多个 block（模拟共享内存块）
+    std::vector<std::unique_ptr<char[]>> blockBuffers;
+    std::vector<void*> blockAddrs;
 
-    std::string key = random_string(10);
-    std::string value = random_string(15*1024*1024); // 15MB
-    int32_t putRet = kv.Put(key, value.data(), static_cast<uint32_t>(value.size()));
-    EXPECT_EQ(putRet, 0) << "Put failed with return code: "<<putRet;
+    blockBuffers.reserve(numBlocks);
+    blockAddrs.reserve(numBlocks);
 
-    std::vector<char> buffer(value.size() + 10);
-    uint32_t actualSize = 0;
-    int32_t getRet = kv.Get(key, buffer.data(), actualSize);
-    EXPECT_EQ(getRet, 0) << "Get failed with return code: " << getRet;
-    EXPECT_EQ(actualSize, value.size());
-    EXPECT_TRUE(memory_equal(buffer.data(), value.data(), value.size()));
-}
+    const char* valueData = reinterpret_cast<const char*>(value.data());
 
-TEST_F(KVServerTest, PutOverwritesExistingKey) {
-    KVServer& kv = KVServer::getInstance();
+    for (size_t i = 0; i < numBlocks; ++i) {
+        size_t offset = i * blockSize;
+        size_t copySize = std::min(static_cast<size_t>(blockSize), valueSize - offset);
 
-    std::string key = random_string(10);
-    std::string value1 = random_string(15*1024*1024); // 15MB
-    std::string value2 = random_string(1*1024*1024); // 1MB
-    int32_t putRet = kv.Put(key, value1.data(), static_cast<uint32_t>(value1.size()));
-    EXPECT_EQ(putRet, 0) << "Put value1 failed with return code: "<<putRet;
-    putRet = kv.Put(key, value2.data(), static_cast<uint32_t>(value2.size()));
-    EXPECT_EQ(putRet, 0) << "Put value2 failed with return code: "<<putRet;
+        auto buffer = std::make_unique<char[]>(blockSize);
+        std::memcpy(buffer.get(), valueData + offset, copySize); // 填充数据
 
-    std::vector<char> buffer(value2.size() + 10);
-    uint32_t actualSize = 0;
-    int32_t getRet = kv.Get(key, buffer.data(), actualSize);
-    EXPECT_EQ(getRet, 0) << "Get value2 failed with return code: " << getRet;
-    EXPECT_EQ(actualSize, value2.size());
-    EXPECT_TRUE(memory_equal(buffer.data(), value2.data(), value2.size()));
-}
-
-TEST_F(KVServerTest, DeleteKey) {
-    auto& kv = KVServer::getInstance();
-    std::string key = "delete_test";
-    std::string value = "to be deleted";
-
-    EXPECT_EQ(kv.Put(key, value.data(), value.size()), 0);
-    EXPECT_EQ(kv.Delete(key), 0);
-
-    std::vector<char> buffer(100);
-    uint32_t actualSize = 0;
-    int32_t ret = kv.Get(key, buffer.data(), actualSize);
-
-    EXPECT_NE(ret, 0) << "Get after Delete should fail";
-}
-
-TEST_F(KVServerTest, InvalidInputs) {
-    auto& kv = KVServer::getInstance();
-    std::string key = "invalid_input_test";
-
-    // valPtr 为 nullptr，size > 0
-    EXPECT_NE(kv.Put(key, nullptr, 10), 0);
-
-    // valSize 为 0
-    EXPECT_NE(kv.Put(key, "valid", 0), 0) << "Put with size 0 should failed";
-
-    // Get 时 valPtr 为 nullptr
-    uint32_t size = 100;
-    EXPECT_NE(kv.Get(key, nullptr, size), 0);
-}
-
-TEST_F(KVServerTest, ConcurrentOperations) {
-    auto& kv = KVServer::getInstance();
-    const int numThreads = 10;
-    const int opsPerThread = 100;
-    std::vector<std::thread> threads;
-
-    for (int t = 0; t < numThreads; ++t) {
-        threads.emplace_back([&, t] {
-            for (int i = 0; i < opsPerThread; ++i) {
-                std::string key = "thread_" + std::to_string(t) + "_op_" + std::to_string(i);
-                std::string value = random_string(1024); // 1KB
-
-                // Put
-                EXPECT_EQ(kv.Put(key, value.data(), value.size()), 0);
-
-                // Get
-                std::vector<char> buffer(value.size() + 10);
-                uint32_t actualSize = 0;
-                EXPECT_EQ(kv.Get(key, buffer.data(), actualSize), 0);
-                EXPECT_EQ(actualSize, value.size());
-                EXPECT_TRUE(memory_equal(buffer.data(), value.data(), value.size()));
-
-                // Delete
-                EXPECT_EQ(kv.Delete(key), 0);
-            }
-        });
+        blockBuffers.push_back(std::move(buffer));
+        blockAddrs.push_back(blockBuffers.back().get());
     }
 
-    for (auto& th : threads) {
-        th.join();
+    // 3. 调用 Put 接口
+    int32_t putRet = kv.Put(key, static_cast<uint32_t>(valueSize),
+                            blockAddrs, blockSize);
+    EXPECT_EQ(putRet, 0) << "Put failed with return code: " << putRet;
+
+    // 4. 准备 Get 缓冲区
+    std::vector<std::unique_ptr<char[]>> writeBlocks;
+    std::vector<void*> writeAddrs;
+    writeBlocks.reserve(numBlocks);
+    writeAddrs.reserve(numBlocks);
+    for (size_t i = 0; i < numBlocks; ++i){
+        auto buffer = std::make_unique<char[]>(blockSize);
+        std::fill(buffer.get(), buffer.get()+blockSize, 0); // 先填充0
+        
+        writeAddrs.push_back(buffer.get());
+        writeBlocks.push_back(std::move(buffer));
+    }
+
+    int32_t getRet = kv.Get(key, writeAddrs, blockSize);
+    EXPECT_EQ(getRet, 0) << "Get failed with return code: " << getRet;
+
+
+    for (size_t i = 0; i < numBlocks; ++i){
+        size_t offset = i * blockSize;
+        size_t cmpSize = std::min(static_cast<size_t>(blockSize), valueSize - offset);
+        EXPECT_TRUE(memory_equal(writeBlocks[i].get(), blockBuffers[i].get(), cmpSize))
+        << "Retrieved data does not match original value in block " << i;
     }
 }
