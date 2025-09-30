@@ -26,8 +26,17 @@
 #include "utils/path_parse.h"
 #include "utils/rwlock.h"
 #include "utils/shmem_control.h"
+#include "utils/falcon_plugin_guc.h"
+#include "plugin/falcon_plugin_loader.h"
 
 PG_MODULE_MAGIC;
+
+/* Plugin system GUC variables */
+char *falcon_plugin_directory = NULL;
+char *falcon_plugin_custom_config = NULL;
+
+/* Plugin system shared memory */
+static FalconPluginSharedData *falcon_plugin_shmem = NULL;
 
 void _PG_init(void);
 static void FalconStart2PCCleanupWorker(void);
@@ -52,6 +61,11 @@ void _PG_init(void)
 
     FalconStart2PCCleanupWorker();
     FalconStartConnectionPoolWorker();
+
+    /* Load third-party plugins */
+    if (falcon_plugin_directory) {
+        FalconLoadPluginsFromDirectory(falcon_plugin_directory);
+    }
 }
 
 /*
@@ -151,6 +165,7 @@ static void FalconShmemRequest(void)
     RequestAddinShmemSpace(ShardTableShmemsize());
     RequestAddinShmemSpace(DirPathShmemsize());
     RequestAddinShmemSpace(FalconConnectionPoolShmemsize());
+    RequestAddinShmemSpace(sizeof(FalconPluginSharedData));
 }
 static void FalconShmemInit(void)
 {
@@ -166,6 +181,16 @@ static void FalconShmemInit(void)
     ShardTableShmemInit();
     DirPathShmemInit();
     FalconConnectionPoolShmemInit();
+
+    /* Initialize plugin shared memory */
+    bool found;
+    falcon_plugin_shmem = ShmemInitStruct("FalconPluginData",
+                                         sizeof(FalconPluginSharedData),
+                                         &found);
+    if (!found) {
+        memset(falcon_plugin_shmem, 0, sizeof(FalconPluginSharedData));
+        falcon_plugin_shmem->main_pid = getpid();
+    }
 
     LWLockRelease(AddinShmemInitLock);
 }
@@ -221,4 +246,26 @@ static void RegisterFalconConfigVariables(void)
                             NULL,
                             NULL);
     FalconConnectionPoolShmemSize = (uint64_t)FalconConnectionPoolShmemSizeInMB * 1024 * 1024;
+
+    DefineCustomStringVariable("falcon_plugin.directory",
+                              gettext_noop("Directory containing Falcon plugins."),
+                              NULL,
+                              &falcon_plugin_directory,
+                              NULL,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
+
+    DefineCustomStringVariable("falcon_plugin.custom_config",
+                              gettext_noop("Custom configuration for plugins in JSON format."),
+                              NULL,
+                              &falcon_plugin_custom_config,
+                              NULL,
+                              PGC_SIGHUP,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
 }
