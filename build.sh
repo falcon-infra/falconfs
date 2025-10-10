@@ -327,11 +327,19 @@ clean)
     esac
     ;;
 test)
-    TARGET_DIR="$FALCONFS_DIR/build/tests/falcon_store/"
-    find "$TARGET_DIR" -type f -executable | while read -r executable_file; do
-        echo "Executing: $executable_file"
-        "$executable_file"
-        echo "---------------------------------------------------------------------------------------"
+    TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
+
+    for TARGET_DIR in "${TARGET_DIRS[@]}"; do
+        if [ -d "$TARGET_DIR" ]; then
+            echo "Running tests in: $TARGET_DIR"
+            find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
+                echo "Executing: $executable_file"
+                "$executable_file"
+                echo "---------------------------------------------------------------------------------------"
+            done
+        else
+            echo "Test directory not found: $TARGET_DIR"
+        fi
     done
     echo "All unit tests passed."
     ;;
