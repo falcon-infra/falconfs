@@ -44,6 +44,7 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -84,12 +85,18 @@ wal_level = logical
 max_replication_slots = 8
 max_wal_senders = 8
 falcon_connection_pool.port = ${workerPoolerPort}
+<<<<<<< HEAD
 falcon_connection_pool.pool_size = ${FalconConnectionPoolSize}
 falcon_connection_pool.shmem_size = ${FalconConnectionPoolShmemSize}
 falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+=======
+falcon_connection_pool.pool_size = ${falconConnectionPoolSize}
+falcon_connection_pool.shmem_size = ${falconConnectionPoolShmemSize}
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
+>>>>>>> 4fbbbcf (feat: add third-party .so plugin framework for FalconFS)
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi
