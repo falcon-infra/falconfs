@@ -25,6 +25,7 @@ else
     echo "falcon_connection_pool.port = 5442" >> /home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.pool_size = 256" >> /home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.shmem_size = 256" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_plugin.directory = '/falconfs/plugins'" >> /home/falconMeta/data/metadata/postgresql.conf
     pg_ctl start -D /home/falconMeta/data/metadata
 fi
 

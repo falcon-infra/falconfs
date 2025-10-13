@@ -34,6 +34,7 @@ max_wal_senders = 8
 falcon_connection_pool.port = $cnPoolerPort
 falcon_connection_pool.pool_size = $falconConnectionPoolSize
 falcon_connection_pool.shmem_size = $falconConnectionPoolShmemSize
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -76,6 +77,7 @@ max_wal_senders = 8
 falcon_connection_pool.port = ${workerPoolerPort}
 falcon_connection_pool.pool_size = ${falconConnectionPoolSize}
 falcon_connection_pool.shmem_size = ${falconConnectionPoolShmemSize}
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi
