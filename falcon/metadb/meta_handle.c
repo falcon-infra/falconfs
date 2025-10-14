@@ -722,7 +722,7 @@ void FalconOpenHandle(MetaProcessInfo *infoArray, int count)
         FalconErrorCode errorCode = PathParseTreeInsert(NULL,
                                                         directoryRel,
                                                         info->path,
-                                                        PATH_PARSE_FLAG_ACQUIRE_SHARED_LOCK_IF_TARGET_IS_DIRECTORY,
+                                                        0,
                                                         &info->parentId,
                                                         &info->name,
                                                         NULL);

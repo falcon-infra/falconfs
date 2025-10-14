@@ -12,7 +12,12 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <memory>
+#include <atomic>
+#include <iostream>
 #include "connection_pool/task.h"
+
+#define INIT_CONNECTIONS 10
 
 class PGConnection;
 
@@ -32,7 +37,7 @@ class PGConnectionPool {
     std::condition_variable cvPendingTaskNotFull;
     uint16_t pendingTaskBufferMaxSize;
 
-    enum TaskSupportBatchType { MKDIR = 0, CREATE, STAT, UNLINK, OPEN, CLOSE, NOT_SUPPORT };
+    enum TaskSupportBatchType { MKDIR = 0, CREATE, STAT, UNLINK, OPEN, CLOSE, NOT_SUPPORT, END };
     TaskSupportBatchType ConvertMetaServiceTypeToTaskSupportBatchType(const falcon::meta_proto::MetaServiceType type)
     {
         switch (type) {
@@ -58,7 +63,7 @@ class PGConnectionPool {
         std::mutex taskMutex;
         std::condition_variable cvBatchNotFull;
     };
-    TaskSupportBatch supportBatchTaskList[TaskSupportBatchType::NOT_SUPPORT];
+    TaskSupportBatch supportBatchTaskList[TaskSupportBatchType::END];
     uint16_t batchTaskBufferMaxSize;
 
     std::thread backgroundPoolManager;
@@ -79,6 +84,12 @@ class PGConnectionPool {
     void DispatchAsyncMetaServiceJob(falcon::meta_proto::AsyncMetaServiceJob *job);
 
     void Stop();
+
+    int BatchDequeueExec(int toDequeue, int queueIndex);
+
+    int SingleDequeueExec(int toDequeue, std::vector<falcon::meta_proto::AsyncMetaServiceJob *> &tasksContainer);
+
+    int AdjustWaitTime(int prevTime, size_t reqInLoop);
 };
 
 #endif
