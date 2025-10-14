@@ -3,11 +3,13 @@
 PG_CFLAGS = -Wno-declaration-after-statement
 
 MODULE_big = falcon
-SUBDIRS = . metadb utils distributed_backend transaction control dir_path_shmem connection_pool
+SUBDIRS = . metadb utils distributed_backend transaction control dir_path_shmem connection_pool plugin
 
 falcon_srcdir = .
 CXX_OBJS += \
 	$(patsubst $(falcon_srcdir)/%.cpp,%.o,$(foreach dir,$(SUBDIRS), $(sort $(wildcard $(falcon_srcdir)/$(dir)/*.cpp))))
+
+# Plugin sources are included in SUBDIRS above
 OBJS += \
 	$(patsubst $(falcon_srcdir)/%.c,%.o,$(foreach dir,$(SUBDIRS), $(sort $(wildcard $(falcon_srcdir)/$(dir)/*.c))))
 OBJS += $(CXX_OBJS)
@@ -32,6 +34,7 @@ $(OBJS): $(FBS_HEAD) $(PROTO_OBJS)
 
 $(CXX_OBJS): %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -faligned-new -c $< -o $@
+
 
 $(PROTO_SRC): $(PROTO_FILE)
 	mkdir -p $(CONNECTION_POOL_DIR)/proto
