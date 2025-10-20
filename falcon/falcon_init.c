@@ -207,6 +207,58 @@ static void RegisterFalconConfigVariables(void)
                             NULL,
                             NULL);
 
+    DefineCustomIntVariable("falcon_connection_pool.batch_size",
+                            gettext_noop("batch size of the pool manager."),
+                            NULL,
+                            &FalconConnectionPoolBatchSize,
+                            FALCON_CONNECTION_POOL_BATCH_SIZE_DEFAULT,
+                            1,
+                            2560,
+                            PGC_POSTMASTER,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
+
+    DefineCustomIntVariable("falcon_connection_pool.wait_adjust",
+                            gettext_noop("if adjust wait time in pool manager."),
+                            NULL,
+                            &FalconConnectionPoolWaitAdjust,
+                            FALCON_CONNECTION_POOL_WAIT_ADJUST_DEFAULT,
+                            0,
+                            2560,
+                            PGC_POSTMASTER,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
+
+    DefineCustomIntVariable("falcon_connection_pool.wait_min",
+                            gettext_noop("min wait time in mus of the pool manager."),
+                            NULL,
+                            &FalconConnectionPoolWaitMin,
+                            FALCON_CONNECTION_POOL_WAIT_MIN_DEFAULT,
+                            1,
+                            1000000,
+                            PGC_POSTMASTER,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
+
+    DefineCustomIntVariable("falcon_connection_pool.wait_max",
+                            gettext_noop("max wait time in mus of the pool manager."),
+                            NULL,
+                            &FalconConnectionPoolWaitMax,
+                            FALCON_CONNECTION_POOL_WAIT_MAX_DEFAULT,
+                            1,
+                            1000000,
+                            PGC_POSTMASTER,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
+
     int FalconConnectionPoolShmemSizeInMB = FALCON_CONNECTION_POOL_SHMEM_SIZE_DEFAULT / 1024 / 1024;
     DefineCustomIntVariable(gettext_noop("falcon_connection_pool.shmem_size"),
                             "Shmem size of the pool manager, unit: MB.",

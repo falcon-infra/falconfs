@@ -51,7 +51,8 @@ LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgfl
 PG_CPPFLAGS = -I$(libpq_srcdir) -I./include -I./connection_pool/proto -I./connection_pool/fbs \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
 			  -I/usr/local/include \
-			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include
+			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include \
+			  -I$(falcon_srcdir)/../../../../third_party
 SHLIB_LINK_INTERNAL =  -L../../src/interfaces/libpq -Wl,--no-as-needed -lpq -lstdc++ \
 					-lz -Wl,--as-needed \
 					   $(LDFLAGS_BRPC) $(LDFLAGS_PROTO) $(LDFLAGS_DEPENDENCIES)

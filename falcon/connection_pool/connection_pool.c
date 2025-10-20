@@ -26,6 +26,10 @@
 int FalconPGPort = 0;
 int FalconConnectionPoolPort = FALCON_CONNECTION_POOL_PORT_DEFAULT;
 int FalconConnectionPoolSize = FALCON_CONNECTION_POOL_SIZE_DEFAULT;
+int FalconConnectionPoolBatchSize = FALCON_CONNECTION_POOL_BATCH_SIZE_DEFAULT;
+int FalconConnectionPoolWaitAdjust = FALCON_CONNECTION_POOL_WAIT_ADJUST_DEFAULT;
+int FalconConnectionPoolWaitMin = FALCON_CONNECTION_POOL_WAIT_MIN_DEFAULT;
+int FalconConnectionPoolWaitMax = FALCON_CONNECTION_POOL_WAIT_MAX_DEFAULT;
 uint64_t FalconConnectionPoolShmemSize = FALCON_CONNECTION_POOL_SHMEM_SIZE_DEFAULT;
 static char *FalconConnectionPoolShmemBuffer = NULL;
 FalconShmemAllocator FalconConnectionPoolShmemAllocator;

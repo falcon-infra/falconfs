@@ -19,6 +19,18 @@ extern int FalconConnectionPoolPort;
 #define FALCON_CONNECTION_POOL_SIZE_DEFAULT 32
 extern int FalconConnectionPoolSize;
 
+#define FALCON_CONNECTION_POOL_BATCH_SIZE_DEFAULT 512
+extern int FalconConnectionPoolBatchSize;
+
+#define FALCON_CONNECTION_POOL_WAIT_ADJUST_DEFAULT 1
+extern int FalconConnectionPoolWaitAdjust;
+
+#define FALCON_CONNECTION_POOL_WAIT_MIN_DEFAULT 1
+extern int FalconConnectionPoolWaitMin;
+
+#define FALCON_CONNECTION_POOL_WAIT_MAX_DEFAULT 512
+extern int FalconConnectionPoolWaitMax;
+
 #define FALCON_CONNECTION_POOL_SHMEM_SIZE_DEFAULT (256 * 1024 * 1024)
 extern uint64_t FalconConnectionPoolShmemSize;
 

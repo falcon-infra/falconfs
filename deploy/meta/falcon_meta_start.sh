@@ -2,8 +2,14 @@
 DIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
 source $DIR/falcon_meta_config.sh
 
-falconConnectionPoolSize=32
-falconConnectionPoolShmemSize=$((256)) #unit: MB
+CPU_HALF=$(( $(nproc) / 2 ))
+[ $CPU_HALF -eq 0 ] && CPU_HALF=32
+FalconConnectionPoolSize=$CPU_HALF
+FalconConnectionPoolBatchSize=1024
+FalconConnectionPoolWaitAdjust=1
+FalconConnectionPoolWaitMin=1
+FalconConnectionPoolWaitMax=500
+FalconConnectionPoolShmemSize=$((256)) #unit: MB
 username=$USER
 
 server_name_list=()
@@ -32,8 +38,12 @@ wal_level = logical
 max_replication_slots = 8
 max_wal_senders = 8
 falcon_connection_pool.port = $cnPoolerPort
-falcon_connection_pool.pool_size = $falconConnectionPoolSize
-falcon_connection_pool.shmem_size = $falconConnectionPoolShmemSize
+falcon_connection_pool.pool_size = $FalconConnectionPoolSize
+falcon_connection_pool.shmem_size = $FalconConnectionPoolShmemSize
+falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
+falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
+falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
+falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -74,8 +84,12 @@ wal_level = logical
 max_replication_slots = 8
 max_wal_senders = 8
 falcon_connection_pool.port = ${workerPoolerPort}
-falcon_connection_pool.pool_size = ${falconConnectionPoolSize}
-falcon_connection_pool.shmem_size = ${falconConnectionPoolShmemSize}
+falcon_connection_pool.pool_size = ${FalconConnectionPoolSize}
+falcon_connection_pool.shmem_size = ${FalconConnectionPoolShmemSize}
+falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
+falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
+falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
+falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi

@@ -1,16 +1,16 @@
 #!/bin/bash
 
 ALL_SERVERS=(
-    "tea3"
+    "127.0.0.1"
 )
 
 # test_falcon/test_posix <ROOT DIR (end with /)> <FILES PER DIR> <THREAD NUMBER> <ROUND INDEX> <CLIENT ID> <MOUNT_PER_CLIENT> <CLIENT CACHE SIZE> <WAIT PORT> <FILE SIZE> <CLIENT NUMBER>
 
-MOUNT_DIR="/mnt/data/" # falconfs mount path, end with /
+MOUNT_DIR="/" # falconfs mount path, end with /
 BIN_DIR="/root/falconfs/build/tests/private-directory-test/"
-TEST_PROGRAM="test_posix"
-ROUND_NUM=(0 8 10)
-FILE_PER_THREAD=1000
+TEST_PROGRAM="test_falcon"
+ROUND_NUM=(0 1 2 3)
+FILE_PER_THREAD=10
 PORT=1111
 FILE_SIZE=1572864
 CLIENT_NUM=10
@@ -41,7 +41,8 @@ do
         for ((i=0; i<${#ALL_SERVERS[@]}; i++))
         do
             SERVER=${ALL_SERVERS[$i]}
-            scp -q root@$SERVER:$BIN_DIR/result_${PORT} ./result_${SERVER}_${PORT}
+            # change to actual user
+            scp -q $USER@$SERVER:$BIN_DIR/result_${PORT} ./result_${SERVER}_${PORT}
             if [ -f "./result_${SERVER}_${PORT}" ]; then
                 last_line=$(tail -n 1 "./result_${SERVER}_${PORT}")
                 if [[ $last_line == *"[FINISH]"* ]]; then
