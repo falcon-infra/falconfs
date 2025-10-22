@@ -1,0 +1,125 @@
+FROM openeuler/openeuler:24.03-lts
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LC_CTYPE=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+
+ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+
+RUN yum update -y && \
+    yum install -y glibc-all-langpacks && \
+    yum install -y gcc gcc-c++ make cmake wget tar readline-devel bison flex gflags-devel leveldb-devel openssl-devel postgresql-devel fuse fuse-devel fmt-devel fio git curl-devel autoconf libtool libibverbs-devel zlib-devel hostname cppunit-devel ninja-build
+
+RUN yum install -y gflags-devel openssl-devel snappy-devel gperftools-devel libunwind-devel gtest-devel gmock-devel autoconf libtool libibverbs-devel
+
+ARG GCC_VERSION=14.2.0
+RUN wget https://mirrors.ustc.edu.cn/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.gz && \
+    tar zxf gcc-${GCC_VERSION}.tar.gz && \
+    cd gcc-${GCC_VERSION} && \
+    sed -i 's|http://gcc.gnu.org/pub/gcc/infrastructure/|http://www.mirrorservice.org/sites/sourceware.org/pub/gcc/infrastructure/|' ./contrib/download_prerequisites && \
+    ./contrib/download_prerequisites && \
+    ./configure --enable-checking=release --enable-languages=c,c++ --disable-multilib --disable-bootstrap && \
+    make -j$(nproc) && \
+    make install && \
+    rm -f /usr/bin/gcc /usr/bin/g++ /usr/bin/c++ && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/local/bin/gcc 100 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/local/bin/g++ 100 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/local/bin/c++ 100 && \
+    ln -sf /usr/local/lib64/libstdc++.so.6.0.33 /usr/lib64/libstdc++.so.6 && \
+    ln -sf /usr/local/lib64/libstdc++.so.6.0.33 /usr/lib64/libstdc++.so && \
+    cd / && rm -rf gcc-${GCC_VERSION}*
+
+ARG PROTOBUF_VERSION=3.21.12
+ARG PROTOBUF_DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
+
+RUN wget -O- "${PROTOBUF_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_SHARED_LIBS=ON .. && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
+RUN yum install -y glog-devel
+
+ARG BRPC_VERSION=1.12.1
+ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
+
+RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -DWITH_GLOG=ON -DWITH_RDMA=ON .. && \
+    make -j$(nproc) && make install && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+RUN yum install -y curl-devel
+ARG PROMETHEUS_CPP_VERSION=1.3.0
+ARG PROMETHEUS_DOWNLOAD_URL=https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_CPP_VERSION}/prometheus-cpp-with-submodules.tar.gz
+
+RUN wget -O- "${PROMETHEUS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/prometheus-cpp-with-submodules" && \
+    mkdir build && cd build && \
+    cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PULL=ON -DENABLE_COMPRESSION=OFF && \
+    make -j$(nproc) && make install && \
+    rm -rf "/tmp/prometheus-cpp-with-submodule"
+
+ARG FLATBUFFERS_VERSION=25.2.10
+ARG FLATBUFFERS_DOWNLOAD_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
+
+RUN wget -O- "${FLATBUFFERS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
+    mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && make install && \
+    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
+
+ARG JSONCPP_VERSION=1.9.6
+ARG JSONCPP_DOWNLOAD_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
+
+RUN wget -O- "${JSONCPP_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
+    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
+    mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    make install && \
+    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
+
+ARG OBS_VERSION=v3.24.12
+ARG OBS_DOWNLOAD_URL=https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/${OBS_VERSION}.tar.gz
+ARG OBS_INSTALL_PREFIX=/usr/local/obs
+
+RUN wget -O- "${OBS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && bash build.sh sdk && \
+    mkdir -p "${OBS_INSTALL_PREFIX}" && \
+    tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
+    rm ${OBS_INSTALL_PREFIX}/lib/libcurl.so* && \
+    rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    ln -s ${OBS_INSTALL_PREFIX}/lib/libiconv.so ${OBS_INSTALL_PREFIX}/lib/libiconv.so.0 && \
+    cat <<EOF >> ~/.bashrc
+export OBS_INSTALL_PREFIX=${OBS_INSTALL_PREFIX}
+export LD_LIBRARY_PATH=\$OBS_INSTALL_PREFIX/lib:\$LD_LIBRARY_PATH
+export CPLUS_INCLUDE_PATH=\$OBS_INSTALL_PREFIX/include:\$CPLUS_INCLUDE_PATH
+export USER=root
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+EOF
+
+RUN yum install -y maven
+ARG ZOOKEEPER_VERSION=3.9.3
+RUN wget -O- https://github.com/apache/zookeeper/archive/refs/tags/release-${ZOOKEEPER_VERSION}.tar.gz | tar -xzvf - -C /tmp && \
+    cd /tmp/zookeeper-release-${ZOOKEEPER_VERSION}/zookeeper-jute && \
+    mvn clean install -DskipTests && \
+    cd ../zookeeper-client/zookeeper-client-c && \
+    mvn clean install -DskipTests && \
+    mkdir -p /usr/local/include/zookeeper && \
+    cp -r generated/*.h /usr/local/include/zookeeper/ && \
+    cp -r include/*.h /usr/local/include/zookeeper/ && \
+    cp -d target/c/lib/libzookeeper* /usr/local/lib64/ && \
+    rm -rf /tmp/zookeeper-release-${ZOOKEEPER_VERSION}
