@@ -9,6 +9,9 @@
 #include "metadb/meta_process_info.h"
 #include "remote_connection_utils/serialized_data.h"
 
+/* Forward declaration for PostgreSQL SPI types */
+typedef struct SPITupleTable SPITupleTable;
+
 #define DEFAULT_SUBPART_NUM 100
 
 extern MemoryManager PgMemoryManager;
@@ -74,5 +77,10 @@ void FalconKvmetaGetHandle(KvMetaProcessInfo info);
 void FalconKvmetaDelHandle(KvMetaProcessInfo info);
 
 void FalconFetchSliceIdHandle(SliceIdProcessInfo infoData);
+
+// KV 元数据批处理操作
+void FalconPutKvMetaHandle(MetaProcessInfo *infoArray, int count, char *paramsData);
+SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count);  /* 返回 SPI 结果表 */
+void FalconDeleteKvMetaHandle(MetaProcessInfo *infoArray, int count);
 
 #endif
