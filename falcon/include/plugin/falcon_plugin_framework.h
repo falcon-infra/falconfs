@@ -29,6 +29,13 @@ typedef enum {
     FALCON_PLUGIN_TYPE_BACKGROUND = 1
 } FalconPluginWorkType;
 
+/* 节点信息结构体 - 供插件使用 */
+typedef struct FalconNodeInfo {
+    char node_ip[16];       /* IPv4 地址 */
+    int node_port;          /* PostgreSQL 端口 */
+    int pooler_port;        /* 连接池端口 */
+} FalconNodeInfo;
+
 typedef struct FalconPluginData {
     char plugin_name[FALCON_PLUGIN_MAX_NAME_SIZE];
     char plugin_path[FALCON_PLUGIN_MAX_PATH_SIZE];

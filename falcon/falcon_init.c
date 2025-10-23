@@ -179,6 +179,9 @@ static void FalconShmemInit(void)
     FalconPluginShmemInit();
 
     LWLockRelease(AddinShmemInitLock);
+
+
+    FalconPluginInitBackgroundPlugins();
 }
 static void InitializeFalconShmemStruct(void)
 {

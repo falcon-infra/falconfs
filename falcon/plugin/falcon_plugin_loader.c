@@ -16,19 +16,44 @@
 #include "plugin/falcon_plugin_framework.h"
 #include "plugin/falcon_plugin_loader.h"
 #include "utils/falcon_plugin_guc.h"
+#include "connection_pool/connection_pool_config.h"
+#include "postmaster/postmaster.h"
+#include "metadb/foreign_server.h"
+#include "access/xact.h"
+#include "access/xlog.h"
+#include "utils/memutils.h"
+#include "storage/proc.h"
+#include "utils/resowner.h"
 #include <dlfcn.h>
 #include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
+
+/* 声明外部函数 */
+extern bool CheckFalconHasBeenLoaded(void);
+extern bool RecoveryInProgress(void);
+
+typedef struct SavedBackgroundPluginInfo {
+    char plugin_path[FALCON_PLUGIN_MAX_PATH_SIZE];
+    char plugin_name[FALCON_PLUGIN_MAX_NAME_SIZE];
+    falcon_plugin_init_func_t init_func;
+    void *dl_handle;  /* 保持 dl_handle 打开，以便后续调用 */
+} SavedBackgroundPluginInfo;
 
 static FalconPluginSharedMemory *falcon_plugin_shmem = NULL;
 static bool falcon_plugin_shmem_initialized = false;
 static char *saved_plugin_directory = NULL;
 static shmem_startup_hook_type prev_plugin_shmem_startup_hook = NULL;
 
+static SavedBackgroundPluginInfo saved_background_plugins[FALCON_PLUGIN_MAX_PLUGINS];
+static int saved_background_plugin_count = 0;
+
 static int FalconRegisterBackgroundPlugins(const char *plugin_dir);
 static int FalconExecuteInlinePlugins(const char *plugin_dir);
 static void FalconPluginShmemStartupHook(void);
+static int FalconPluginGetFreeSlot(void);
+static void FalconPluginReleaseSlot(int slot_index);
+static void FalconPluginInitializeSlot(int slot_index, const char *plugin_name, const char *plugin_path);
 
 Size FalconPluginShmemSize(void)
 {
@@ -53,8 +78,46 @@ void FalconPluginShmemInit(void)
         
         ereport(LOG, (errmsg("Initialized plugin shared memory with %d slots", FALCON_PLUGIN_MAX_PLUGINS)));
     }
-    
+
     falcon_plugin_shmem_initialized = true;
+}
+
+
+void FalconPluginInitBackgroundPlugins(void)
+{
+    ereport(LOG, (errmsg("Calling saved init_func for %d background plugins", saved_background_plugin_count)));
+
+    for (int i = 0; i < saved_background_plugin_count; i++) {
+        SavedBackgroundPluginInfo *saved = &saved_background_plugins[i];
+        int slot_index;
+        FalconPluginData *plugin_data;
+        int ret;
+
+        /* 分配共享内存槽位 */
+        slot_index = FalconPluginGetFreeSlot();
+        if (slot_index < 0) {
+            ereport(WARNING, (errmsg("Cannot allocate shared memory slot for plugin %s", saved->plugin_name)));
+            dlclose(saved->dl_handle);
+            continue;
+        }
+
+        /* 初始化槽位 */
+        FalconPluginInitializeSlot(slot_index, saved->plugin_name, saved->plugin_path);
+        plugin_data = &falcon_plugin_shmem->plugins[slot_index];
+
+        ereport(LOG, (errmsg("Calling init_func for background plugin %s in main process (slot %d)",
+                            saved->plugin_name, slot_index)));
+        ret = saved->init_func(plugin_data);
+        if (ret != 0) {
+            ereport(WARNING, (errmsg("Plugin %s init_func failed with code %d", saved->plugin_name, ret)));
+            FalconPluginReleaseSlot(slot_index);
+        }
+
+        /* 关闭 dl_handle */
+        dlclose(saved->dl_handle);
+    }
+
+    ereport(LOG, (errmsg("Finished calling init_func for all background plugins")));
 }
 
 static int FalconPluginGetFreeSlot(void)
@@ -124,6 +187,25 @@ static void FalconPluginInitializeSlot(int slot_index, const char *plugin_name, 
     strncpy(plugin_data->plugin_name, plugin_name, FALCON_PLUGIN_MAX_NAME_SIZE - 1);
     strncpy(plugin_data->plugin_path, plugin_path, FALCON_PLUGIN_MAX_PATH_SIZE - 1);
     plugin_data->main_pid = getpid();
+
+    ereport(LOG, (errmsg("Plugin %s allocated slot %d", plugin_name, slot_index)));
+}
+
+/* 获取当前节点信息 - 供插件使用 */
+void FalconPluginGetNodeInfo(FalconNodeInfo *node_info)
+{
+    if (node_info == NULL) {
+        return;
+    }
+
+    /* 设置节点信息 */
+    strncpy(node_info->node_ip, "127.0.0.1", 15);  /* 本地IP，后续可以从配置获取 */
+    node_info->node_port = PostPortNumber;  /* PostgreSQL 端口 */
+    node_info->pooler_port = FalconConnectionPoolPort;  /* 连接池端口 */
+
+    ereport(LOG, (errmsg("FalconPluginGetNodeInfo: %s:%d (pooler=%d)",
+                        node_info->node_ip, node_info->node_port,
+                        node_info->pooler_port)));
 }
 
 static int FalconPluginExecuteInline(int slot_index, const char *plugin_name,
@@ -237,24 +319,43 @@ static int FalconRegisterBackgroundPlugins(const char *plugin_dir)
 
             ereport(LOG, (errmsg("Plugin %s type: BACKGROUND (registering worker)", entry->d_name)));
 
+            /* 保存插件信息，延迟到 FalconPluginShmemInit 后再调用 init_func */
+            if (saved_background_plugin_count >= FALCON_PLUGIN_MAX_PLUGINS) {
+                ereport(WARNING, (errmsg("Too many background plugins, cannot save %s", entry->d_name)));
+                dlclose(dl_handle);
+                continue;
+            }
+
+            SavedBackgroundPluginInfo *saved = &saved_background_plugins[saved_background_plugin_count];
+            strncpy(saved->plugin_path, plugin_path, FALCON_PLUGIN_MAX_PATH_SIZE - 1);
+            strncpy(saved->plugin_name, entry->d_name, FALCON_PLUGIN_MAX_NAME_SIZE - 1);
+            saved->init_func = init_func;
+            saved->dl_handle = dl_handle;  /* 保持打开，不 dlclose */
+            saved_background_plugin_count++;
+
+            ereport(LOG, (errmsg("Saved background plugin %s for later initialization (count=%d)",
+                                entry->d_name, saved_background_plugin_count)));
+
+            /* 注册后台工作进程 */
             memset(&worker, 0, sizeof(BackgroundWorker));
             snprintf(worker.bgw_name, BGW_MAXLEN, "falcon_plugin_%s", entry->d_name);
             snprintf(worker.bgw_type, BGW_MAXLEN, "falcon_plugin_worker");
-            worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
+            worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
             worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
             worker.bgw_restart_time = BGW_NEVER_RESTART;
             snprintf(worker.bgw_library_name, BGW_MAXLEN, "falcon");
             snprintf(worker.bgw_function_name, BGW_MAXLEN, "FalconPluginBackgroundWorkerMain");
 
             /* Store plugin path in bgw_extra field */
-            strncpy(worker.bgw_extra, plugin_path, BGW_EXTRALEN - 1);
-            worker.bgw_extra[BGW_EXTRALEN - 1] = '\0';
+            snprintf(worker.bgw_extra, BGW_EXTRALEN, "%s", plugin_path);
 
             RegisterBackgroundWorker(&worker);
             ereport(LOG, (errmsg("Registered background worker for plugin: %s", entry->d_name)));
         }
-
-        dlclose(dl_handle);
+        else {
+            /* INLINE 插件立即关闭 */
+            dlclose(dl_handle);
+        }
     }
 
     closedir(dir);
@@ -349,16 +450,43 @@ static int FalconExecuteInlinePlugins(const char *plugin_dir)
 void FalconPluginBackgroundWorkerMain(Datum main_arg)
 {
     void *dl_handle = NULL;
-    falcon_plugin_init_func_t init_func;
     falcon_plugin_work_func_t work_func;
     falcon_plugin_cleanup_func_t cleanup_func;
     FalconPluginData *plugin_data = NULL;
-    char plugin_path[BGW_EXTRALEN];
+    char plugin_path[512];
     char *plugin_name;
     int slot_index;
     int ret;
+    bool falconHasBeenLoad = false;
 
     BackgroundWorkerUnblockSignals();
+
+    BackgroundWorkerInitializeConnection("postgres", NULL, 0);
+
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "falcon plugin");
+    CurrentMemoryContext = AllocSetContextCreate(TopMemoryContext,
+                                                 "falcon plugin context",
+                                                 ALLOCSET_DEFAULT_MINSIZE,
+                                                 ALLOCSET_DEFAULT_INITSIZE,
+                                                 ALLOCSET_DEFAULT_MAXSIZE);
+
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: waiting for falcon extension...")));
+    while (true) {
+        StartTransactionCommand();
+        falconHasBeenLoad = CheckFalconHasBeenLoaded();
+        CommitTransactionCommand();
+        if (falconHasBeenLoad) {
+            break;
+        }
+        sleep(1);
+    }
+
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: checking recovery status...")));
+    while (RecoveryInProgress()) {
+        sleep(1);
+    }
+
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: database ready")));
 
     if (!falcon_plugin_shmem_initialized) {
         FalconPluginShmemInit();
@@ -378,54 +506,66 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
 
     ereport(LOG, (errmsg("Background worker started for plugin: %s", plugin_name)));
 
-    /* Allocate shared memory slot */
-    slot_index = FalconPluginGetFreeSlot();
+    /* Find the slot index by matching plugin_path in shared memory */
+    slot_index = -1;
+    for (int i = 0; i < falcon_plugin_shmem->num_slots; i++) {
+        if (falcon_plugin_shmem->plugins[i].in_use &&
+            strcmp(falcon_plugin_shmem->plugins[i].plugin_path, plugin_path) == 0) {
+            slot_index = i;
+            break;
+        }
+    }
+
     if (slot_index < 0) {
-        ereport(ERROR, (errmsg("Cannot allocate shared memory slot for background plugin %s", plugin_name)));
+        ereport(ERROR, (errmsg("Cannot find shared memory slot for plugin: %s (path: %s)",
+                              plugin_name, plugin_path)));
         proc_exit(1);
     }
 
-    FalconPluginInitializeSlot(slot_index, plugin_name, plugin_path);
+    ereport(LOG, (errmsg("Found slot %d for plugin: %s", slot_index, plugin_name)));
+
+    /* Get plugin data from shared memory slot */
+    if (slot_index < 0 || slot_index >= falcon_plugin_shmem->num_slots) {
+        ereport(ERROR, (errmsg("Invalid slot index %d for plugin %s", slot_index, plugin_name)));
+        proc_exit(1);
+    }
+
     plugin_data = &falcon_plugin_shmem->plugins[slot_index];
+    if (!plugin_data->in_use) {
+        ereport(ERROR, (errmsg("Slot %d not in use for plugin %s", slot_index, plugin_name)));
+        proc_exit(1);
+    }
 
     /* Load plugin */
     dl_handle = dlopen(plugin_path, RTLD_LAZY);
     if (!dl_handle) {
         ereport(ERROR, (errmsg("Failed to load plugin in background worker: %s, error: %s",
                               plugin_path, dlerror())));
-        FalconPluginReleaseSlot(slot_index);
         proc_exit(1);
     }
 
-    init_func = (falcon_plugin_init_func_t)dlsym(dl_handle, FALCON_PLUGIN_INIT_FUNC_NAME);
     work_func = (falcon_plugin_work_func_t)dlsym(dl_handle, FALCON_PLUGIN_WORK_FUNC_NAME);
     cleanup_func = (falcon_plugin_cleanup_func_t)dlsym(dl_handle, FALCON_PLUGIN_CLEANUP_FUNC_NAME);
 
-    if (!init_func || !work_func || !cleanup_func) {
-        ereport(ERROR, (errmsg("Plugin %s missing required functions", plugin_name)));
+    if (!work_func || !cleanup_func) {
+        ereport(ERROR, (errmsg("Plugin %s missing required functions (work/cleanup)", plugin_name)));
         dlclose(dl_handle);
-        FalconPluginReleaseSlot(slot_index);
-        proc_exit(1);
-    }
-
-    /* Initialize plugin */
-    ret = init_func(plugin_data);
-    if (ret != 0) {
-        ereport(ERROR, (errmsg("Plugin %s initialization failed with code %d", plugin_name, ret)));
-        dlclose(dl_handle);
-        FalconPluginReleaseSlot(slot_index);
         proc_exit(1);
     }
 
     /* Execute plugin work */
     ret = work_func(plugin_data);
     ereport(LOG, (errmsg("Plugin work function returned %d: %s", ret, plugin_name)));
+    
+    do {
+        sleep(1);
+        ereport(LOG, (errmsg("Plugin work loop")));
+    } while (true);
 
     /* Cleanup */
     ereport(LOG, (errmsg("Background worker stopping: %s", plugin_name)));
     cleanup_func(plugin_data);
 
-    FalconPluginReleaseSlot(slot_index);
     dlclose(dl_handle);
 
     proc_exit(0);

@@ -426,8 +426,10 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->parentId_partId = CombineParentIdWithPartId(info->parentId, partId);
         info->st_mode = S_IFREG | 0644;
         info->st_mtim = GetCurrentTimestamp();
+        info->st_atim = info->st_mtim;
+        info->st_ctim = info->st_mtim;
         info->st_size = 0;
-        info->node_id = -1;
+        info->node_id = GetLocalServerId();
         info->st_nlink = 1;
         info->etag = (char *)"";
         info->st_dev = 0;
@@ -436,8 +438,6 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->st_rdev = 0;
         info->st_blksize = 0;
         info->st_blocks = 0;
-        info->st_atim = 0;
-        info->st_ctim = 0;
 
         int shardId, workerId;
         SearchShardInfoByShardValue(info->parentId_partId, &shardId, &workerId);
@@ -527,12 +527,12 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                          info->st_size,
                                          0,
                                          0,
+                                         info->st_atim,
                                          info->st_mtim,
-                                         info->st_mtim,
-                                         info->st_mtim,
+                                         info->st_ctim,
                                          info->etag,
                                          0,
-                                         -1,
+                                         info->node_id,
                                          -1);
                     --currentGroupHandled;
                 }
@@ -683,6 +683,9 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
                 info->st_mtim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_mtim - 1]);
                 info->st_ctim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_ctim - 1]);
                 info->etag = TextDatumGetCString(datumArray[Anum_pg_dfs_file_etag - 1]);
+                if (!isNullArray[Anum_pg_dfs_file_primary_nodeid - 1]) {
+                    info->node_id = DatumGetInt32(datumArray[Anum_pg_dfs_file_primary_nodeid - 1]);
+                }
             }
             systable_endscan(scanDescriptor);
         }
