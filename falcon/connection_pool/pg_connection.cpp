@@ -9,6 +9,7 @@
 
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
+#include "connection_pool/falcon_meta_service.h"
 
 extern "C" {
 #include "connection_pool/connection_pool.h"
@@ -98,12 +99,23 @@ void PGConnection::BackgroundWorker()
             uint64_t replyShift = 0;
 
             char command[128];
-            sprintf(command,
-                    "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld);",
-                    serviceType,
-                    totalParamCount,
-                    (int64_t)totalParamShift,
-                    signature);
+            falcon::meta_proto::SerializationFormat format = taskToExec->jobList[0]->GetRequest()->format();
+
+            if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                sprintf(command,
+                        "select falcon_batch_meta_call_by_shmem(%d, %ld, %ld);",
+                        serviceType,
+                        (int64_t)totalParamShift,
+                        signature);
+            } else {
+                sprintf(command,
+                        "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld);",
+                        serviceType,
+                        totalParamCount,
+                        (int64_t)totalParamShift,
+                        signature);
+            }
+
             int sendQuerySucceed = PQsendQuery(conn, command);
             if (sendQuerySucceed != 1)
                 throw std::runtime_error(PQerrorMessage(conn));
@@ -200,6 +212,7 @@ void PGConnection::BackgroundWorker()
             std::stringstream toSendCommand;
             std::vector<bool> isPlainCommand;
             std::vector<int64_t> signatureList;
+            falcon::meta_proto::SerializationFormat format = job->GetRequest()->format();
             int i = 0;
             uint64_t currentParamSegment = 0;
             while (i < job->GetRequest()->type_size()) {
@@ -215,19 +228,26 @@ void PGConnection::BackgroundWorker()
                     SerializedDataNextSeveralItemSize(&requestData, currentParamSegment, j - i);
 
                 if (serviceType == falcon::meta_proto::MetaServiceType::PLAIN_COMMAND) {
-                    //
-                    char *buf = paramBuffer + currentParamSegment + SERIALIZED_DATA_ALIGNMENT;
-                    int size = currentParamSegmentSize - SERIALIZED_DATA_ALIGNMENT;
-                    flatbuffers::Verifier verifier((uint8_t *)buf, size);
-                    if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>())
-                        throw std::runtime_error("request param is corrupt. 1");
-                    const falcon::meta_fbs::MetaParam *param = falcon::meta_fbs::GetMetaParam(buf);
-                    if (param->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_PlainCommandParam)
-                        throw std::runtime_error("request param is corrupt. 2");
+                    std::string command;
 
-                    //
-                    // split PGresult
-                    const char *command = param->param_as_PlainCommandParam()->command()->c_str();
+                    if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                        // BINARY format: read string directly
+                        char *p = paramBuffer + currentParamSegment;
+                        uint16_t cmd_len = *(uint16_t*)p;
+                        p += sizeof(uint16_t);
+                        command = std::string(p, cmd_len);
+                    } else {
+                        // FlatBuffers format
+                        char *buf = paramBuffer + currentParamSegment + SERIALIZED_DATA_ALIGNMENT;
+                        int size = currentParamSegmentSize - SERIALIZED_DATA_ALIGNMENT;
+                        flatbuffers::Verifier verifier((uint8_t *)buf, size);
+                        if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>())
+                            throw std::runtime_error("request param is corrupt. 1");
+                        const falcon::meta_fbs::MetaParam *param = falcon::meta_fbs::GetMetaParam(buf);
+                        if (param->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_PlainCommandParam)
+                            throw std::runtime_error("request param is corrupt. 2");
+                        command = param->param_as_PlainCommandParam()->command()->c_str();
+                    }
 
                     toSendCommand << command;
 
@@ -235,9 +255,16 @@ void PGConnection::BackgroundWorker()
                     signatureList.push_back(0);
                 } else {
                     signatureList.push_back(FalconShmemAllocatorGetUniqueSignature(allocator));
-                    toSendCommand << "select falcon_meta_call_by_serialized_shmem_internal(" << serviceType << ", "
-                                  << currentParamSegmentCount << ", " << paramShift + currentParamSegment << ", "
-                                  << signatureList.back() << ");";
+
+                    if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                        toSendCommand << "select falcon_batch_meta_call_by_shmem(" << serviceType << ", "
+                                      << paramShift + currentParamSegment << ", "
+                                      << signatureList.back() << ");";
+                    } else {
+                        toSendCommand << "select falcon_meta_call_by_serialized_shmem_internal(" << serviceType << ", "
+                                      << currentParamSegmentCount << ", " << paramShift + currentParamSegment << ", "
+                                      << signatureList.back() << ");";
+                    }
 
                     isPlainCommand.push_back(false);
                 }

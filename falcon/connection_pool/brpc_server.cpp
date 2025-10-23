@@ -10,7 +10,14 @@
 
 #include "connection_pool/connection_pool_config.h"
 #include "connection_pool/falcon_meta_rpc.h"
+#include "connection_pool/falcon_meta_service.h"
 #include "connection_pool/pg_connection_pool.h"
+
+namespace falcon {
+namespace meta_service {
+    FalconMetaService* g_falcon_meta_service = nullptr;
+}
+}
 
 class ConnectionPoolBrpcServer {
   private:
@@ -18,12 +25,22 @@ class ConnectionPoolBrpcServer {
     int poolSize;
 
     brpc::Server server;
+    falcon::meta_service::FalconMetaService* falconMetaService;
 
   public:
     ConnectionPoolBrpcServer(int port, int poolSize)
         : port(port),
-          poolSize(poolSize)
+          poolSize(poolSize),
+          falconMetaService(nullptr)
     {
+    }
+
+    ~ConnectionPoolBrpcServer()
+    {
+        if (falconMetaService != nullptr) {
+            delete falconMetaService;
+            falconMetaService = nullptr;
+        }
     }
     void Run()
     {
@@ -35,6 +52,10 @@ class ConnectionPoolBrpcServer {
         if (server.AddService(&metaServiceImpl, brpc::SERVER_DOESNT_OWN_SERVICE) != 0)
             throw std::runtime_error("ConnectionPoolBrpcServer: brpc server AddService failed");
 
+        // 初始化 Falcon 元数据服务
+        falconMetaService = new falcon::meta_service::FalconMetaService(pgConnectionPool);
+        falcon::meta_service::g_falcon_meta_service = falconMetaService;
+
         butil::EndPoint point;
         point = butil::EndPoint(butil::IP_ANY, port);
         brpc::ServerOptions options;
@@ -45,6 +66,12 @@ class ConnectionPoolBrpcServer {
     }
     void Shutdown()
     {
+        falcon::meta_service::g_falcon_meta_service = nullptr;
+        if (falconMetaService != nullptr) {
+            delete falconMetaService;
+            falconMetaService = nullptr;
+        }
+
         server.Stop(0);
         server.Join();
     }
