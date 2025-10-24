@@ -58,4 +58,9 @@ void FalconUtimeNsHandle(MetaProcessInfo info);
 void FalconChownHandle(MetaProcessInfo info);
 void FalconChmodHandle(MetaProcessInfo info);
 
+// KV 元数据批处理操作
+void FalconPutKvMetaHandle(MetaProcessInfo *infoArray, int count, char *paramsData);
+SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count);  /* 返回 SPI 结果表 */
+void FalconDeleteKvMetaHandle(MetaProcessInfo *infoArray, int count);
+
 #endif

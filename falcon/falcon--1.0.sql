@@ -286,8 +286,122 @@ CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type in
     AS 'MODULE_PATHNAME', $$falcon_meta_call_by_serialized_shmem_internal$$;
 COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type int, count int, shmem_shift bigint, signature bigint) IS 'falcon meta func by serialized shmem internal';
 
+CREATE FUNCTION pg_catalog.falcon_batch_meta_call_by_shmem(operation_type int, shmem_shift bigint, signature bigint)
+    RETURNS bigint
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_batch_meta_call_by_shmem$$;
+COMMENT ON FUNCTION pg_catalog.falcon_batch_meta_call_by_shmem(operation_type int, shmem_shift bigint, signature bigint) IS 'falcon batch meta func using simple binary format (no FlatBuffers)';
+
 CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count int, param bytea)
     RETURNS bytea
     LANGUAGE C STRICT
     AS 'MODULE_PATHNAME', $$falcon_meta_call_by_serialized_data$$;
 COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count int, param bytea) IS 'falcon meta call by serialized data';
+
+CREATE TABLE falcon.falcon_kv_metadata_store (
+    key         TEXT NOT NULL,       -- 用户的 key (FormDataKvIndex.key)
+    slice_id    INTEGER NOT NULL,    -- 切片编号 (0, 1, 2, ...)
+    value_key   BIGINT NOT NULL,     -- 全局 key 生成器 (FormDataSlice.value_key)
+    location    BIGINT NOT NULL,     -- 数据存储位置 (FormDataSlice.location)
+    size        INTEGER NOT NULL,    -- 切片大小 (FormDataSlice.size)
+    value_len   INTEGER NOT NULL,    -- 完整 value 的总长度 (FormDataKvIndex.valueLen)
+    slice_num   SMALLINT NOT NULL,   -- 总切片数量 (FormDataKvIndex.sliceNum)
+    command     TEXT,                 -- 命令字段 (KvMetaServiceRequest.command)
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (key, slice_id)
+);
+CREATE INDEX falcon_kv_metadata_key_idx ON falcon.falcon_kv_metadata_store(key);
+CREATE INDEX falcon_kv_metadata_value_key_idx ON falcon.falcon_kv_metadata_store(value_key);
+ALTER TABLE falcon.falcon_kv_metadata_store SET SCHEMA pg_catalog;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pg_catalog.falcon_kv_metadata_store TO PUBLIC;
+
+CREATE FUNCTION pg_catalog.falcon_kv_update_timestamp()
+    RETURNS TRIGGER
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER falcon_kv_metadata_update_timestamp
+    BEFORE UPDATE ON pg_catalog.falcon_kv_metadata_store
+    FOR EACH ROW
+    EXECUTE FUNCTION pg_catalog.falcon_kv_update_timestamp();
+
+CREATE FUNCTION pg_catalog.falcon_get_kv_slices(p_key TEXT)
+    RETURNS TABLE (
+        slice_id INTEGER,
+        value_key BIGINT,
+        location BIGINT,
+        size INTEGER,
+        value_len INTEGER,
+        slice_num SMALLINT
+    )
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        k.slice_id,
+        k.value_key,
+        k.location,
+        k.size,
+        k.value_len,
+        k.slice_num
+    FROM pg_catalog.falcon_kv_metadata_store k
+    WHERE k.key = p_key
+    ORDER BY k.slice_id;
+END;
+$$;
+COMMENT ON FUNCTION pg_catalog.falcon_get_kv_slices(p_key TEXT) IS 'falcon get kv slices';
+
+CREATE FUNCTION pg_catalog.falcon_delete_kv(p_key TEXT)
+    RETURNS INTEGER
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    deleted_count INTEGER;
+BEGIN
+    DELETE FROM pg_catalog.falcon_kv_metadata_store WHERE key = p_key;
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+END;
+$$;
+COMMENT ON FUNCTION pg_catalog.falcon_delete_kv(p_key TEXT) IS 'falcon delete kv';
+
+CREATE FUNCTION pg_catalog.falcon_kv_exists(p_key TEXT)
+    RETURNS BOOLEAN
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    key_exists BOOLEAN;
+BEGIN
+    SELECT EXISTS(
+        SELECT 1 FROM pg_catalog.falcon_kv_metadata_store WHERE key = p_key LIMIT 1
+    ) INTO key_exists;
+    RETURN key_exists;
+END;
+$$;
+COMMENT ON FUNCTION pg_catalog.falcon_kv_exists(p_key TEXT) IS 'falcon kv exists';
+
+CREATE FUNCTION pg_catalog.falcon_kv_stats()
+    RETURNS TABLE (
+        total_keys BIGINT,
+        total_slices BIGINT,
+        total_size_bytes BIGINT
+    )
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        COUNT(DISTINCT key)::BIGINT as total_keys,
+        COUNT(*)::BIGINT as total_slices,
+        COALESCE(SUM(size), 0)::BIGINT as total_size_bytes
+    FROM pg_catalog.falcon_kv_metadata_store;
+END;
+$$;
+COMMENT ON FUNCTION pg_catalog.falcon_kv_stats() IS 'falcon kv stats';
