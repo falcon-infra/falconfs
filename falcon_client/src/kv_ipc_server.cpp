@@ -35,7 +35,7 @@ int32_t KvIpcServer::CreateService()
 
     // 注册hcom 日志打印
     Service_SetExternalLogger(&Print);
-    // Service_SetDeviceIpMask(service, ipSeg);
+    Service_SetTlsOptions(mService, false, C_SERVICE_TLS_1_2, C_SERVICE_AES_GCM_128, nullptr, nullptr, nullptr);
     Service_RegisterHandler(mService, C_SERVICE_REQUEST_RECEIVED, &KvIpcServer::RequestReceived, 1);
     Service_RegisterHandler(mService, C_SERVICE_REQUEST_POSTED, KvIpcServer::RequestPosted, 1);
     Service_RegisterHandler(mService, C_SERVICE_READWRITE_DONE, KvIpcServer::OneSideDone, 1);

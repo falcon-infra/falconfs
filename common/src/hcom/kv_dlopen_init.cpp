@@ -32,7 +32,13 @@ using Reply = int (*)(Hcom_Channel channel, Channel_Request req, Channel_ReplyCo
 
 using SendFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len);
 using ReceiveFds = int (*)(Hcom_Channel channel, int fds[], uint32_t len, int32_t timeoutSec);
-
+using SetTlsOptions = void (*)(Hcom_Service service,
+                           bool enableTls,
+                           Service_TlsVersion version,
+                           Service_CipherSuite cipherSuite,
+                           Hcom_TlsGetCertCb certCb,
+                           Hcom_TlsGetPrivateKeyCb priKeyCb,
+                           Hcom_TlsGetCACb caCb);
 static constexpr uint16_t DL_SYMBOL_FUNC_ARR_LEN = 4;
 
 using HcomFunc = struct {
@@ -58,6 +64,7 @@ using HcomFunc = struct {
     GetMessageData getMessageData;
     GetMessageDataLen getMessageDataLen;
     GetContextTpye getContextTpye;
+    SetTlsOptions setTlsOptions;
 };
 
 void *g_hcomDl = nullptr;
@@ -130,7 +137,12 @@ static int KvDlsymServiceLayerServiceCreateRegisterFunc(void)
     if (ret != 0) {
         return -1;
     }
-
+    ret = KvLoadSymbol(g_hcomDl,
+                       "Service_SetTlsOptions",
+                       reinterpret_cast<void **>(&g_hcomFunc.setTlsOptions));
+    if (ret != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -502,4 +514,19 @@ int Channel_ReceiveFds(Hcom_Channel channel, int fds[], uint32_t len, int32_t ti
         ret = -1;
     }
     return ret;
+}
+
+void Service_SetTlsOptions(Hcom_Service service,
+                           bool enableTls,
+                           Service_TlsVersion version,
+                           Service_CipherSuite cipherSuite,
+                           Hcom_TlsGetCertCb certCb,
+                           Hcom_TlsGetPrivateKeyCb priKeyCb,
+                           Hcom_TlsGetCACb caCb)
+{
+    if (g_hcomFunc.setTlsOptions != nullptr) {
+        g_hcomFunc.setTlsOptions(service, enableTls, version, cipherSuite, certCb, priKeyCb, caCb);
+    } else {
+        return;
+    }
 }

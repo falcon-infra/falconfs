@@ -186,7 +186,7 @@ int32_t KvIpcClient::CreateService(void)
     Service_RegisterHandler(mService, C_SERVICE_REQUEST_POSTED, &KvIpcClient::RequestPosted, 1);
     Service_RegisterHandler(mService, C_SERVICE_READWRITE_DONE, &KvIpcClient::OneSideDone, 1);
     Service_RegisterChannelBrokerHandler(mService, &KvIpcClient::ChannelBroken, C_CHANNEL_BROKEN_ALL, 0);
-
+    Service_SetTlsOptions(mService, false, C_SERVICE_TLS_1_2, C_SERVICE_AES_GCM_128, nullptr, nullptr, nullptr);
     ret = Service_Start(mService);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "Service start failed";

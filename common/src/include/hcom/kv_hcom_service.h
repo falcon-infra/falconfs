@@ -67,6 +67,18 @@ typedef int (*Hcom_SecInfoValidator)(uint64_t ctx, int64_t flag, const char *inp
  */
 typedef void (*Service_LogHandler)(int level, const char *msg);
 
+typedef enum {
+    C_VERIFY_BY_NONE = 0,
+    C_VERIFY_BY_DEFAULT = 1,
+    C_VERIFY_BY_CUSTOM_FUNC = 2,
+} Hcom_PeerCertVerifyTpye;
+
+typedef int(*Hcom_TlsGetCertCb)(const char *name, char **certPath);
+typedef int(*Hcom_TlsCertVerify)(void *x509, const char* crlPath);
+typedef void(*Hcom_TlsKeyPassErase)(char *keyPass, int len);
+typedef int(*Hcom_TlsGetCACb)(const char *name, char **caPath, char **crlPath, Hcom_PeerCertVerifyTpye *verifyTpye, Hcom_TlsCertVerify *verify);
+typedef int(*Hcom_TlsGetPrivateKeyCb)(const char* name, char **priKeyPath, char **keyPass, Hcom_TlsKeyPassErase *erase);
+
 /*
  * @brief Worker polling type
  * 1 For RDMA:
@@ -297,6 +309,14 @@ void Service_SetMaxConnectionCount(Hcom_Service service, uint32_t maxConnCount);
 void Service_SetHeartBeatOptions(Hcom_Service service, uint16_t idleSec, uint16_t probeTimes, uint16_t intervalSec);
 
 void Service_SetMultiRailOptions(Hcom_Service service, bool enable, uint32_t threshold);
+
+void Service_SetTlsOptions(Hcom_Service service,
+                           bool enableTls,
+                           Service_TlsVersion version,
+                           Service_CipherSuite cipherSuite,
+                           Hcom_TlsGetCertCb certCb,
+                           Hcom_TlsGetPrivateKeyCb priKeyCb,
+                           Hcom_TlsGetCACb caCb);
 
 void Channel_Refer(Hcom_Channel channel);
 void Channel_DeRefer(Hcom_Channel channel);
