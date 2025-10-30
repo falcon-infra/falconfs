@@ -94,7 +94,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
         /* 根据操作类型解析参数 */
         switch (operation_type) {
-            case 1:  /* DFC_PUT_KEY_META */
+            case 20:  /* KV_PUT (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);  /* 使用 path 字段存储 key */
                 infoDataArray[i].st_size = *(uint32_t*)p;  /* valueLen */
                 p += 4;
@@ -106,23 +106,23 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 }
                 break;
 
-            case 2:  /* DFC_GET_KV_META */
-            case 3:  /* DFC_DELETE_KEY_META */
+            case 21:  /* KV_GET (protobuf enum) */
+            case 22:  /* KV_DEL (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);  /* key */
                 break;
 
-            case 5:  /* DFC_MKDIR */
-            case 6:  /* DFC_CREATE */
-            case 7:  /* DFC_STAT */
-            case 8:  /* DFC_OPEN */
-            case 10: /* DFC_UNLINK */
-            case 12: /* DFC_OPENDIR */
-            case 13: /* DFC_RMDIR */
+            case 1:  /* MKDIR (protobuf enum) */
+            case 4:  /* CREATE (protobuf enum) */
+            case 5:  /* STAT (protobuf enum) */
+            case 6:  /* OPEN (protobuf enum) */
+            case 8:  /* UNLINK (protobuf enum) */
+            case 10: /* OPENDIR (protobuf enum) */
+            case 11: /* RMDIR (protobuf enum) */
                 /* 简单路径操作 */
                 infoDataArray[i].path = ReadString(&p);
                 break;
 
-            case 11: /* DFC_READDIR */
+            case 9:  /* READDIR (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].readDirMaxReadCount = *(int32_t*)p;
                 p += 4;
@@ -131,7 +131,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 infoDataArray[i].readDirLastFileName = ReadString(&p);
                 break;
 
-            case 15: /* DFC_MKDIR_SUB_MKDIR */
+            case 2: /* MKDIR_SUB_MKDIR (protobuf enum) */
                 infoDataArray[i].parentId = *(uint64_t*)p;
                 p += 8;
                 infoDataArray[i].name = ReadString(&p);  /* name */
@@ -139,7 +139,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 8;
                 break;
 
-            case 16: /* DFC_MKDIR_SUB_CREATE */
+            case 3: /* MKDIR_SUB_CREATE (protobuf enum) */
                 infoDataArray[i].parentId_partId = *(uint64_t*)p;
                 p += 8;
                 infoDataArray[i].name = ReadString(&p);  /* name */
@@ -153,19 +153,19 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 8;
                 break;
 
-            case 17: /* DFC_RMDIR_SUB_RMDIR */
+            case 12: /* RMDIR_SUB_RMDIR (protobuf enum) */
                 infoDataArray[i].parentId = *(uint64_t*)p;
                 p += 8;
                 infoDataArray[i].name = ReadString(&p);  /* name */
                 break;
 
-            case 18: /* DFC_RMDIR_SUB_UNLINK */
+            case 13: /* RMDIR_SUB_UNLINK (protobuf enum) */
                 infoDataArray[i].parentId_partId = *(uint64_t*)p;
                 p += 8;
                 infoDataArray[i].name = ReadString(&p);  /* name */
                 break;
 
-            case 19: /* DFC_RENAME_SUB_RENAME_LOCALLY */
+            case 15: /* RENAME_SUB_RENAME_LOCALLY (protobuf enum) */
                 infoDataArray[i].parentId = *(uint64_t*)p;  /* src_parent_id */
                 p += 8;
                 infoDataArray[i].parentId_partId = *(uint64_t*)p;  /* src_parent_id_part_id */
@@ -184,7 +184,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 4;
                 break;
 
-            case 20: /* DFC_RENAME_SUB_CREATE */
+            case 16: /* RENAME_SUB_CREATE (protobuf enum) */
                 infoDataArray[i].parentId_partId = *(uint64_t*)p;
                 p += 8;
                 infoDataArray[i].name = ReadString(&p);  /* name */
@@ -218,7 +218,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 4;
                 break;
 
-            case 9:  /* DFC_CLOSE */
+            case 7:  /* CLOSE (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].st_size = *(int64_t*)p;
                 p += 8;
@@ -228,12 +228,12 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 4;
                 break;
 
-            case 14: /* DFC_RENAME */
+            case 14: /* RENAME (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].dstPath = ReadString(&p);
                 break;
 
-            case 22: /* DFC_CHOWN */
+            case 18: /* CHOWN (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].st_uid = *(uint32_t*)p;
                 p += 4;
@@ -241,13 +241,13 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 p += 4;
                 break;
 
-            case 23: /* DFC_CHMOD */
+            case 19: /* CHMOD (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].st_mode = *(uint64_t*)p;
                 p += 8;
                 break;
 
-            case 21: /* DFC_UTIMENS */
+            case 17: /* UTIMENS (protobuf enum) */
                 infoDataArray[i].path = ReadString(&p);
                 infoDataArray[i].st_atim = *(uint64_t*)p;
                 p += 8;
@@ -264,70 +264,70 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     SPITupleTable *kvResultTable = NULL;  /* 用于 GET_KV 的 SPI 结果 */
 
     switch (operation_type) {
-        case 1:  /* DFC_PUT_KEY_META */
+        case 20:  /* KV_PUT (protobuf enum) */
             FalconPutKvMetaHandle(infoArray, count, paramBuffer + sizeof(BinaryHeader));
             break;
-        case 2:  /* DFC_GET_KV_META */
+        case 21:  /* KV_GET (protobuf enum) */
             kvResultTable = FalconGetKvMetaHandle(infoArray, count);
             break;
-        case 3:  /* DFC_DELETE_KEY_META */
+        case 22:  /* KV_DEL (protobuf enum) */
             FalconDeleteKvMetaHandle(infoArray, count);
             break;
-        case 5:  /* DFC_MKDIR */
+        case 1:  /* MKDIR (protobuf enum) */
             FalconMkdirHandle(infoArray, count);
             break;
-        case 6:  /* DFC_CREATE */
+        case 4:  /* CREATE (protobuf enum) */
             FalconCreateHandle(infoArray, count, false);
             break;
-        case 7:  /* DFC_STAT */
+        case 5:  /* STAT (protobuf enum) */
             FalconStatHandle(infoArray, count);
             break;
-        case 8:  /* DFC_OPEN */
+        case 6:  /* OPEN (protobuf enum) */
             FalconOpenHandle(infoArray, count);
             break;
-        case 9:  /* DFC_CLOSE */
+        case 7:  /* CLOSE (protobuf enum) */
             FalconCloseHandle(infoArray, count);
             break;
-        case 10: /* DFC_UNLINK */
+        case 8:  /* UNLINK (protobuf enum) */
             FalconUnlinkHandle(infoArray, count);
             break;
-        case 11: /* DFC_READDIR */
+        case 9:  /* READDIR (protobuf enum) */
             FalconReadDirHandle(infoArray[0]);  /* READDIR 不支持批处理 */
             break;
-        case 12: /* DFC_OPENDIR */
+        case 10: /* OPENDIR (protobuf enum) */
             FalconOpenDirHandle(infoArray[0]);  /* OPENDIR 不支持批处理 */
             break;
-        case 13: /* DFC_RMDIR */
+        case 11: /* RMDIR (protobuf enum) */
             FalconRmdirHandle(infoArray[0]);  /* RMDIR 不支持批处理 */
             break;
-        case 14: /* DFC_RENAME */
+        case 14: /* RENAME (protobuf enum) */
             FalconRenameHandle(infoArray[0]);  /* RENAME 不支持批处理 */
             break;
-        case 15: /* DFC_MKDIR_SUB_MKDIR */
+        case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
             FalconMkdirSubMkdirHandle(infoArray, count);
             break;
-        case 16: /* DFC_MKDIR_SUB_CREATE */
+        case 3:  /* MKDIR_SUB_CREATE (protobuf enum) */
             FalconMkdirSubCreateHandle(infoArray, count);
             break;
-        case 17: /* DFC_RMDIR_SUB_RMDIR */
+        case 12: /* RMDIR_SUB_RMDIR (protobuf enum) */
             FalconRmdirSubRmdirHandle(infoArray[0]);  /* 不支持批处理 */
             break;
-        case 18: /* DFC_RMDIR_SUB_UNLINK */
+        case 13: /* RMDIR_SUB_UNLINK (protobuf enum) */
             FalconRmdirSubUnlinkHandle(infoArray[0]);  /* 不支持批处理 */
             break;
-        case 19: /* DFC_RENAME_SUB_RENAME_LOCALLY */
+        case 15: /* RENAME_SUB_RENAME_LOCALLY (protobuf enum) */
             FalconRenameSubRenameLocallyHandle(infoArray[0]);  /* 不支持批处理 */
             break;
-        case 20: /* DFC_RENAME_SUB_CREATE */
+        case 16: /* RENAME_SUB_CREATE (protobuf enum) */
             FalconRenameSubCreateHandle(infoArray[0]);  /* 不支持批处理 */
             break;
-        case 21: /* DFC_UTIMENS */
+        case 17: /* UTIMENS (protobuf enum) */
             FalconUtimeNsHandle(infoArray[0]);  /* UTIMENS 不支持批处理 */
             break;
-        case 22: /* DFC_CHOWN */
+        case 18: /* CHOWN (protobuf enum) */
             FalconChownHandle(infoArray[0]);  /* CHOWN 不支持批处理 */
             break;
-        case 23: /* DFC_CHMOD */
+        case 19: /* CHMOD (protobuf enum) */
             FalconChmodHandle(infoArray[0]);  /* CHMOD 不支持批处理 */
             break;
         default:
@@ -337,15 +337,15 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     /* 5. 构造响应并写入共享内存 */
     size_t response_size = 0;
 
-    /* 计算响应大小 */
+    /* 计算响应大小 (使用 protobuf MetaServiceType 枚举) */
     switch (operation_type) {
-        case 1:  /* DFC_PUT_KEY_META */
-        case 3:  /* DFC_DELETE_KEY_META */
+        case 20:  /* KV_PUT */
+        case 22:  /* KV_DEL */
             /* 简单操作：每个返回一个 int32 错误码 */
             response_size = count * sizeof(int32_t);
             break;
 
-        case 2:  /* DFC_GET_KV_META */
+        case 21:  /* KV_GET */
             /* GET: int32(status) + key_len(2) + key + valueLen(4) + sliceNum(2) + slices */
             for (uint32_t i = 0; i < count; i++) {
                 response_size += sizeof(int32_t);
@@ -357,33 +357,33 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             }
             break;
 
-        case 5:  /* DFC_MKDIR */
-        case 6:  /* DFC_CREATE */
-        case 9:  /* DFC_CLOSE */
-        case 10: /* DFC_UNLINK */
-        case 11: /* DFC_READDIR */
-        case 12: /* DFC_OPENDIR */
-        case 13: /* DFC_RMDIR */
-        case 14: /* DFC_RENAME */
-        case 15: /* DFC_MKDIR_SUB_MKDIR */
-        case 16: /* DFC_MKDIR_SUB_CREATE */
-        case 17: /* DFC_RMDIR_SUB_RMDIR */
-        case 18: /* DFC_RMDIR_SUB_UNLINK */
-        case 19: /* DFC_RENAME_SUB_RENAME_LOCALLY */
-        case 20: /* DFC_RENAME_SUB_CREATE */
-        case 21: /* DFC_UTIMENS */
-        case 22: /* DFC_CHOWN */
-        case 23: /* DFC_CHMOD */
+        case 1:  /* MKDIR (protobuf enum) */
+        case 4:  /* CREATE (protobuf enum) */
+        case 7:  /* CLOSE (protobuf enum) */
+        case 8:  /* UNLINK (protobuf enum) */
+        case 9:  /* READDIR (protobuf enum) */
+        case 10: /* OPENDIR (protobuf enum) */
+        case 11: /* RMDIR (protobuf enum) */
+        case 14: /* RENAME (protobuf enum) */
+        case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
+        case 3:  /* MKDIR_SUB_CREATE (protobuf enum) */
+        case 12: /* RMDIR_SUB_RMDIR (protobuf enum) */
+        case 13: /* RMDIR_SUB_UNLINK (protobuf enum) */
+        case 15: /* RENAME_SUB_RENAME_LOCALLY (protobuf enum) */
+        case 16: /* RENAME_SUB_CREATE (protobuf enum) */
+        case 17: /* UTIMENS (protobuf enum) */
+        case 18: /* CHOWN (protobuf enum) */
+        case 19: /* CHMOD (protobuf enum) */
             /* 简单操作：每个返回一个 int32 错误码 */
             response_size = count * sizeof(int32_t);
             break;
 
-        case 7:  /* DFC_STAT */
+        case 5:  /* STAT (protobuf enum) */
             /* STAT: 每个返回 int32(status) + StatResponse(13个字段) */
             response_size = count * (sizeof(int32_t) + 13 * 8);
             break;
 
-        case 8:  /* DFC_OPEN */
+        case 6:  /* OPEN (protobuf enum) */
             /* OPEN: 每个返回 int32(status) + OpenResponse(14个字段) */
             /* st_ino(8) + node_id(8) + st_dev(8) + st_mode(4) + st_nlink(8) + st_uid(4) + st_gid(4) + st_rdev(8) + st_size(8) + st_blksize(8) + st_blocks(8) + st_atim(8) + st_mtim(8) + st_ctim(8) = 104 bytes */
             response_size = count * (sizeof(int32_t) + 104);
@@ -406,13 +406,13 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
     for (uint32_t i = 0; i < count; i++) {
         switch (operation_type) {
-            case 1:  /* DFC_PUT_KEY_META */
-            case 3:  /* DFC_DELETE_KEY_META */
+            case 20:  /* KV_PUT */
+            case 22:  /* KV_DEL */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
                 break;
 
-            case 2:  /* DFC_GET_KV_META */
+            case 21:  /* KV_GET */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
@@ -459,28 +459,28 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 }
                 break;
 
-            case 5:  /* DFC_MKDIR */
-            case 6:  /* DFC_CREATE */
-            case 9:  /* DFC_CLOSE */
-            case 10: /* DFC_UNLINK */
-            case 11: /* DFC_READDIR */
-            case 12: /* DFC_OPENDIR */
-            case 13: /* DFC_RMDIR */
-            case 14: /* DFC_RENAME */
-            case 15: /* DFC_MKDIR_SUB_MKDIR */
-            case 16: /* DFC_MKDIR_SUB_CREATE */
-            case 17: /* DFC_RMDIR_SUB_RMDIR */
-            case 18: /* DFC_RMDIR_SUB_UNLINK */
-            case 19: /* DFC_RENAME_SUB_RENAME_LOCALLY */
-            case 20: /* DFC_RENAME_SUB_CREATE */
-            case 21: /* DFC_UTIMENS */
-            case 22: /* DFC_CHOWN */
-            case 23: /* DFC_CHMOD */
+            case 1:  /* MKDIR (protobuf enum) */
+            case 4:  /* CREATE (protobuf enum) */
+            case 7:  /* CLOSE (protobuf enum) */
+            case 8:  /* UNLINK (protobuf enum) */
+            case 9:  /* READDIR (protobuf enum) */
+            case 10: /* OPENDIR (protobuf enum) */
+            case 11: /* RMDIR (protobuf enum) */
+            case 14: /* RENAME (protobuf enum) */
+            case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
+            case 3:  /* MKDIR_SUB_CREATE (protobuf enum) */
+            case 12: /* RMDIR_SUB_RMDIR (protobuf enum) */
+            case 13: /* RMDIR_SUB_UNLINK (protobuf enum) */
+            case 15: /* RENAME_SUB_RENAME_LOCALLY (protobuf enum) */
+            case 16: /* RENAME_SUB_CREATE (protobuf enum) */
+            case 17: /* UTIMENS (protobuf enum) */
+            case 18: /* CHOWN (protobuf enum) */
+            case 19: /* CHMOD (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
                 break;
 
-            case 7:  /* DFC_STAT */
+            case 5:  /* STAT (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
@@ -501,7 +501,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 }
                 break;
 
-            case 8:  /* DFC_OPEN */
+            case 6:  /* OPEN (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
@@ -526,7 +526,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     }
 
     /* 6. 清理 SPI 连接（如果 GET_KV 操作打开了 SPI） */
-    if (operation_type == 2 && kvResultTable != NULL) {
+    if (operation_type == 21 && kvResultTable != NULL) {  /* KV_GET (protobuf enum) */
         SPI_finish();
     }
 

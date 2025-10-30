@@ -27,11 +27,18 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
                                      AsyncFalconMetaServiceJob* original_job)
 {
     FalconMetaServiceResponse& response = original_job->GetResponse();
-    if (!FalconMetaService::DeserializeResponseFromBinary(
-            cntl->response_attachment(),
-            &response,
-            original_job->GetRequest().operation)) {
+    response.opcode = original_job->GetRequest().operation;
+
+    if (cntl->Failed()) {
         response.status = -1;
+        response.data = nullptr;
+    } else {
+        if (!FalconMetaService::DeserializeResponseFromBinary(
+                cntl->response_attachment(),
+                &response,
+                original_job->GetRequest().operation)) {
+            response.status = -1;
+        }
     }
 
     original_job->Done();
@@ -41,17 +48,41 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
     delete original_job;
 }
 
+}  // namespace meta_service
+}  // namespace falcon
+
+// C++ 版本的实现（在 namespace 外）
+static int SubmitFalconMetaRequestImpl(const falcon::meta_service::FalconMetaServiceRequest& request,
+                                        falcon::meta_service::FalconMetaServiceCallback callback,
+                                        void* user_context)
+{
+    if (falcon::meta_service::g_falcon_meta_service == nullptr) {
+        return -1;
+    }
+
+    falcon::meta_service::AsyncFalconMetaServiceJob* job =
+        new falcon::meta_service::AsyncFalconMetaServiceJob(request, callback, user_context);
+
+    return falcon::meta_service::g_falcon_meta_service->DispatchFalconMetaServiceJob(job);
+}
+
+// extern "C" 版本供 C 代码调用
+extern "C" int SubmitFalconMetaRequest(const falcon::meta_service::FalconMetaServiceRequest& request,
+                                       falcon::meta_service::FalconMetaServiceCallback callback,
+                                       void* user_context)
+{
+    return SubmitFalconMetaRequestImpl(request, callback, user_context);
+}
+
+namespace falcon {
+namespace meta_service {
+
+// C++ 版本供 C++ 代码（如测试代码）调用
 int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
                             FalconMetaServiceCallback callback,
                             void* user_context)
 {
-    if (g_falcon_meta_service == nullptr) {
-        return -1;
-    }
-
-    AsyncFalconMetaServiceJob* job = new AsyncFalconMetaServiceJob(request, callback, user_context);
-
-    return g_falcon_meta_service->DispatchFalconMetaServiceJob(job);
+    return SubmitFalconMetaRequestImpl(request, callback, user_context);
 }
 
 int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* job)
@@ -276,14 +307,21 @@ bool FalconMetaService::SerializeRequestToBinary(
             return false;
     }
 
-    char* buffer = new char[total_size];
-    memset(buffer, 0, total_size);
+    // 确保 total_size 是16字节对齐的（SERIALIZED_DATA_ALIGNMENT = 16）
+    const size_t ALIGNMENT = 16;
+    size_t aligned_size = (total_size + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
+
+    char* buffer = new char[aligned_size];
+    memset(buffer, 0, aligned_size);
     char* p = buffer;
+    total_size = aligned_size;  // 更新 total_size 为对齐后的大小
 
     BinaryHeader* header = (BinaryHeader*)p;
     header->signature = FALCON_BINARY_SIGNATURE;
     header->count = 1;
-    header->operation_type = static_cast<uint32_t>(request.operation);
+    // 存储 protobuf MetaServiceType 值，而不是 DFC 枚举值
+    // 这样才能和 SQL 调用参数匹配
+    header->operation_type = static_cast<uint32_t>(proto_type);
     header->reserved = 0;
     p += sizeof(BinaryHeader);
 
@@ -514,6 +552,9 @@ bool FalconMetaService::DeserializeResponseFromBinary(
     attachment.copy_to(&buffer[0], attachment.size());
 
     char* p = &buffer[0];
+
+    // 设置响应的opcode为当前操作类型
+    response->opcode = operation;
 
     if (operation == DFC_MKDIR || operation == DFC_CREATE ||
         operation == DFC_RMDIR || operation == DFC_UNLINK ||
