@@ -21,7 +21,6 @@ PG_FUNCTION_INFO_V1(falcon_clear_user_data_func);
 PG_FUNCTION_INFO_V1(falcon_clear_all_data_func);
 PG_FUNCTION_INFO_V1(falcon_clear_cached_relation_oid_func);
 PG_FUNCTION_INFO_V1(falcon_run_pooler_server_func);
-
 PG_FUNCTION_INFO_V1(falcon_move_shard);
 
 Datum falcon_clear_user_data_func(PG_FUNCTION_ARGS)
@@ -122,11 +121,11 @@ Datum falcon_move_shard(PG_FUNCTION_ARGS)
     int32_t targetServerId = PG_GETARG_INT32(1);
 
     int32_t rangePointCheck, sourceServerId;
-    SearchShardInfoByShardValue(rangePoint, &rangePointCheck, &sourceServerId);
+    SearchShardInfoByHashValue(rangePoint, &rangePointCheck, &sourceServerId);
     if (rangePoint != rangePointCheck)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "No shard matches input range point.");
     if (FALCON_CN_SERVER_ID != GetLocalServerId())
-        FALCON_ELOG_ERROR(WRONG_WORKER, "Target shard doesn't locate at this server.");
+        FALCON_ELOG_ERROR(WRONG_WORKER, "falcon_move_shard can only be called on CN.");
     if (sourceServerId == targetServerId)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Target server is the same with source server.");
 

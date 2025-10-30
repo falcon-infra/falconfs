@@ -29,6 +29,7 @@ typedef FormData_falcon_shard_table *Form_falcon_shard_table;
 Oid ShardRelationId(void);
 Oid ShardRelationIndexId(void);
 
+void SearchShardInfoByHashValue(int32_t hashValue, int32_t *rangePoint, int32_t *serverId);
 void SearchShardInfoByShardValue(uint64_t shardColValue, int32_t *rangePoint, int32_t *serverId);
 List *GetShardTableData(void);
 int32_t GetShardTableSize(void);
