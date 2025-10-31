@@ -26,22 +26,48 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
                                      falcon::meta_proto::Empty* proto_response,
                                      AsyncFalconMetaServiceJob* original_job)
 {
+    printf("[debug] HandleFalconMetaResponse: ENTRY, job=%p\n", original_job);
+    fflush(stdout);
+
     FalconMetaServiceResponse& response = original_job->GetResponse();
     response.opcode = original_job->GetRequest().operation;
 
+    printf("[debug] HandleFalconMetaResponse: opcode=%d, cntl->Failed()=%d\n",
+           response.opcode, cntl->Failed());
+    fflush(stdout);
+
     if (cntl->Failed()) {
+        printf("[debug] HandleFalconMetaResponse: BRPC call failed, error=%s\n",
+               cntl->ErrorText().c_str());
+        fflush(stdout);
         response.status = -1;
         response.data = nullptr;
     } else {
+        printf("[debug] HandleFalconMetaResponse: Deserializing response, attachment_size=%lu\n",
+               cntl->response_attachment().size());
+        fflush(stdout);
+
         if (!FalconMetaService::DeserializeResponseFromBinary(
                 cntl->response_attachment(),
                 &response,
                 original_job->GetRequest().operation)) {
+            printf("[debug] HandleFalconMetaResponse: Deserialization FAILED\n");
+            fflush(stdout);
             response.status = -1;
+        } else {
+            printf("[debug] HandleFalconMetaResponse: Deserialization SUCCESS, status=%d\n",
+                   response.status);
+            fflush(stdout);
         }
     }
 
+    printf("[debug] HandleFalconMetaResponse: Calling original_job->Done()\n");
+    fflush(stdout);
+
     original_job->Done();
+
+    printf("[debug] HandleFalconMetaResponse: Cleanup and EXIT\n");
+    fflush(stdout);
 
     delete cntl;
     delete proto_response;
@@ -56,14 +82,28 @@ static int SubmitFalconMetaRequestImpl(const falcon::meta_service::FalconMetaSer
                                         falcon::meta_service::FalconMetaServiceCallback callback,
                                         void* user_context)
 {
+    printf("[debug] SubmitFalconMetaRequestImpl: ENTRY, opcode=%d, callback_valid=%d, user_context=%p\n",
+           request.operation, callback ? 1 : 0, user_context);
+    fflush(stdout);
+
     if (falcon::meta_service::g_falcon_meta_service == nullptr) {
+        printf("[debug] SubmitFalconMetaRequestImpl: ERROR - g_falcon_meta_service is NULL\n");
+        fflush(stdout);
         return -1;
     }
 
     falcon::meta_service::AsyncFalconMetaServiceJob* job =
         new falcon::meta_service::AsyncFalconMetaServiceJob(request, callback, user_context);
 
-    return falcon::meta_service::g_falcon_meta_service->DispatchFalconMetaServiceJob(job);
+    printf("[debug] SubmitFalconMetaRequestImpl: Created job=%p, dispatching...\n", job);
+    fflush(stdout);
+
+    int ret = falcon::meta_service::g_falcon_meta_service->DispatchFalconMetaServiceJob(job);
+
+    printf("[debug] SubmitFalconMetaRequestImpl: EXIT, ret=%d\n", ret);
+    fflush(stdout);
+
+    return ret;
 }
 
 // extern "C" 版本供 C 代码调用
@@ -87,7 +127,12 @@ int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
 
 int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* job)
 {
+    printf("[debug] DispatchFalconMetaServiceJob: ENTRY, job=%p\n", job);
+    fflush(stdout);
+
     if (pgConnectionPool == nullptr) {
+        printf("[debug] DispatchFalconMetaServiceJob: ERROR - pgConnectionPool is NULL\n");
+        fflush(stdout);
         if (job != nullptr) {
             job->GetResponse().status = -1;
             job->Done();
@@ -97,14 +142,21 @@ int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* j
     }
 
     FalconMetaServiceRequest& request = job->GetRequest();
+    printf("[debug] DispatchFalconMetaServiceJob: opcode=%d\n", request.operation);
+    fflush(stdout);
 
     // 1. 创建 BRPC Controller 和 Protobuf 请求
     brpc::Controller* cntl = new brpc::Controller();
     falcon::meta_proto::MetaRequest* proto_request = new falcon::meta_proto::MetaRequest();
     falcon::meta_proto::Empty* proto_response = new falcon::meta_proto::Empty();
 
+    printf("[debug] DispatchFalconMetaServiceJob: Created BRPC objects, cntl=%p\n", cntl);
+    fflush(stdout);
+
     // 2. 序列化请求参数为二进制格式
     if (!SerializeRequestToBinary(request, proto_request, &cntl->request_attachment())) {
+        printf("[debug] DispatchFalconMetaServiceJob: ERROR - SerializeRequestToBinary FAILED\n");
+        fflush(stdout);
         job->GetResponse().status = -1;
         job->Done();
         delete job;
@@ -114,13 +166,27 @@ int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* j
         return -1;
     }
 
+    printf("[debug] DispatchFalconMetaServiceJob: Serialization SUCCESS, attachment_size=%lu\n",
+           cntl->request_attachment().size());
+    fflush(stdout);
+
     google::protobuf::Closure* done_callback = brpc::NewCallback(
         &HandleFalconMetaResponse, cntl, proto_response, job);
+
+    printf("[debug] DispatchFalconMetaServiceJob: Created callback=%p\n", done_callback);
+    fflush(stdout);
 
     falcon::meta_proto::AsyncMetaServiceJob* brpc_job =
         new falcon::meta_proto::AsyncMetaServiceJob(cntl, proto_request, proto_response, done_callback);
 
+    printf("[debug] DispatchFalconMetaServiceJob: Dispatching brpc_job=%p to PGConnectionPool\n",
+           brpc_job);
+    fflush(stdout);
+
     pgConnectionPool->DispatchAsyncMetaServiceJob(brpc_job);
+
+    printf("[debug] DispatchFalconMetaServiceJob: EXIT SUCCESS\n");
+    fflush(stdout);
 
     return 0;
 }

@@ -18,12 +18,17 @@
  */
 void FalconPutKvMetaHandle(MetaProcessInfo *infoArray, int count, char *paramsData)
 {
+    printf("[debug] FalconPutKvMetaHandle: ENTRY, count=%d\n", count);
+    fflush(stdout);
+
     StringInfoData sql;
     initStringInfo(&sql);
 
     /* 开始事务 */
     int ret = SPI_connect();
     if (ret < 0) {
+        printf("[debug] FalconPutKvMetaHandle: SPI_connect FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }
@@ -88,9 +93,14 @@ void FalconPutKvMetaHandle(MetaProcessInfo *infoArray, int count, char *paramsDa
     ret = SPI_exec(sql.data, 0);
 
     if (ret < 0) {
+        printf("[debug] FalconPutKvMetaHandle: SPI_exec FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }
+    } else {
+        printf("[debug] FalconPutKvMetaHandle: SUCCESS, inserted rows\n");
+        fflush(stdout);
     }
 
     SPI_finish();
@@ -107,11 +117,16 @@ void FalconPutKvMetaHandle(MetaProcessInfo *infoArray, int count, char *paramsDa
  */
 SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count)
 {
+    printf("[debug] FalconGetKvMetaHandle: ENTRY, count=%d\n", count);
+    fflush(stdout);
+
     StringInfoData sql;
     initStringInfo(&sql);
 
     int ret = SPI_connect();
     if (ret < 0) {
+        printf("[debug] FalconGetKvMetaHandle: SPI_connect FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }
@@ -136,6 +151,8 @@ SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count)
     ret = SPI_exec(sql.data, 0);
 
     if (ret < 0) {
+        printf("[debug] FalconGetKvMetaHandle: SPI_exec FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }
@@ -143,6 +160,9 @@ SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count)
         pfree(sql.data);
         return NULL;
     }
+
+    printf("[debug] FalconGetKvMetaHandle: Query SUCCESS, processed=%lu rows\n", SPI_processed);
+    fflush(stdout);
 
     /* 初始化所有请求为未找到 */
     for (int i = 0; i < count; i++) {
@@ -204,11 +224,16 @@ SPITupleTable* FalconGetKvMetaHandle(MetaProcessInfo *infoArray, int count)
  */
 void FalconDeleteKvMetaHandle(MetaProcessInfo *infoArray, int count)
 {
+    printf("[debug] FalconDeleteKvMetaHandle: ENTRY, count=%d\n", count);
+    fflush(stdout);
+
     StringInfoData sql;
     initStringInfo(&sql);
 
     int ret = SPI_connect();
     if (ret < 0) {
+        printf("[debug] FalconDeleteKvMetaHandle: SPI_connect FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }
@@ -232,10 +257,14 @@ void FalconDeleteKvMetaHandle(MetaProcessInfo *infoArray, int count)
     ret = SPI_exec(sql.data, 0);
 
     if (ret >= 0) {
+        printf("[debug] FalconDeleteKvMetaHandle: SUCCESS, deleted rows\n");
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = SUCCESS;
         }
     } else {
+        printf("[debug] FalconDeleteKvMetaHandle: SPI_exec FAILED, ret=%d\n", ret);
+        fflush(stdout);
         for (int i = 0; i < count; i++) {
             infoArray[i]->errorCode = PROGRAM_ERROR;
         }

@@ -62,6 +62,9 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     uint64_t paramShmemShift = (uint64_t)PG_GETARG_INT64(1);
     int64_t signature = PG_GETARG_INT64(2);
 
+    printf("[debug] falcon_batch_meta_call_by_shmem: ENTRY, operation_type=%d\n", operation_type);
+    fflush(stdout);
+
     /* 1. 从共享内存获取数据 */
     FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
     if (paramShmemShift > allocator->pageCount * FALCON_SHMEM_ALLOCATOR_PAGE_SIZE)
@@ -529,6 +532,9 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     if (operation_type == 21 && kvResultTable != NULL) {  /* KV_GET (protobuf enum) */
         SPI_finish();
     }
+
+    printf("[debug] falcon_batch_meta_call_by_shmem: EXIT, returning responseShmemShift=%lu\n", responseShmemShift);
+    fflush(stdout);
 
     /* 7. 返回响应在共享内存中的偏移量 */
     PG_RETURN_INT64(responseShmemShift);

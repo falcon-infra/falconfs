@@ -44,17 +44,30 @@ class ConnectionPoolBrpcServer {
     }
     void Run()
     {
+        printf("[BRPC] Starting BRPC server initialization...\n");
+        fflush(stdout);
+
         char *userName = getenv("USER");
         std::shared_ptr<PGConnectionPool> pgConnectionPool =
             std::make_shared<PGConnectionPool>(FalconPGPort, userName, poolSize, 20, 400);
+
+        printf("[BRPC] PGConnectionPool created, adding MetaServiceImpl...\n");
+        fflush(stdout);
 
         falcon::meta_proto::MetaServiceImpl metaServiceImpl(pgConnectionPool);
         if (server.AddService(&metaServiceImpl, brpc::SERVER_DOESNT_OWN_SERVICE) != 0)
             throw std::runtime_error("ConnectionPoolBrpcServer: brpc server AddService failed");
 
+        printf("[BRPC] MetaServiceImpl added, initializing FalconMetaService...\n");
+        fflush(stdout);
+
         // 初始化 Falcon 元数据服务
         falconMetaService = new falcon::meta_service::FalconMetaService(pgConnectionPool);
         falcon::meta_service::g_falcon_meta_service = falconMetaService;
+
+        printf("[BRPC] FalconMetaService initialized, g_falcon_meta_service=%p\n",
+               falcon::meta_service::g_falcon_meta_service);
+        fflush(stdout);
 
         butil::EndPoint point;
         point = butil::EndPoint(butil::IP_ANY, port);
@@ -62,18 +75,30 @@ class ConnectionPoolBrpcServer {
         if (server.Start(point, &options) != 0)
             throw std::runtime_error("ConnectionPoolBrpcServer: fail to start server.");
 
+        printf("[BRPC] ✓ BRPC server started successfully on port %d, g_falcon_meta_service is ready!\n", port);
+        fflush(stdout);
+
         server.RunUntilAskedToQuit();
     }
     void Shutdown()
     {
+        printf("[BRPC] Shutting down BRPC server...\n");
+        fflush(stdout);
+
         falcon::meta_service::g_falcon_meta_service = nullptr;
         if (falconMetaService != nullptr) {
             delete falconMetaService;
             falconMetaService = nullptr;
         }
 
+        printf("[BRPC] FalconMetaService destroyed, stopping server...\n");
+        fflush(stdout);
+
         server.Stop(0);
         server.Join();
+
+        printf("[BRPC] BRPC server stopped.\n");
+        fflush(stdout);
     }
 };
 

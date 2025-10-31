@@ -80,10 +80,28 @@ public:
     FalconMetaServiceResponse& GetResponse() { return response; }
 
     void Done() {
+        printf("[debug] AsyncFalconMetaServiceJob::Done: ENTRY, job=%p, callback_valid=%d\n",
+               this, callback ? 1 : 0);
+        fflush(stdout);
+
         if (callback) {
+            printf("[debug] AsyncFalconMetaServiceJob::Done: Calling user callback, opcode=%d, status=%d\n",
+                   response.opcode, response.status);
+            fflush(stdout);
+
             callback(response, user_context);
+
+            printf("[debug] AsyncFalconMetaServiceJob::Done: User callback RETURNED\n");
+            fflush(stdout);
+
             CleanupResponseData();
+        } else {
+            printf("[debug] AsyncFalconMetaServiceJob::Done: WARNING - callback is NULL!\n");
+            fflush(stdout);
         }
+
+        printf("[debug] AsyncFalconMetaServiceJob::Done: EXIT\n");
+        fflush(stdout);
     }
 };
 
