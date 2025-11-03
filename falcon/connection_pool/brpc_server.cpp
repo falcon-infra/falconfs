@@ -13,34 +13,22 @@
 #include "connection_pool/falcon_meta_service.h"
 #include "connection_pool/pg_connection_pool.h"
 
-namespace falcon {
-namespace meta_service {
-    FalconMetaService* g_falcon_meta_service = nullptr;
-}
-}
-
 class ConnectionPoolBrpcServer {
   private:
     int port;
     int poolSize;
 
     brpc::Server server;
-    falcon::meta_service::FalconMetaService* falconMetaService;
 
   public:
     ConnectionPoolBrpcServer(int port, int poolSize)
         : port(port),
-          poolSize(poolSize),
-          falconMetaService(nullptr)
+          poolSize(poolSize)
     {
     }
 
     ~ConnectionPoolBrpcServer()
     {
-        if (falconMetaService != nullptr) {
-            delete falconMetaService;
-            falconMetaService = nullptr;
-        }
     }
     void Run()
     {
@@ -48,25 +36,19 @@ class ConnectionPoolBrpcServer {
         fflush(stdout);
 
         char *userName = getenv("USER");
+
+        // 为MetaServiceImpl创建连接池
         std::shared_ptr<PGConnectionPool> pgConnectionPool =
             std::make_shared<PGConnectionPool>(FalconPGPort, userName, poolSize, 20, 400);
 
-        printf("[BRPC] PGConnectionPool created, adding MetaServiceImpl...\n");
+        printf("[BRPC] PGConnectionPool created for MetaServiceImpl\n");
         fflush(stdout);
 
         falcon::meta_proto::MetaServiceImpl metaServiceImpl(pgConnectionPool);
         if (server.AddService(&metaServiceImpl, brpc::SERVER_DOESNT_OWN_SERVICE) != 0)
             throw std::runtime_error("ConnectionPoolBrpcServer: brpc server AddService failed");
 
-        printf("[BRPC] MetaServiceImpl added, initializing FalconMetaService...\n");
-        fflush(stdout);
-
-        // 初始化 Falcon 元数据服务
-        falconMetaService = new falcon::meta_service::FalconMetaService(pgConnectionPool);
-        falcon::meta_service::g_falcon_meta_service = falconMetaService;
-
-        printf("[BRPC] FalconMetaService initialized, g_falcon_meta_service=%p\n",
-               falcon::meta_service::g_falcon_meta_service);
+        printf("[BRPC] MetaServiceImpl added to server\n");
         fflush(stdout);
 
         butil::EndPoint point;
@@ -75,23 +57,11 @@ class ConnectionPoolBrpcServer {
         if (server.Start(point, &options) != 0)
             throw std::runtime_error("ConnectionPoolBrpcServer: fail to start server.");
 
-        printf("[BRPC] ✓ BRPC server started successfully on port %d, g_falcon_meta_service is ready!\n", port);
-        fflush(stdout);
-
         server.RunUntilAskedToQuit();
     }
     void Shutdown()
     {
         printf("[BRPC] Shutting down BRPC server...\n");
-        fflush(stdout);
-
-        falcon::meta_service::g_falcon_meta_service = nullptr;
-        if (falconMetaService != nullptr) {
-            delete falconMetaService;
-            falconMetaService = nullptr;
-        }
-
-        printf("[BRPC] FalconMetaService destroyed, stopping server...\n");
         fflush(stdout);
 
         server.Stop(0);

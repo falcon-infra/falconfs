@@ -134,26 +134,25 @@ private:
     std::shared_ptr<PGConnectionPool> pgConnectionPool;
 
 public:
-    FalconMetaService(std::shared_ptr<PGConnectionPool> pool)
-        : pgConnectionPool(pool) {}
+    // 构造函数：自己创建连接池
+    FalconMetaService(int port, const char* userName, int poolSize);
 
-    virtual ~FalconMetaService() {}
+    virtual ~FalconMetaService();
 
     int DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* job);
-};
 
-/**
- * 提交 Falcon 元数据服务请求（对外接口）
- *
- * @param request: Falcon 元数据服务请求
- * @param callback: 回调函数
- * @param user_context: 用户上下文指针
- * @return: 0 表示成功，非0 表示失败
- *
- */
-int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
-                            FalconMetaServiceCallback callback,
-                            void* user_context = nullptr);
+    /**
+     * 提交 Falcon 元数据服务请求（成员方法）
+     *
+     * @param request: Falcon 元数据服务请求
+     * @param callback: 回调函数
+     * @param user_context: 用户上下文指针
+     * @return: 0 表示成功，非0 表示失败
+     */
+    int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
+                                FalconMetaServiceCallback callback,
+                                void* user_context = nullptr);
+};
 
 } // namespace meta_service
 } // namespace falcon

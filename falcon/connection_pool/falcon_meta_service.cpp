@@ -20,8 +20,6 @@
 namespace falcon {
 namespace meta_service {
 
-extern FalconMetaService* g_falcon_meta_service;
-
 static void HandleFalconMetaResponse(brpc::Controller* cntl,
                                      falcon::meta_proto::Empty* proto_response,
                                      AsyncFalconMetaServiceJob* original_job)
@@ -77,52 +75,27 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
 }  // namespace meta_service
 }  // namespace falcon
 
-// C++ 版本的实现（在 namespace 外）
-static int SubmitFalconMetaRequestImpl(const falcon::meta_service::FalconMetaServiceRequest& request,
-                                        falcon::meta_service::FalconMetaServiceCallback callback,
-                                        void* user_context)
-{
-    printf("[debug] SubmitFalconMetaRequestImpl: ENTRY, opcode=%d, callback_valid=%d, user_context=%p\n",
-           request.operation, callback ? 1 : 0, user_context);
-    fflush(stdout);
-
-    if (falcon::meta_service::g_falcon_meta_service == nullptr) {
-        printf("[debug] SubmitFalconMetaRequestImpl: ERROR - g_falcon_meta_service is NULL\n");
-        fflush(stdout);
-        return -1;
-    }
-
-    falcon::meta_service::AsyncFalconMetaServiceJob* job =
-        new falcon::meta_service::AsyncFalconMetaServiceJob(request, callback, user_context);
-
-    printf("[debug] SubmitFalconMetaRequestImpl: Created job=%p, dispatching...\n", job);
-    fflush(stdout);
-
-    int ret = falcon::meta_service::g_falcon_meta_service->DispatchFalconMetaServiceJob(job);
-
-    printf("[debug] SubmitFalconMetaRequestImpl: EXIT, ret=%d\n", ret);
-    fflush(stdout);
-
-    return ret;
-}
-
-// extern "C" 版本供 C 代码调用
-extern "C" int SubmitFalconMetaRequest(const falcon::meta_service::FalconMetaServiceRequest& request,
-                                       falcon::meta_service::FalconMetaServiceCallback callback,
-                                       void* user_context)
-{
-    return SubmitFalconMetaRequestImpl(request, callback, user_context);
-}
-
 namespace falcon {
 namespace meta_service {
 
-// C++ 版本供 C++ 代码（如测试代码）调用
-int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
-                            FalconMetaServiceCallback callback,
-                            void* user_context)
+FalconMetaService::FalconMetaService(int port, const char* userName, int poolSize)
 {
-    return SubmitFalconMetaRequestImpl(request, callback, user_context);
+    pgConnectionPool = std::make_shared<PGConnectionPool>(
+        port, userName, poolSize, 20, 400);
+
+    printf("[FalconMetaService] Created with internal PGConnectionPool: port=%d, user=%s, poolSize=%d\n",
+           port, userName, poolSize);
+    fflush(stdout);
+}
+
+FalconMetaService::~FalconMetaService()
+{
+    if (pgConnectionPool) {
+        printf("[FalconMetaService] Stopping internal PGConnectionPool\n");
+        fflush(stdout);
+        pgConnectionPool->Stop();
+        pgConnectionPool.reset();
+    }
 }
 
 int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* job)
@@ -189,6 +162,25 @@ int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* j
     fflush(stdout);
 
     return 0;
+}
+
+// SubmitFalconMetaRequest成员方法
+int FalconMetaService::SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
+                                               FalconMetaServiceCallback callback,
+                                               void* user_context)
+{
+    printf("[debug] FalconMetaService::SubmitFalconMetaRequest: ENTRY, opcode=%d, callback_valid=%d\n",
+           request.operation, callback ? 1 : 0);
+    fflush(stdout);
+
+    AsyncFalconMetaServiceJob* job = new AsyncFalconMetaServiceJob(request, callback, user_context);
+
+    int ret = DispatchFalconMetaServiceJob(job);
+
+    printf("[debug] FalconMetaService::SubmitFalconMetaRequest: EXIT, ret=%d\n", ret);
+    fflush(stdout);
+
+    return ret;
 }
 
 // 将 FalconMetaOperationType 转换为 falcon::meta_proto::MetaServiceType
