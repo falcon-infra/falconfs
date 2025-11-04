@@ -43,6 +43,8 @@ Size FalconPluginShmemSize(void);
  * Called during PostgreSQL shared memory initialization
  */
 void FalconPluginShmemInit(void);
+
+void FalconPluginInitBackgroundPlugins(void);
 #endif
 
 /*
