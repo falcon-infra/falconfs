@@ -132,10 +132,18 @@ public:
 
 private:
     std::shared_ptr<PGConnectionPool> pgConnectionPool;
+    static FalconMetaService* instance;
+    static std::mutex instanceMutex;
+    bool initialized;
+
+    FalconMetaService();
 
 public:
-    // 构造函数：自己创建连接池
-    FalconMetaService(int port, const char* userName, int poolSize);
+    static FalconMetaService* Instance();
+
+    bool Init(int port, int pool_size = 10);
+
+    bool IsInitialized() const { return initialized; }
 
     virtual ~FalconMetaService();
 

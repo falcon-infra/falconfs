@@ -16,6 +16,7 @@
 #include <thread>
 #include <cstdlib>
 #include <vector>
+#include <mutex>
 
 namespace falcon {
 namespace meta_service {
@@ -78,14 +79,67 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
 namespace falcon {
 namespace meta_service {
 
-FalconMetaService::FalconMetaService(int port, const char* userName, int poolSize)
-{
-    pgConnectionPool = std::make_shared<PGConnectionPool>(
-        port, userName, poolSize, 20, 400);
+FalconMetaService* FalconMetaService::instance = nullptr;
+std::mutex FalconMetaService::instanceMutex;
 
-    printf("[FalconMetaService] Created with internal PGConnectionPool: port=%d, user=%s, poolSize=%d\n",
-           port, userName, poolSize);
-    fflush(stdout);
+FalconMetaService::FalconMetaService() : initialized(false)
+{
+}
+
+FalconMetaService* FalconMetaService::Instance()
+{
+    std::lock_guard<std::mutex> lock(instanceMutex);
+    if (instance == nullptr) {
+        instance = new FalconMetaService();
+    }
+    return instance;
+}
+
+bool FalconMetaService::Init(int port, int pool_size)
+{
+    std::lock_guard<std::mutex> lock(instanceMutex);
+
+    if (initialized) {
+        printf("[FalconMetaService] WARNING: Already initialized, skipping re-initialization\n");
+        fflush(stdout);
+        return true;
+    }
+
+    if (port <= 0 || port > 65535) {
+        printf("[FalconMetaService] ERROR: Invalid port number: %d\n", port);
+        fflush(stdout);
+        return false;
+    }
+
+    if (pool_size <= 0) {
+        printf("[FalconMetaService] ERROR: Invalid pool size: %d\n", pool_size);
+        fflush(stdout);
+        return false;
+    }
+
+    // 获取 USER 环境变量
+    char* user_name = getenv("USER");
+    if (!user_name) {
+        printf("[FalconMetaService] ERROR: Cannot get USER from environment\n");
+        fflush(stdout);
+        return false;
+    }
+
+    try {
+        pgConnectionPool = std::make_shared<PGConnectionPool>(
+            port, user_name, pool_size, 20, 400);
+
+        printf("[FalconMetaService] Initialized with: port=%d, user=%s, poolSize=%d\n",
+               port, user_name, pool_size);
+        fflush(stdout);
+
+        initialized = true;
+        return true;
+    } catch (const std::exception& e) {
+        printf("[FalconMetaService] ERROR: Failed to initialize connection pool: %s\n", e.what());
+        fflush(stdout);
+        return false;
+    }
 }
 
 FalconMetaService::~FalconMetaService()
@@ -172,6 +226,12 @@ int FalconMetaService::SubmitFalconMetaRequest(const FalconMetaServiceRequest& r
     printf("[debug] FalconMetaService::SubmitFalconMetaRequest: ENTRY, opcode=%d, callback_valid=%d\n",
            request.operation, callback ? 1 : 0);
     fflush(stdout);
+
+    if (!initialized) {
+        printf("[FalconMetaService] ERROR: Service not initialized. Call Init() first.\n");
+        fflush(stdout);
+        return -1;
+    }
 
     AsyncFalconMetaServiceJob* job = new AsyncFalconMetaServiceJob(request, callback, user_context);
 
