@@ -137,23 +137,33 @@ static void FalconPluginInitializeSlot(int slot_index, const char *plugin_name, 
     strncpy(plugin_data->plugin_path, plugin_path, FALCON_PLUGIN_MAX_PATH_SIZE - 1);
     plugin_data->main_pid = getpid();
 
+    ereport(LOG, (errmsg("Plugin %s allocated slot %d", plugin_name, slot_index)));
+}
+
+/* 获取当前节点信息 - 供插件使用 */
+void FalconPluginGetNodeInfo(FalconNodeInfo *node_info)
+{
+    if (node_info == NULL) {
+        return;
+    }
+
     /* 设置节点信息 */
-    strncpy(plugin_data->node_ip, "127.0.0.1", 15);  /* 本地IP，后续可以从配置获取 */
-    plugin_data->node_port = PostPortNumber;  /* PostgreSQL 端口 */
-    plugin_data->pooler_port = FalconConnectionPoolPort;  /* 连接池端口 */
+    strncpy(node_info->node_ip, "127.0.0.1", 15);  /* 本地IP，后续可以从配置获取 */
+    node_info->node_port = PostPortNumber;  /* PostgreSQL 端口 */
+    node_info->pooler_port = FalconConnectionPoolPort;  /* 连接池端口 */
 
     /* 使用系统的 GetLocalServerId() 判断节点类型 */
     int32_t local_server_id = GetLocalServerId();
     if (local_server_id == FALCON_CN_SERVER_ID) {
-        plugin_data->node_type = 0;  /* CN (Coordinator) */
+        node_info->node_type = 0;  /* CN (Coordinator) */
     } else {
-        plugin_data->node_type = 1;  /* Worker */
+        node_info->node_type = 1;  /* Worker */
     }
 
-    ereport(LOG, (errmsg("Plugin %s initialized with node info: %s:%d (type=%s, server_id=%d, pooler=%d)",
-                        plugin_name, plugin_data->node_ip, plugin_data->node_port,
-                        plugin_data->node_type == 0 ? "CN" : "Worker",
-                        local_server_id, plugin_data->pooler_port)));
+    ereport(LOG, (errmsg("FalconPluginGetNodeInfo: %s:%d (type=%s, server_id=%d, pooler=%d)",
+                        node_info->node_ip, node_info->node_port,
+                        node_info->node_type == 0 ? "CN" : "Worker",
+                        local_server_id, node_info->pooler_port)));
 }
 
 static int FalconPluginExecuteInline(int slot_index, const char *plugin_name,
@@ -264,9 +274,35 @@ static int FalconRegisterBackgroundPlugins(const char *plugin_dir)
         /* Only register BACKGROUND plugins in this phase */
         if (work_type == FALCON_PLUGIN_TYPE_BACKGROUND) {
             BackgroundWorker worker;
+            int slot_index;
+            FalconPluginData *plugin_data;
+            int ret;
 
             ereport(LOG, (errmsg("Plugin %s type: BACKGROUND (registering worker)", entry->d_name)));
 
+            /* 分配共享内存槽位 */
+            slot_index = FalconPluginGetFreeSlot();
+            if (slot_index < 0) {
+                ereport(WARNING, (errmsg("Cannot allocate shared memory slot for background plugin %s", entry->d_name)));
+                dlclose(dl_handle);
+                continue;
+            }
+
+            /* 初始化槽位 */
+            FalconPluginInitializeSlot(slot_index, entry->d_name, plugin_path);
+            plugin_data = &falcon_plugin_shmem->plugins[slot_index];
+
+            /* 在主进程中调用init_func */
+            ereport(LOG, (errmsg("Calling init_func for background plugin %s in main process", entry->d_name)));
+            ret = init_func(plugin_data);
+            if (ret != 0) {
+                ereport(WARNING, (errmsg("Plugin %s init_func failed with code %d", entry->d_name, ret)));
+                FalconPluginReleaseSlot(slot_index);
+                dlclose(dl_handle);
+                continue;
+            }
+
+            /* 注册后台工作进程 */
             memset(&worker, 0, sizeof(BackgroundWorker));
             snprintf(worker.bgw_name, BGW_MAXLEN, "falcon_plugin_%s", entry->d_name);
             snprintf(worker.bgw_type, BGW_MAXLEN, "falcon_plugin_worker");
@@ -276,12 +312,11 @@ static int FalconRegisterBackgroundPlugins(const char *plugin_dir)
             snprintf(worker.bgw_library_name, BGW_MAXLEN, "falcon");
             snprintf(worker.bgw_function_name, BGW_MAXLEN, "FalconPluginBackgroundWorkerMain");
 
-            /* Store plugin path in bgw_extra field */
-            strncpy(worker.bgw_extra, plugin_path, BGW_EXTRALEN - 1);
-            worker.bgw_extra[BGW_EXTRALEN - 1] = '\0';
+            /* Store plugin path and slot index in bgw_extra field */
+            snprintf(worker.bgw_extra, BGW_EXTRALEN, "%s:%d", plugin_path, slot_index);
 
             RegisterBackgroundWorker(&worker);
-            ereport(LOG, (errmsg("Registered background worker for plugin: %s", entry->d_name)));
+            ereport(LOG, (errmsg("Registered background worker for plugin: %s with slot %d", entry->d_name, slot_index)));
         }
 
         dlclose(dl_handle);
@@ -379,22 +414,20 @@ static int FalconExecuteInlinePlugins(const char *plugin_dir)
 void FalconPluginBackgroundWorkerMain(Datum main_arg)
 {
     void *dl_handle = NULL;
-    falcon_plugin_init_func_t init_func;
     falcon_plugin_work_func_t work_func;
     falcon_plugin_cleanup_func_t cleanup_func;
     FalconPluginData *plugin_data = NULL;
-    char plugin_path[BGW_EXTRALEN];
+    char plugin_path[512];
     char *plugin_name;
     int slot_index;
     int ret;
     bool falconHasBeenLoad = false;
+    char *colon_pos;
 
     BackgroundWorkerUnblockSignals();
 
-    /* 初始化数据库连接 - 必须在访问数据库之前 */
     BackgroundWorkerInitializeConnection("postgres", NULL, 0);
 
-    /* 创建资源管理器和内存上下文 */
     CurrentResourceOwner = ResourceOwnerCreate(NULL, "falcon plugin");
     CurrentMemoryContext = AllocSetContextCreate(TopMemoryContext,
                                                  "falcon plugin context",
@@ -402,7 +435,6 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
                                                  ALLOCSET_DEFAULT_INITSIZE,
                                                  ALLOCSET_DEFAULT_MAXSIZE);
 
-    /* 等待Falcon扩展加载 - 确保falcon函数可用 */
     ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: waiting for falcon extension...")));
     while (true) {
         StartTransactionCommand();
@@ -414,7 +446,6 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
         sleep(1);
     }
 
-    /* 等待数据库恢复完成 */
     ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: checking recovery status...")));
     while (RecoveryInProgress()) {
         sleep(1);
@@ -426,9 +457,18 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
         FalconPluginShmemInit();
     }
 
-    /* Get plugin path from bgw_extra */
+    /* Parse plugin path and slot index from bgw_extra (format: "path:slot_index") */
     strncpy(plugin_path, MyBgworkerEntry->bgw_extra, BGW_EXTRALEN - 1);
     plugin_path[BGW_EXTRALEN - 1] = '\0';
+
+    colon_pos = strrchr(plugin_path, ':');
+    if (colon_pos == NULL) {
+        ereport(ERROR, (errmsg("Invalid bgw_extra format: %s", plugin_path)));
+        proc_exit(1);
+    }
+
+    *colon_pos = '\0';
+    slot_index = atoi(colon_pos + 1);
 
     /* Extract plugin name from path */
     plugin_name = strrchr(plugin_path, '/');
@@ -438,44 +478,34 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
         plugin_name = plugin_path;
     }
 
-    ereport(LOG, (errmsg("Background worker started for plugin: %s", plugin_name)));
+    ereport(LOG, (errmsg("Background worker started for plugin: %s with slot %d", plugin_name, slot_index)));
 
-    /* Allocate shared memory slot */
-    slot_index = FalconPluginGetFreeSlot();
-    if (slot_index < 0) {
-        ereport(ERROR, (errmsg("Cannot allocate shared memory slot for background plugin %s", plugin_name)));
+    /* Get plugin data from shared memory slot */
+    if (slot_index < 0 || slot_index >= falcon_plugin_shmem->num_slots) {
+        ereport(ERROR, (errmsg("Invalid slot index %d for plugin %s", slot_index, plugin_name)));
         proc_exit(1);
     }
 
-    FalconPluginInitializeSlot(slot_index, plugin_name, plugin_path);
     plugin_data = &falcon_plugin_shmem->plugins[slot_index];
+    if (!plugin_data->in_use) {
+        ereport(ERROR, (errmsg("Slot %d not in use for plugin %s", slot_index, plugin_name)));
+        proc_exit(1);
+    }
 
     /* Load plugin */
     dl_handle = dlopen(plugin_path, RTLD_LAZY);
     if (!dl_handle) {
         ereport(ERROR, (errmsg("Failed to load plugin in background worker: %s, error: %s",
                               plugin_path, dlerror())));
-        FalconPluginReleaseSlot(slot_index);
         proc_exit(1);
     }
 
-    init_func = (falcon_plugin_init_func_t)dlsym(dl_handle, FALCON_PLUGIN_INIT_FUNC_NAME);
     work_func = (falcon_plugin_work_func_t)dlsym(dl_handle, FALCON_PLUGIN_WORK_FUNC_NAME);
     cleanup_func = (falcon_plugin_cleanup_func_t)dlsym(dl_handle, FALCON_PLUGIN_CLEANUP_FUNC_NAME);
 
-    if (!init_func || !work_func || !cleanup_func) {
-        ereport(ERROR, (errmsg("Plugin %s missing required functions", plugin_name)));
+    if (!work_func || !cleanup_func) {
+        ereport(ERROR, (errmsg("Plugin %s missing required functions (work/cleanup)", plugin_name)));
         dlclose(dl_handle);
-        FalconPluginReleaseSlot(slot_index);
-        proc_exit(1);
-    }
-
-    /* Initialize plugin */
-    ret = init_func(plugin_data);
-    if (ret != 0) {
-        ereport(ERROR, (errmsg("Plugin %s initialization failed with code %d", plugin_name, ret)));
-        dlclose(dl_handle);
-        FalconPluginReleaseSlot(slot_index);
         proc_exit(1);
     }
 
@@ -487,7 +517,6 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
     ereport(LOG, (errmsg("Background worker stopping: %s", plugin_name)));
     cleanup_func(plugin_data);
 
-    FalconPluginReleaseSlot(slot_index);
     dlclose(dl_handle);
 
     proc_exit(0);

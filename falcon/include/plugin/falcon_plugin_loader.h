@@ -5,6 +5,8 @@
 #ifndef FALCON_PLUGIN_LOADER_H
 #define FALCON_PLUGIN_LOADER_H
 
+#include "plugin/falcon_plugin_framework.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,6 +44,13 @@ Size FalconPluginShmemSize(void);
  */
 void FalconPluginShmemInit(void);
 #endif
+
+/*
+ * Get current node information
+ * Can be called by plugins to retrieve node configuration
+ * @param node_info: Pointer to FalconNodeInfo structure to fill
+ */
+void FalconPluginGetNodeInfo(FalconNodeInfo *node_info);
 
 #ifdef __cplusplus
 }
