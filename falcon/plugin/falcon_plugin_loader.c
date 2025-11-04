@@ -16,10 +16,22 @@
 #include "plugin/falcon_plugin_framework.h"
 #include "plugin/falcon_plugin_loader.h"
 #include "utils/falcon_plugin_guc.h"
+#include "connection_pool/connection_pool_config.h"
+#include "postmaster/postmaster.h"
+#include "metadb/foreign_server.h"
+#include "access/xact.h"
+#include "access/xlog.h"
+#include "utils/memutils.h"
+#include "storage/proc.h"
+#include "utils/resowner.h"
 #include <dlfcn.h>
 #include <dirent.h>
 #include <string.h>
 #include <stdlib.h>
+
+/* 声明外部函数 */
+extern bool CheckFalconHasBeenLoaded(void);
+extern bool RecoveryInProgress(void);
 
 static FalconPluginSharedMemory *falcon_plugin_shmem = NULL;
 static bool falcon_plugin_shmem_initialized = false;
@@ -124,6 +136,24 @@ static void FalconPluginInitializeSlot(int slot_index, const char *plugin_name, 
     strncpy(plugin_data->plugin_name, plugin_name, FALCON_PLUGIN_MAX_NAME_SIZE - 1);
     strncpy(plugin_data->plugin_path, plugin_path, FALCON_PLUGIN_MAX_PATH_SIZE - 1);
     plugin_data->main_pid = getpid();
+
+    /* 设置节点信息 */
+    strncpy(plugin_data->node_ip, "127.0.0.1", 15);  /* 本地IP，后续可以从配置获取 */
+    plugin_data->node_port = PostPortNumber;  /* PostgreSQL 端口 */
+    plugin_data->pooler_port = FalconConnectionPoolPort;  /* 连接池端口 */
+
+    /* 使用系统的 GetLocalServerId() 判断节点类型 */
+    int32_t local_server_id = GetLocalServerId();
+    if (local_server_id == FALCON_CN_SERVER_ID) {
+        plugin_data->node_type = 0;  /* CN (Coordinator) */
+    } else {
+        plugin_data->node_type = 1;  /* Worker */
+    }
+
+    ereport(LOG, (errmsg("Plugin %s initialized with node info: %s:%d (type=%s, server_id=%d, pooler=%d)",
+                        plugin_name, plugin_data->node_ip, plugin_data->node_port,
+                        plugin_data->node_type == 0 ? "CN" : "Worker",
+                        local_server_id, plugin_data->pooler_port)));
 }
 
 static int FalconPluginExecuteInline(int slot_index, const char *plugin_name,
@@ -357,8 +387,40 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
     char *plugin_name;
     int slot_index;
     int ret;
+    bool falconHasBeenLoad = false;
 
     BackgroundWorkerUnblockSignals();
+
+    /* 初始化数据库连接 - 必须在访问数据库之前 */
+    BackgroundWorkerInitializeConnection("postgres", NULL, 0);
+
+    /* 创建资源管理器和内存上下文 */
+    CurrentResourceOwner = ResourceOwnerCreate(NULL, "falcon plugin");
+    CurrentMemoryContext = AllocSetContextCreate(TopMemoryContext,
+                                                 "falcon plugin context",
+                                                 ALLOCSET_DEFAULT_MINSIZE,
+                                                 ALLOCSET_DEFAULT_INITSIZE,
+                                                 ALLOCSET_DEFAULT_MAXSIZE);
+
+    /* 等待Falcon扩展加载 - 确保falcon函数可用 */
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: waiting for falcon extension...")));
+    while (true) {
+        StartTransactionCommand();
+        falconHasBeenLoad = CheckFalconHasBeenLoaded();
+        CommitTransactionCommand();
+        if (falconHasBeenLoad) {
+            break;
+        }
+        sleep(1);
+    }
+
+    /* 等待数据库恢复完成 */
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: checking recovery status...")));
+    while (RecoveryInProgress()) {
+        sleep(1);
+    }
+
+    ereport(LOG, (errmsg("FalconPluginBackgroundWorkerMain: database ready")));
 
     if (!falcon_plugin_shmem_initialized) {
         FalconPluginShmemInit();
