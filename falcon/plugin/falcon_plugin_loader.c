@@ -316,9 +316,6 @@ static int FalconRegisterBackgroundPlugins(const char *plugin_dir)
         /* Only register BACKGROUND plugins in this phase */
         if (work_type == FALCON_PLUGIN_TYPE_BACKGROUND) {
             BackgroundWorker worker;
-            int slot_index;
-            FalconPluginData *plugin_data;
-            int ret;
 
             ereport(LOG, (errmsg("Plugin %s type: BACKGROUND (registering worker)", entry->d_name)));
 
@@ -343,7 +340,7 @@ static int FalconRegisterBackgroundPlugins(const char *plugin_dir)
             memset(&worker, 0, sizeof(BackgroundWorker));
             snprintf(worker.bgw_name, BGW_MAXLEN, "falcon_plugin_%s", entry->d_name);
             snprintf(worker.bgw_type, BGW_MAXLEN, "falcon_plugin_worker");
-            worker.bgw_flags = BGWORKER_SHMEM_ACCESS;
+            worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
             worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
             worker.bgw_restart_time = BGW_NEVER_RESTART;
             snprintf(worker.bgw_library_name, BGW_MAXLEN, "falcon");

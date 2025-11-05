@@ -97,7 +97,13 @@ FalconMetaService* FalconMetaService::Instance()
 
 bool FalconMetaService::Init(int port, int pool_size)
 {
+    printf("[FalconMetaService::Init] DEBUG: Entry - port=%d, pool_size=%d\n", port, pool_size);
+    fflush(stdout);
+
     std::lock_guard<std::mutex> lock(instanceMutex);
+
+    printf("[FalconMetaService::Init] DEBUG: Lock acquired, initialized=%d\n", initialized);
+    fflush(stdout);
 
     if (initialized) {
         printf("[FalconMetaService] WARNING: Already initialized, skipping re-initialization\n");
@@ -105,17 +111,26 @@ bool FalconMetaService::Init(int port, int pool_size)
         return true;
     }
 
+    printf("[FalconMetaService::Init] DEBUG: Checking port validity: %d\n", port);
+    fflush(stdout);
+
     if (port <= 0 || port > 65535) {
         printf("[FalconMetaService] ERROR: Invalid port number: %d\n", port);
         fflush(stdout);
         return false;
     }
 
+    printf("[FalconMetaService::Init] DEBUG: Checking pool_size validity: %d\n", pool_size);
+    fflush(stdout);
+
     if (pool_size <= 0) {
         printf("[FalconMetaService] ERROR: Invalid pool size: %d\n", pool_size);
         fflush(stdout);
         return false;
     }
+
+    printf("[FalconMetaService::Init] DEBUG: Getting USER environment variable\n");
+    fflush(stdout);
 
     // 获取 USER 环境变量
     char* user_name = getenv("USER");
@@ -125,7 +140,14 @@ bool FalconMetaService::Init(int port, int pool_size)
         return false;
     }
 
+    printf("[FalconMetaService::Init] DEBUG: USER=%s, creating PGConnectionPool\n", user_name);
+    fflush(stdout);
+
     try {
+        printf("[FalconMetaService::Init] DEBUG: About to create PGConnectionPool with port=%d, user=%s, pool_size=%d\n",
+               port, user_name, pool_size);
+        fflush(stdout);
+
         pgConnectionPool = std::make_shared<PGConnectionPool>(
             port, user_name, pool_size, 20, 400);
 
@@ -134,9 +156,12 @@ bool FalconMetaService::Init(int port, int pool_size)
         fflush(stdout);
 
         initialized = true;
+        printf("[FalconMetaService::Init] DEBUG: Success, initialized set to true\n");
+        fflush(stdout);
         return true;
     } catch (const std::exception& e) {
         printf("[FalconMetaService] ERROR: Failed to initialize connection pool: %s\n", e.what());
+        printf("[FalconMetaService::Init] DEBUG: Exception caught, returning false\n");
         fflush(stdout);
         return false;
     }
