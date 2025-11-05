@@ -106,7 +106,7 @@ struct KvDataResponse {
 struct PlainCommandResponse {
     uint32_t row;                                   // 行数（PQntuples）
     uint32_t col;                                   // 列数（PQnfields）
-    std::vector<std::string> data;                  // 原始数据（一维数组，按行优先顺序：data[row * col + col_idx]）
+    std::vector<std::string> data;                  // 原始数据（一维数组，按行优先顺序：data[row_idx * col + col_idx]）
 
     PlainCommandResponse() : row(0), col(0) {}
 };

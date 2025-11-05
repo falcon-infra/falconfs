@@ -235,6 +235,12 @@ void PGConnection::BackgroundWorker()
                 if (!SerializedDataInit(&requestData, paramBuffer, paramSize, paramSize, NULL))
                     throw std::runtime_error("request attachment is corrupt.");
             }
+
+            // BINARY format currently only supports single operation
+            if (format == falcon::meta_proto::SerializationFormat::BINARY && job->GetRequest()->type_size() > 1) {
+                throw std::runtime_error("BINARY format does not support batch operations (type_size > 1)");
+            }
+
             int i = 0;
             uint64_t currentParamSegment = 0;
             while (i < job->GetRequest()->type_size()) {
@@ -259,8 +265,9 @@ void PGConnection::BackgroundWorker()
                     std::string command;
 
                     if (format == falcon::meta_proto::SerializationFormat::BINARY) {
-                        // BINARY format: read string directly
-                        char *p = paramBuffer + currentParamSegment;
+                        // BINARY format: skip BinaryHeader (16 bytes) and read string directly
+                        // BinaryHeader structure: signature(4) + count(4) + operation_type(4) + reserved(4)
+                        char *p = paramBuffer + 16;  // Skip BinaryHeader
                         uint16_t cmd_len = *(uint16_t*)p;
                         p += sizeof(uint16_t);
                         command = std::string(p, cmd_len);
@@ -325,7 +332,28 @@ void PGConnection::BackgroundWorker()
                         throw std::runtime_error(std::string("BINARY format does not support error responses: ") +
                                                 PQresultErrorMessage(res));
                     } else if (isPlainCommand[i]) {
-                        throw std::runtime_error("BINARY format does not support plain commands");
+                        // Handle PLAIN_COMMAND in BINARY format
+                        // Response format: status(4) + row(4) + col(4) + data array
+                        int32_t status = 0;  // Success
+                        uint32_t row = PQntuples(res);
+                        uint32_t col = PQnfields(res);
+
+                        // Write status
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&status, (char*)&status + sizeof(status));
+
+                        // Write row and col
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&row, (char*)&row + sizeof(row));
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&col, (char*)&col + sizeof(col));
+
+                        // Write data array
+                        for (uint32_t r = 0; r < row; ++r) {
+                            for (uint32_t c = 0; c < col; ++c) {
+                                const char* value = PQgetvalue(res, r, c);
+                                uint16_t str_len = strlen(value);
+                                binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&str_len, (char*)&str_len + sizeof(str_len));
+                                binaryReplyBuffer.insert(binaryReplyBuffer.end(), value, value + str_len);
+                            }
+                        }
                     } else {
                         int64_t signature = signatureList[i];
                         if (PQntuples(res) != 1 || PQnfields(res) != 1)
