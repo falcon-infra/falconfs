@@ -556,6 +556,11 @@ void FalconPluginBackgroundWorkerMain(Datum main_arg)
     /* Execute plugin work */
     ret = work_func(plugin_data);
     ereport(LOG, (errmsg("Plugin work function returned %d: %s", ret, plugin_name)));
+    
+    do {
+        sleep(1);
+        ereport(LOG, (errmsg("Plugin work loop")));
+    } while (true);
 
     /* Cleanup */
     ereport(LOG, (errmsg("Background worker stopping: %s", plugin_name)));
