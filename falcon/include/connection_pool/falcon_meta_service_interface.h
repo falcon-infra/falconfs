@@ -502,15 +502,9 @@ struct FalconMetaServiceResponse {
  */
 using FalconMetaServiceCallback = std::function<void(const FalconMetaServiceResponse&, void*)>;
 
-/**
- * Falcon 元数据服务请求结构
- */
 struct FalconMetaServiceRequest {
     FalconMetaOperationType operation;
-    // KV 操作数据（用于 DFC_PUT_KEY_META, DFC_GET_KV_META, DFC_DELETE_KV_META）
     FormDataKvIndex kv_data;
-    // 文件操作路径（用于简单文件操作）
-    std::string path;
     AnyMetaParam file_params;
     bool allow_batch_with_others_;
 

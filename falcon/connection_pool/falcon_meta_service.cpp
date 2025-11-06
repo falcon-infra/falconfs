@@ -317,10 +317,12 @@ bool FalconMetaService::SerializeRequestToBinary(
         case DFC_OPEN:
         case DFC_UNLINK:
         case DFC_OPENDIR:
-        case DFC_RMDIR:
-            // header + path_len(2) + path
-            total_size += sizeof(uint16_t) + request.path.length();
+        case DFC_RMDIR: {
+            const PathOnlyParam* param = meta_param_helper::Get<PathOnlyParam>(request.file_params);
+            if (!param) return false;
+            total_size += sizeof(uint16_t) + param->path.length();
             break;
+        }
 
         case DFC_READDIR: {
             const ReadDirParam* param = meta_param_helper::Get<ReadDirParam>(request.file_params);
@@ -483,9 +485,12 @@ bool FalconMetaService::SerializeRequestToBinary(
         case DFC_OPEN:
         case DFC_UNLINK:
         case DFC_OPENDIR:
-        case DFC_RMDIR:
-            write_string(request.path);
+        case DFC_RMDIR: {
+            const PathOnlyParam* param = meta_param_helper::Get<PathOnlyParam>(request.file_params);
+            if (!param) return false;
+            write_string(param->path);
             break;
+        }
 
         case DFC_READDIR: {
             const ReadDirParam* param = meta_param_helper::Get<ReadDirParam>(request.file_params);
