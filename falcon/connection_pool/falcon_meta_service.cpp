@@ -319,7 +319,18 @@ bool FalconMetaService::SerializeRequestToBinary(
         case DFC_OPENDIR:
         case DFC_RMDIR: {
             const PathOnlyParam* param = meta_param_helper::Get<PathOnlyParam>(request.file_params);
-            if (!param) return false;
+            printf("[SerializeRequestToBinary] operation=%d, file_params valid=%d\n",
+                   request.operation, param ? 1 : 0);
+            fflush(stdout);
+            if (!param) {
+                printf("[SerializeRequestToBinary] ERROR: file_params not set for operation %d\n",
+                       request.operation);
+                fflush(stdout);
+                return false;
+            }
+            printf("[SerializeRequestToBinary] param->path='%s', length=%zu\n",
+                   param->path.c_str(), param->path.length());
+            fflush(stdout);
             total_size += sizeof(uint16_t) + param->path.length();
             break;
         }
@@ -442,7 +453,16 @@ bool FalconMetaService::SerializeRequestToBinary(
 
         case DFC_PLAIN_COMMAND: {
             const PlainCommandParam* param = meta_param_helper::Get<PlainCommandParam>(request.file_params);
-            if (!param) return false;
+            printf("[SerializeRequestToBinary] DFC_PLAIN_COMMAND, file_params valid=%d\n", param ? 1 : 0);
+            fflush(stdout);
+            if (!param) {
+                printf("[SerializeRequestToBinary] ERROR: PlainCommandParam not set\n");
+                fflush(stdout);
+                return false;
+            }
+            printf("[SerializeRequestToBinary] command='%s', length=%zu\n",
+                   param->command.c_str(), param->command.length());
+            fflush(stdout);
             // header + command_len(2) + command
             total_size += sizeof(uint16_t) + param->command.length();
             break;
@@ -472,6 +492,8 @@ bool FalconMetaService::SerializeRequestToBinary(
 
     auto write_string = [&p](const std::string& str) {
         uint16_t len = str.length();
+        printf("[write_string] String='%s', length=%u\n", str.c_str(), len);
+        fflush(stdout);
         *(uint16_t*)p = len;
         p += sizeof(uint16_t);
         memcpy(p, str.c_str(), len);
@@ -487,7 +509,17 @@ bool FalconMetaService::SerializeRequestToBinary(
         case DFC_OPENDIR:
         case DFC_RMDIR: {
             const PathOnlyParam* param = meta_param_helper::Get<PathOnlyParam>(request.file_params);
-            if (!param) return false;
+            printf("[SerializeRequestToBinary-WriteData] operation=%d, file_params valid=%d\n",
+                   request.operation, param ? 1 : 0);
+            fflush(stdout);
+            if (!param) {
+                printf("[SerializeRequestToBinary-WriteData] ERROR: file_params not set\n");
+                fflush(stdout);
+                return false;
+            }
+            printf("[SerializeRequestToBinary-WriteData] Writing path='%s', length=%zu\n",
+                   param->path.c_str(), param->path.length());
+            fflush(stdout);
             write_string(param->path);
             break;
         }
@@ -672,6 +704,16 @@ bool FalconMetaService::SerializeRequestToBinary(
 
         case DFC_PLAIN_COMMAND: {
             const PlainCommandParam* param = meta_param_helper::Get<PlainCommandParam>(request.file_params);
+            printf("[SerializeRequestToBinary-WriteData] DFC_PLAIN_COMMAND, file_params valid=%d\n", param ? 1 : 0);
+            fflush(stdout);
+            if (!param) {
+                printf("[SerializeRequestToBinary-WriteData] ERROR: PlainCommandParam not set\n");
+                fflush(stdout);
+                return false;
+            }
+            printf("[SerializeRequestToBinary-WriteData] Writing command='%s', length=%zu\n",
+                   param->command.c_str(), param->command.length());
+            fflush(stdout);
             write_string(param->command);
             break;
         }
