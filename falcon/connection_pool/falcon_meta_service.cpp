@@ -746,15 +746,80 @@ bool FalconMetaService::DeserializeResponseFromBinary(
     // 设置响应的opcode为当前操作类型
     response->opcode = operation;
 
-    if (operation == DFC_MKDIR || operation == DFC_CREATE ||
-        operation == DFC_RMDIR || operation == DFC_UNLINK ||
+    if (operation == DFC_MKDIR || operation == DFC_RMDIR ||
         operation == DFC_CLOSE || operation == DFC_RENAME ||
         operation == DFC_UTIMENS || operation == DFC_CHOWN ||
-        operation == DFC_CHMOD || operation == DFC_OPENDIR ||
-        operation == DFC_PUT_KEY_META || operation == DFC_DELETE_KV_META) {
+        operation == DFC_CHMOD || operation == DFC_PUT_KEY_META ||
+        operation == DFC_DELETE_KV_META) {
 
         response->status = *(int32_t*)p;
         response->data = nullptr;
+        return true;
+    }
+
+    if (operation == DFC_CREATE) {
+        int32_t status = *(int32_t*)p;
+        p += sizeof(int32_t);
+
+        response->status = status;
+        if (status != 0) {
+            response->data = nullptr;
+            return true;
+        }
+
+        CreateResponse* create_resp = new CreateResponse();
+        create_resp->st_ino = *(uint64_t*)p; p += 8;
+        create_resp->node_id = *(int64_t*)p; p += 8;
+        create_resp->st_dev = *(uint64_t*)p; p += 8;
+        create_resp->st_mode = *(uint32_t*)p; p += 4;
+        create_resp->st_nlink = *(uint64_t*)p; p += 8;
+        create_resp->st_uid = *(uint32_t*)p; p += 4;
+        create_resp->st_gid = *(uint32_t*)p; p += 4;
+        create_resp->st_rdev = *(uint64_t*)p; p += 8;
+        create_resp->st_size = *(int64_t*)p; p += 8;
+        create_resp->st_blksize = *(int64_t*)p; p += 8;
+        create_resp->st_blocks = *(int64_t*)p; p += 8;
+        create_resp->st_atim = *(uint64_t*)p; p += 8;
+        create_resp->st_mtim = *(uint64_t*)p; p += 8;
+        create_resp->st_ctim = *(uint64_t*)p; p += 8;
+
+        response->data = create_resp;
+        return true;
+    }
+
+    if (operation == DFC_UNLINK) {
+        int32_t status = *(int32_t*)p;
+        p += sizeof(int32_t);
+
+        response->status = status;
+        if (status != 0) {
+            response->data = nullptr;
+            return true;
+        }
+
+        UnlinkResponse* unlink_resp = new UnlinkResponse();
+        unlink_resp->st_ino = *(uint64_t*)p; p += 8;
+        unlink_resp->st_size = *(int64_t*)p; p += 8;
+        unlink_resp->node_id = *(int64_t*)p; p += 8;
+
+        response->data = unlink_resp;
+        return true;
+    }
+
+    if (operation == DFC_OPENDIR) {
+        int32_t status = *(int32_t*)p;
+        p += sizeof(int32_t);
+
+        response->status = status;
+        if (status != 0) {
+            response->data = nullptr;
+            return true;
+        }
+
+        OpenDirResponse* opendir_resp = new OpenDirResponse();
+        opendir_resp->st_ino = *(uint64_t*)p; p += 8;
+
+        response->data = opendir_resp;
         return true;
     }
 
