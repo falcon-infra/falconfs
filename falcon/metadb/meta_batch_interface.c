@@ -361,11 +361,8 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             break;
 
         case 1:  /* MKDIR (protobuf enum) */
-        case 4:  /* CREATE (protobuf enum) */
         case 7:  /* CLOSE (protobuf enum) */
-        case 8:  /* UNLINK (protobuf enum) */
         case 9:  /* READDIR (protobuf enum) */
-        case 10: /* OPENDIR (protobuf enum) */
         case 11: /* RMDIR (protobuf enum) */
         case 14: /* RENAME (protobuf enum) */
         case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
@@ -379,6 +376,21 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
         case 19: /* CHMOD (protobuf enum) */
             /* 简单操作：每个返回一个 int32 错误码 */
             response_size = count * sizeof(int32_t);
+            break;
+
+        case 4:  /* CREATE (protobuf enum) */
+            /* CREATE: 返回 int32(status) + CreateResponse(14个字段) */
+            response_size = count * (sizeof(int32_t) + 104);
+            break;
+
+        case 8:  /* UNLINK (protobuf enum) */
+            /* UNLINK: 返回 int32(status) + st_ino(8) + st_size(8) + node_id(8) */
+            response_size = count * (sizeof(int32_t) + 24);
+            break;
+
+        case 10: /* OPENDIR (protobuf enum) */
+            /* OPENDIR: 返回 int32(status) + st_ino(8) */
+            response_size = count * (sizeof(int32_t) + 8);
             break;
 
         case 5:  /* STAT (protobuf enum) */
@@ -462,12 +474,10 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 }
                 break;
 
+
             case 1:  /* MKDIR (protobuf enum) */
-            case 4:  /* CREATE (protobuf enum) */
             case 7:  /* CLOSE (protobuf enum) */
-            case 8:  /* UNLINK (protobuf enum) */
             case 9:  /* READDIR (protobuf enum) */
-            case 10: /* OPENDIR (protobuf enum) */
             case 11: /* RMDIR (protobuf enum) */
             case 14: /* RENAME (protobuf enum) */
             case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
@@ -481,6 +491,51 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             case 19: /* CHMOD (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
+                break;
+
+            case 4:  /* CREATE (protobuf enum) */
+                *(int32_t*)resp_p = infoDataArray[i].errorCode;
+                resp_p += sizeof(int32_t);
+                
+                if (infoDataArray[i].errorCode == SUCCESS) {
+                    /* 写入 CreateResponse 数据 */
+                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
+                    *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_dev; resp_p += 8;       /* st_dev */
+                    *(uint32_t*)resp_p = infoDataArray[i].st_mode; resp_p += 4;      /* st_mode */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_nlink; resp_p += 8;     /* st_nlink */
+                    *(uint32_t*)resp_p = infoDataArray[i].st_uid; resp_p += 4;       /* st_uid */
+                    *(uint32_t*)resp_p = infoDataArray[i].st_gid; resp_p += 4;       /* st_gid */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_rdev; resp_p += 8;      /* st_rdev */
+                    *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
+                    *(int64_t*)resp_p = infoDataArray[i].st_blksize; resp_p += 8;    /* st_blksize */
+                    *(int64_t*)resp_p = infoDataArray[i].st_blocks; resp_p += 8;     /* st_blocks */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_atim; resp_p += 8;      /* st_atim */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_mtim; resp_p += 8;      /* st_mtim */
+                    *(uint64_t*)resp_p = infoDataArray[i].st_ctim; resp_p += 8;      /* st_ctim */
+                }
+                break;
+
+            case 8:  /* UNLINK (protobuf enum) */
+                *(int32_t*)resp_p = infoDataArray[i].errorCode;
+                resp_p += sizeof(int32_t);
+                
+                if (infoDataArray[i].errorCode == SUCCESS) {
+                    /* 写入 UnlinkResponse 数据 */
+                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
+                    *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
+                    *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
+                }
+                break;
+
+            case 10: /* OPENDIR (protobuf enum) */
+                *(int32_t*)resp_p = infoDataArray[i].errorCode;
+                resp_p += sizeof(int32_t);
+                
+                if (infoDataArray[i].errorCode == SUCCESS) {
+                    /* 写入 OpenDirResponse 数据 */
+                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
+                }
                 break;
 
             case 5:  /* STAT (protobuf enum) */
