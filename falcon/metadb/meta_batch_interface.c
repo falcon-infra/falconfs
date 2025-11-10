@@ -378,22 +378,20 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             break;
 
         case 9:  /* READDIR (protobuf enum) */
-            /* READDIR: 动态大小，需要遍历结果计算 */
             response_size = 0;
             for (uint32_t i = 0; i < count; i++) {
-                response_size += sizeof(int32_t);  /* status */
+                response_size += sizeof(int32_t);
+                response_size += 4;
+                response_size += 2;
+                if (infoDataArray[i].errorCode == SUCCESS && infoDataArray[i].readDirLastFileName != NULL) {
+                    response_size += strlen(infoDataArray[i].readDirLastFileName);
+                }
+                response_size += 4;
                 if (infoDataArray[i].errorCode == SUCCESS) {
-                    response_size += 4;  /* last_shard_index */
-                    response_size += 2;  /* last_file_name length */
-                    if (infoDataArray[i].readDirLastFileName != NULL) {
-                        response_size += strlen(infoDataArray[i].readDirLastFileName);
-                    }
-                    response_size += 4;  /* entry_count */
-                    /* 每个条目的大小 */
                     for (int j = 0; j < infoDataArray[i].readDirResultCount; j++) {
-                        response_size += 2;  /* file_name length */
+                        response_size += 2;
                         response_size += strlen(infoDataArray[i].readDirResultList[j]->fileName);
-                        response_size += 4;  /* mode */
+                        response_size += 4;
                     }
                 }
             }
@@ -516,134 +514,110 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             case 4:  /* CREATE (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
-                
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    /* 写入 CreateResponse 数据 */
-                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
-                    *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_dev; resp_p += 8;       /* st_dev */
-                    *(uint32_t*)resp_p = infoDataArray[i].st_mode; resp_p += 4;      /* st_mode */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_nlink; resp_p += 8;     /* st_nlink */
-                    *(uint32_t*)resp_p = infoDataArray[i].st_uid; resp_p += 4;       /* st_uid */
-                    *(uint32_t*)resp_p = infoDataArray[i].st_gid; resp_p += 4;       /* st_gid */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_rdev; resp_p += 8;      /* st_rdev */
-                    *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
-                    *(int64_t*)resp_p = infoDataArray[i].st_blksize; resp_p += 8;    /* st_blksize */
-                    *(int64_t*)resp_p = infoDataArray[i].st_blocks; resp_p += 8;     /* st_blocks */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_atim; resp_p += 8;      /* st_atim */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_mtim; resp_p += 8;      /* st_mtim */
-                    *(uint64_t*)resp_p = infoDataArray[i].st_ctim; resp_p += 8;      /* st_ctim */
-                }
+
+                *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
+                *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
+                *(uint64_t*)resp_p = infoDataArray[i].st_dev; resp_p += 8;       /* st_dev */
+                *(uint32_t*)resp_p = infoDataArray[i].st_mode; resp_p += 4;      /* st_mode */
+                *(uint64_t*)resp_p = infoDataArray[i].st_nlink; resp_p += 8;     /* st_nlink */
+                *(uint32_t*)resp_p = infoDataArray[i].st_uid; resp_p += 4;       /* st_uid */
+                *(uint32_t*)resp_p = infoDataArray[i].st_gid; resp_p += 4;       /* st_gid */
+                *(uint64_t*)resp_p = infoDataArray[i].st_rdev; resp_p += 8;      /* st_rdev */
+                *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
+                *(int64_t*)resp_p = infoDataArray[i].st_blksize; resp_p += 8;    /* st_blksize */
+                *(int64_t*)resp_p = infoDataArray[i].st_blocks; resp_p += 8;     /* st_blocks */
+                *(uint64_t*)resp_p = infoDataArray[i].st_atim; resp_p += 8;      /* st_atim */
+                *(uint64_t*)resp_p = infoDataArray[i].st_mtim; resp_p += 8;      /* st_mtim */
+                *(uint64_t*)resp_p = infoDataArray[i].st_ctim; resp_p += 8;      /* st_ctim */
                 break;
 
             case 8:  /* UNLINK (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
-                
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    /* 写入 UnlinkResponse 数据 */
-                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
-                    *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
-                    *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
-                }
+
+                *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
+                *(int64_t*)resp_p = infoDataArray[i].st_size; resp_p += 8;       /* st_size */
+                *(int64_t*)resp_p = infoDataArray[i].node_id; resp_p += 8;       /* node_id */
                 break;
 
             case 10: /* OPENDIR (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
-                
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    /* 写入 OpenDirResponse 数据 */
-                    *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
-                }
+
+                *(uint64_t*)resp_p = infoDataArray[i].inodeId; resp_p += 8;      /* st_ino */
                 break;
 
             case 5:  /* STAT (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    *(uint64_t*)resp_p = infoDataArray[i].inodeId;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_dev;       resp_p += 8;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_mode;      resp_p += 4;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_nlink;     resp_p += 8;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_uid;       resp_p += 4;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_gid;       resp_p += 4;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_rdev;      resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_size;      resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_blksize;   resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_blocks;    resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
-                } else {
-                    memset(resp_p, 0, 13 * 8);
-                    resp_p += 13 * 8;
-                }
+                *(uint64_t*)resp_p = infoDataArray[i].inodeId;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_dev;       resp_p += 8;
+                *(uint32_t*)resp_p = infoDataArray[i].st_mode;      resp_p += 4;
+                *(uint64_t*)resp_p = infoDataArray[i].st_nlink;     resp_p += 8;
+                *(uint32_t*)resp_p = infoDataArray[i].st_uid;       resp_p += 4;
+                *(uint32_t*)resp_p = infoDataArray[i].st_gid;       resp_p += 4;
+                *(uint64_t*)resp_p = infoDataArray[i].st_rdev;      resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_size;      resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_blksize;   resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_blocks;    resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
                 break;
 
             case 6:  /* OPEN (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    *(uint64_t*)resp_p = infoDataArray[i].inodeId;      resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].node_id;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_dev;       resp_p += 8;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_mode;      resp_p += 4;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_nlink;     resp_p += 8;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_uid;       resp_p += 4;
-                    *(uint32_t*)resp_p = infoDataArray[i].st_gid;       resp_p += 4;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_rdev;      resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_size;      resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_blksize;   resp_p += 8;
-                    *(int64_t*)resp_p  = infoDataArray[i].st_blocks;    resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
-                    *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
-                }
+                *(uint64_t*)resp_p = infoDataArray[i].inodeId;      resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].node_id;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_dev;       resp_p += 8;
+                *(uint32_t*)resp_p = infoDataArray[i].st_mode;      resp_p += 4;
+                *(uint64_t*)resp_p = infoDataArray[i].st_nlink;     resp_p += 8;
+                *(uint32_t*)resp_p = infoDataArray[i].st_uid;       resp_p += 4;
+                *(uint32_t*)resp_p = infoDataArray[i].st_gid;       resp_p += 4;
+                *(uint64_t*)resp_p = infoDataArray[i].st_rdev;      resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_size;      resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_blksize;   resp_p += 8;
+                *(int64_t*)resp_p  = infoDataArray[i].st_blocks;    resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
+                *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
                 break;
 
             case 9:  /* READDIR (protobuf enum) */
                 *(int32_t*)resp_p = infoDataArray[i].errorCode;
                 resp_p += sizeof(int32_t);
 
-                if (infoDataArray[i].errorCode == SUCCESS) {
-                    /* 写入 last_shard_index */
-                    *(int32_t*)resp_p = infoDataArray[i].readDirLastShardIndex;
+                *(int32_t*)resp_p = infoDataArray[i].readDirLastShardIndex;
+                resp_p += 4;
+
+                if (infoDataArray[i].readDirLastFileName == NULL) {
+                    *(uint16_t*)resp_p = 0;
+                    resp_p += 2;
+                } else {
+                    uint16_t last_name_len = strlen(infoDataArray[i].readDirLastFileName);
+                    *(uint16_t*)resp_p = last_name_len;
+                    resp_p += 2;
+                    memcpy(resp_p, infoDataArray[i].readDirLastFileName, last_name_len);
+                    resp_p += last_name_len;
+                }
+
+                *(uint32_t*)resp_p = infoDataArray[i].readDirResultCount;
+                resp_p += 4;
+
+                for (int j = 0; j < infoDataArray[i].readDirResultCount; j++) {
+                    OneReadDirResult* result = infoDataArray[i].readDirResultList[j];
+
+                    uint16_t file_name_len = strlen(result->fileName);
+                    *(uint16_t*)resp_p = file_name_len;
+                    resp_p += 2;
+                    memcpy(resp_p, result->fileName, file_name_len);
+                    resp_p += file_name_len;
+
+                    *(uint32_t*)resp_p = result->mode;
                     resp_p += 4;
-
-                    /* 写入 last_file_name */
-                    if (infoDataArray[i].readDirLastFileName == NULL) {
-                        *(uint16_t*)resp_p = 0;
-                        resp_p += 2;
-                    } else {
-                        uint16_t last_name_len = strlen(infoDataArray[i].readDirLastFileName);
-                        *(uint16_t*)resp_p = last_name_len;
-                        resp_p += 2;
-                        memcpy(resp_p, infoDataArray[i].readDirLastFileName, last_name_len);
-                        resp_p += last_name_len;
-                    }
-
-                    /* 写入 entry_count */
-                    *(uint32_t*)resp_p = infoDataArray[i].readDirResultCount;
-                    resp_p += 4;
-
-                    /* 写入每个目录条目 */
-                    for (int j = 0; j < infoDataArray[i].readDirResultCount; j++) {
-                        OneReadDirResult* result = infoDataArray[i].readDirResultList[j];
-
-                        /* 写入文件名 */
-                        uint16_t file_name_len = strlen(result->fileName);
-                        *(uint16_t*)resp_p = file_name_len;
-                        resp_p += 2;
-                        memcpy(resp_p, result->fileName, file_name_len);
-                        resp_p += file_name_len;
-
-                        /* 写入 mode */
-                        *(uint32_t*)resp_p = result->mode;
-                        resp_p += 4;
-                    }
                 }
                 break;
         }

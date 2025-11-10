@@ -762,10 +762,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         CreateResponse* create_resp = new CreateResponse();
         create_resp->st_ino = *(uint64_t*)p; p += 8;
@@ -792,10 +788,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         UnlinkResponse* unlink_resp = new UnlinkResponse();
         unlink_resp->st_ino = *(uint64_t*)p; p += 8;
@@ -811,10 +803,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         OpenDirResponse* opendir_resp = new OpenDirResponse();
         opendir_resp->st_ino = *(uint64_t*)p; p += 8;
@@ -828,10 +816,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         StatResponse* stat_resp = new StatResponse();
         stat_resp->st_ino = *(uint64_t*)p; p += 8;
@@ -857,10 +841,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         OpenResponse* open_resp = new OpenResponse();
         open_resp->st_ino = *(uint64_t*)p; p += 8;
@@ -887,10 +867,6 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         p += sizeof(int32_t);
 
         response->status = status;
-        if (status != 0) {
-            response->data = nullptr;
-            return true;
-        }
 
         ReadDirResponse* readdir_resp = new ReadDirResponse();
         readdir_resp->last_shard_index = *(int32_t*)p; p += 4;
