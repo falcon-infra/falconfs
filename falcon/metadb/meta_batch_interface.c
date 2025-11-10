@@ -362,7 +362,6 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
         case 1:  /* MKDIR (protobuf enum) */
         case 7:  /* CLOSE (protobuf enum) */
-        case 9:  /* READDIR (protobuf enum) */
         case 11: /* RMDIR (protobuf enum) */
         case 14: /* RENAME (protobuf enum) */
         case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
@@ -376,6 +375,28 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
         case 19: /* CHMOD (protobuf enum) */
             /* 简单操作：每个返回一个 int32 错误码 */
             response_size = count * sizeof(int32_t);
+            break;
+
+        case 9:  /* READDIR (protobuf enum) */
+            /* READDIR: 动态大小，需要遍历结果计算 */
+            response_size = 0;
+            for (uint32_t i = 0; i < count; i++) {
+                response_size += sizeof(int32_t);  /* status */
+                if (infoDataArray[i].errorCode == SUCCESS) {
+                    response_size += 4;  /* last_shard_index */
+                    response_size += 2;  /* last_file_name length */
+                    if (infoDataArray[i].readDirLastFileName != NULL) {
+                        response_size += strlen(infoDataArray[i].readDirLastFileName);
+                    }
+                    response_size += 4;  /* entry_count */
+                    /* 每个条目的大小 */
+                    for (int j = 0; j < infoDataArray[i].readDirResultCount; j++) {
+                        response_size += 2;  /* file_name length */
+                        response_size += strlen(infoDataArray[i].readDirResultList[j]->fileName);
+                        response_size += 4;  /* mode */
+                    }
+                }
+            }
             break;
 
         case 4:  /* CREATE (protobuf enum) */
@@ -477,7 +498,6 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
             case 1:  /* MKDIR (protobuf enum) */
             case 7:  /* CLOSE (protobuf enum) */
-            case 9:  /* READDIR (protobuf enum) */
             case 11: /* RMDIR (protobuf enum) */
             case 14: /* RENAME (protobuf enum) */
             case 2:  /* MKDIR_SUB_MKDIR (protobuf enum) */
@@ -578,6 +598,49 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                     *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
                     *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
                     *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
+                }
+                break;
+
+            case 9:  /* READDIR (protobuf enum) */
+                *(int32_t*)resp_p = infoDataArray[i].errorCode;
+                resp_p += sizeof(int32_t);
+
+                if (infoDataArray[i].errorCode == SUCCESS) {
+                    /* 写入 last_shard_index */
+                    *(int32_t*)resp_p = infoDataArray[i].readDirLastShardIndex;
+                    resp_p += 4;
+
+                    /* 写入 last_file_name */
+                    if (infoDataArray[i].readDirLastFileName == NULL) {
+                        *(uint16_t*)resp_p = 0;
+                        resp_p += 2;
+                    } else {
+                        uint16_t last_name_len = strlen(infoDataArray[i].readDirLastFileName);
+                        *(uint16_t*)resp_p = last_name_len;
+                        resp_p += 2;
+                        memcpy(resp_p, infoDataArray[i].readDirLastFileName, last_name_len);
+                        resp_p += last_name_len;
+                    }
+
+                    /* 写入 entry_count */
+                    *(uint32_t*)resp_p = infoDataArray[i].readDirResultCount;
+                    resp_p += 4;
+
+                    /* 写入每个目录条目 */
+                    for (int j = 0; j < infoDataArray[i].readDirResultCount; j++) {
+                        OneReadDirResult* result = infoDataArray[i].readDirResultList[j];
+
+                        /* 写入文件名 */
+                        uint16_t file_name_len = strlen(result->fileName);
+                        *(uint16_t*)resp_p = file_name_len;
+                        resp_p += 2;
+                        memcpy(resp_p, result->fileName, file_name_len);
+                        resp_p += file_name_len;
+
+                        /* 写入 mode */
+                        *(uint32_t*)resp_p = result->mode;
+                        resp_p += 4;
+                    }
                 }
                 break;
         }
