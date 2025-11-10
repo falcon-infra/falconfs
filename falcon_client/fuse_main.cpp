@@ -571,6 +571,7 @@ int main(int argc, char *argv[])
     std::println("{}", ret);
 
     /* ------------kv cache---------------- */
+    /*
     char *WORKSPACE_PATH = std::getenv("WORKSPACE_PATH");
     if (!WORKSPACE_PATH) {
         std::println(stderr, "worker path not set");
@@ -590,7 +591,7 @@ int main(int argc, char *argv[])
         std::println(stderr, "Falcon kv shard file init failed");
         return ret;
     }
-
+    */
     /* ------------kv cache---------------- */
     ret = fuse_main(args.argc, args.argv, &falconOperations, nullptr);
     fuse_opt_free_args(&args);

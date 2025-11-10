@@ -313,3 +313,15 @@ CREATE FUNCTION pg_catalog.falcon_create_kvmeta_table()
     AS 'MODULE_PATHNAME', $$falcon_create_kvmeta_table$$;
 COMMENT ON FUNCTION pg_catalog.falcon_create_kvmeta_table()
     IS 'falcon build kvmeta shard table';
+
+
+----------------------------------------------------------------
+-- falcon_kvsliceid_table
+----------------------------------------------------------------]
+CREATE TABLE falcon.falcon_kvsliceid_table(
+    keystr text,
+    slice_id bigint
+);
+CREATE UNIQUE INDEX falcon_kvsliceid_table_index ON falcon.falcon_kvsliceid_table using btree(keystr);
+ALTER TABLE falcon.falcon_kvsliceid_table SET SCHEMA pg_catalog;
+GRANT SELECT ON pg_catalog.falcon_kvsliceid_table TO public;

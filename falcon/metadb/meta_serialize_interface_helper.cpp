@@ -65,6 +65,8 @@ FalconSupportMetaService MetaServiceTypeDecode(int32_t type)
         return FalconSupportMetaService::SLICE_GET;
     case falcon::meta_proto::MetaServiceType::SLICE_DEL:
         return FalconSupportMetaService::SLICE_DEL;
+    case falcon::meta_proto::MetaServiceType::FETCH_SLICE_ID:
+        return FalconSupportMetaService::FETCH_SLICE_ID;
     default:
         return FalconSupportMetaService::NOT_SUPPORTED;
     }
@@ -123,6 +125,8 @@ int32_t MetaServiceTypeEncode(FalconSupportMetaService metaService)
         return falcon::meta_proto::MetaServiceType::SLICE_GET;
     case FalconSupportMetaService::SLICE_DEL:
         return falcon::meta_proto::MetaServiceType::SLICE_DEL;
+    case FalconSupportMetaService::FETCH_SLICE_ID:
+        return falcon::meta_proto::MetaServiceType::FETCH_SLICE_ID;
     default:
         return -1;
     }
@@ -900,4 +904,48 @@ bool SerializedSliceResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportM
                                                                   SerializedData *response)
 {
     return SerializedSliceResponseEncode(metaService, count, infoArray, FlatBufferBuilderPerProcess, response);
+}
+
+bool SerializedSliceIdParamDecode(SerializedData *param, SliceIdProcessInfo infoData)
+{
+    uint8_t *buffer = (uint8_t *)param->buffer;
+    sd_size_t size = SerializedDataNextSeveralItemSize(param, 0, 1);
+    if (size == (sd_size_t) - 1) {
+        return false;
+    }
+
+    uint8_t *itemBuffer = (uint8_t *)buffer + SERIALIZED_DATA_ALIGNMENT;
+    size_t itemSize = size - SERIALIZED_DATA_ALIGNMENT;
+    flatbuffers::Verifier verifier(itemBuffer, itemSize);
+    if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>(NULL)) {
+        return false;
+    }
+
+    auto metaParam = falcon::meta_fbs::GetMetaParam(itemBuffer);
+    if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_SliceIdParam) {
+        return false;
+    }
+
+    auto sliceIdParam = metaParam->param_as_SliceIdParam();
+    infoData->count = sliceIdParam->count();
+
+    return true;
+}
+
+bool SerializedSliceIdResponseEncodeWithPerProcessFlatBufferBuilder(SliceIdProcessInfo infoData, SerializedData *response)
+{
+    auto &builder = FlatBufferBuilderPerProcess;
+    builder.Clear();
+
+    auto sliceIdRes = falcon::meta_fbs::CreateSliceIdResponse(builder, infoData->start, infoData->end);
+    auto metaResponse = falcon::meta_fbs::CreateMetaResponse(builder,
+                                                             infoData->errorCode,
+                                                             falcon::meta_fbs::AnyMetaResponse_SliceIdResponse,
+                                                             sliceIdRes.Union());
+
+    builder.Finish(metaResponse);
+    char *buffer = SerializedDataApplyForSegment(response, builder.GetSize());
+    memcpy(buffer, builder.GetBufferPointer(), builder.GetSize());
+
+    return true;
 }

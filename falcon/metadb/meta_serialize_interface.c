@@ -178,6 +178,27 @@ static SerializedData SliceMetaProcess(FalconSupportMetaService metaService, int
     return response;
 }
 
+static SerializedData SliceIdProcess(char *paramBuffer)
+{
+    SerializedData param;
+
+    if (!SerializedDataInit(&param, paramBuffer, SD_SIZE_T_MAX, SD_SIZE_T_MAX, NULL))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "SerializedDataInit failed.");
+    
+    SliceIdProcessInfoData infoData = {0};
+    if (!SerializedSliceIdParamDecode(&param, &infoData))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "serialized param is corrupt.");
+
+    FalconFetchSliceIdHandle(&infoData);
+
+    SerializedData response;
+    SerializedDataInit(&response, NULL, 0, 0, &PgMemoryManager);
+    if (!SerializedSliceIdResponseEncodeWithPerProcessFlatBufferBuilder(&infoData, &response))
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "failed when serializing response.");
+
+    return response;
+}
+
 static SerializedData MetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
 {
     if (metaService >= PLAIN_COMMAND && metaService <= CHMOD) {
@@ -190,6 +211,10 @@ static SerializedData MetaProcess(FalconSupportMetaService metaService, int coun
 
     if (metaService >= SLICE_PUT && metaService <= SLICE_DEL) {
         return SliceMetaProcess(metaService, count, paramBuffer);
+    }
+
+    if (metaService == FETCH_SLICE_ID) {
+        return SliceIdProcess(paramBuffer);
     }
 
     FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "metaService %d doesn't support operation.", metaService);

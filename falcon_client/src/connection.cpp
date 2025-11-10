@@ -58,6 +58,8 @@ inline falcon::meta_fbs::AnyMetaParam ToFlatBuffersType(falcon::meta_proto::Meta
     case falcon::meta_proto::SLICE_GET:
     case falcon::meta_proto::SLICE_DEL:
         return falcon::meta_fbs::AnyMetaParam_SliceIndexParam;
+    case falcon::meta_proto::FETCH_SLICE_ID:
+        return falcon::meta_fbs::AnyMetaParam_SliceIdParam;
     default:
         throw std::runtime_error("Unknown service type");
     }
@@ -643,4 +645,29 @@ FalconErrorCode Connection::SliceDel(const char *filename, uint64_t inodeId, uin
     };
 
     return ProcessRequest(falcon::meta_proto::SLICE_DEL, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::FetchSliceId(uint32_t count, std::pair<uint64_t, uint64_t> &sliceIds, ConnectionCache *cache)
+{
+    auto paramBuilder = [count](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceIdParam(builder, count);
+    };
+
+    auto responseHandler = [&sliceIds](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        if (metaResponse->response_type() != falcon::meta_fbs::AnyMetaResponse::AnyMetaResponse_SliceIdResponse) {
+            return PROGRAM_ERROR;
+        }
+
+        auto response = metaResponse->response_as_SliceIdResponse();
+        sliceIds.first = response->startid();
+        sliceIds.second = response->endid();
+
+        if (metaResponse->error_code() < LAST_FALCON_ERROR_CODE) {
+            return static_cast<FalconErrorCode>(metaResponse->error_code());
+        }
+        return PROGRAM_ERROR;
+
+    };
+
+    return ProcessRequest(falcon::meta_proto::FETCH_SLICE_ID, paramBuilder, responseHandler, cache);
 }

@@ -145,4 +145,5 @@ class Connection {
     FalconErrorCode SlicePut(const char *filename, std::vector<SliceInfo> &info, ConnectionCache *cache = nullptr);
     FalconErrorCode SliceGet(const char *filename, uint64_t inodeId, uint32_t chunkId, std::vector<SliceInfo> &info, ConnectionCache *cache = nullptr);
     FalconErrorCode SliceDel(const char *filename, uint64_t inodeId, uint32_t chunkId, ConnectionCache *cache = nullptr);
+    FalconErrorCode FetchSliceId(uint32_t count, std::pair<uint64_t, uint64_t> &sliceIds, ConnectionCache *cache = nullptr);
 };

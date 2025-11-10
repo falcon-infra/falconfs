@@ -115,6 +115,9 @@ table SliceIndexParam {
     inodeid: uint64;
     chunkid: uint32;
 }
+table SliceIdParam {
+    count: uint32;
+}
 union AnyMetaParam {
     PlainCommandParam,
     PathOnlyParam,
@@ -133,7 +136,8 @@ union AnyMetaParam {
     KVParam,
     KeyOnlyParam,
     SliceInfoParam,
-    SliceIndexParam
+    SliceIndexParam,
+    SliceIdParam
 }
 table MetaParam {
     param: AnyMetaParam;

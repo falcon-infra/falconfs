@@ -25,6 +25,7 @@
 #include "metadb/xattr_table.h"
 #include "metadb/slice_table.h"
 #include "metadb/kvmeta_table.h"
+#include "metadb/kvsliceid_table.h"
 
 #define INT32_PRINT_SYMBOL "%d"
 #define UINT32_PRINT_SYMBOL "%u"
@@ -50,6 +51,8 @@ typedef enum CachedRelationType {
     CACHED_RELATION_DIRECTORY_TABLE_INDEX,
     CACHED_RELATION_DISTRIBUTED_TRANSACTION_TABLE,
     CACHED_RELATION_DISTRIBUTED_TRANSACTION_TABLE_INDEX,
+    CACHED_RELATION_KVSLICEID_TABLE,
+    CACHED_RELATION_KVSLICEID_TABLE_INDEX,
     LAST_CACHED_RELATION_TYPE
 } CachedRelationType;
 extern Oid CachedRelationOid[LAST_CACHED_RELATION_TYPE];
@@ -67,6 +70,7 @@ extern ScanKeyData
 extern ScanKeyData XattrTableScanKey[LAST_FALCON_XATTR_TABLE_SCANKEY_TYPE];
 extern ScanKeyData SliceTableScanKey[LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE];
 extern ScanKeyData KvmetaTableScanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+extern ScanKeyData KvSliceIdTableScanKey[LAST_FALCON_KVSLICEID_TABLE_SCANKEY_TYPE];
 
 bool ArrayTypeArrayToDatumArrayAndSize(ArrayType *arrayObject, Datum **datumArray, int *datumArrayLength);
 

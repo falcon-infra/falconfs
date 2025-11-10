@@ -96,6 +96,7 @@ static void InitializeInodeTableIndexParentIdPartIdNameScanCache(void);
 static void InitializeXattrTableScanCache(void);
 static void InitializeSliceTableScanCache(void);
 static void InitializeKvmetaTableScanCache(void);
+static void InitializeKvSliceIdTableScanCache(void);
 
 static MemoryContext ScanCacheMemoryContext = NULL;
 
@@ -281,6 +282,18 @@ static void InitializeKvmetaTableScanCache(void)
     KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_attno = Anum_falcon_kvmeta_table_userkey;
 }
 
+ScanKeyData KvSliceIdTableScanKey[LAST_FALCON_KVSLICEID_TABLE_SCANKEY_TYPE];
+static void InitializeKvSliceIdTableScanCache(void)
+{
+    memset(KvSliceIdTableScanKey, 0, sizeof(KvSliceIdTableScanKey));
+
+    fmgr_info_cxt(F_TEXTEQ, &KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_func, ScanCacheMemoryContext);
+    KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_strategy = BTEqualStrategyNumber;
+    KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_subtype = TEXTOID;
+    KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_attno = Anum_falcon_kvsliceid_table_keystr;
+}
+
 /*
  * InitializeInvalidationCallbacks() registers invalidation handlers
  */
@@ -314,6 +327,7 @@ void SetUpScanCaches(void)
             InitializeXattrTableScanCache();
             InitializeSliceTableScanCache();
             InitializeKvmetaTableScanCache();
+            InitializeKvSliceIdTableScanCache();
         }
         PG_CATCH();
         {

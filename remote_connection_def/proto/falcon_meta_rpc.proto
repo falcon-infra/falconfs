@@ -31,6 +31,7 @@ enum MetaServiceType {
     SLICE_PUT = 23;
     SLICE_GET = 24;
     SLICE_DEL = 25;
+    FETCH_SLICE_ID = 26;
 }
 
 message MetaRequest {

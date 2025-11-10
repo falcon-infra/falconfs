@@ -55,6 +55,10 @@ bool SerializedSliceResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportM
                                                                   SliceProcessInfoData *infoArray,
                                                                   SerializedData *response);
 
+bool SerializedSliceIdParamDecode(SerializedData *param, SliceIdProcessInfo infoData);
+
+bool SerializedSliceIdResponseEncodeWithPerProcessFlatBufferBuilder(SliceIdProcessInfo infoData, SerializedData *response);
+
 #ifdef __cplusplus
 }
 #endif

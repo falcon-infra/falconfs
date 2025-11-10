@@ -70,12 +70,30 @@ int FalconDelete(std::string &key)
     return errorCode;
 }
 
-std::pair<uint64_t, uint64_t> sliceKeyRangeFetch(uint32_t count) {
-    static std::mutex fetch_mtx;
-    static int global_key = 0;
+std::pair<uint64_t, uint64_t> sliceKeyRangeFetch(uint32_t count)
+{
+    std::shared_ptr<Connection> conn = router->GetCoordinatorConn();
+    if (!conn) {
+        FALCON_LOG(LOG_ERROR) << "route error";
+        return {0, 0};
+    }
 
-    std::lock_guard<std::mutex> lock(fetch_mtx);
-    int start = global_key;
-    global_key += count;
-    return {start, start + count - 1};
+    std::pair<uint64_t, uint64_t> sliceIds {};
+    int errorCode = conn->FetchSliceId(count, sliceIds);
+#ifdef ZK_INIT
+    int cnt = 0;
+    while (cnt < RETRY_CNT && errorCode == SERVER_FAULT) {
+        ++cnt;
+        sleep(SLEEPTIME);
+        conn = router->TryToUpdateCNConn(conn);
+        errorCode = conn->FetchSliceId(count, sliceIds);
+    }
+#endif
+
+    if (errorCode != SUCCESS) {
+        sliceIds = {0, 0};
+        FALCON_LOG(LOG_ERROR) << "falcon sliceKeyRangeFetch failed, error code: " << errorCode;
+    }
+
+    return sliceIds;
 }

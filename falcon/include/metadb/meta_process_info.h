@@ -105,6 +105,16 @@ typedef struct KvMetaProcessInfoData
 
 typedef KvMetaProcessInfoData *KvMetaProcessInfo;
 
+typedef struct SliceIdProcessInfoData
+{
+    uint32_t count;
+    uint64_t start;
+    uint64_t end;
+    FalconErrorCode errorCode;
+} SliceIdProcessInfoData;
+
+typedef SliceIdProcessInfoData *SliceIdProcessInfo;
+
 int pg_qsort_meta_process_info_by_path_cmp(const void *a, const void *b);
 
 #endif

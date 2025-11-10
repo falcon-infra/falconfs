@@ -40,6 +40,7 @@ typedef enum FalconSupportMetaService {
     SLICE_PUT,
     SLICE_GET,
     SLICE_DEL,
+    FETCH_SLICE_ID,
     NOT_SUPPORTED
 } FalconSupportMetaService;
 
@@ -71,5 +72,7 @@ void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count);
 void FalconKvmetaPutHandle(KvMetaProcessInfo info);
 void FalconKvmetaGetHandle(KvMetaProcessInfo info);
 void FalconKvmetaDelHandle(KvMetaProcessInfo info);
+
+void FalconFetchSliceIdHandle(SliceIdProcessInfo infoData);
 
 #endif

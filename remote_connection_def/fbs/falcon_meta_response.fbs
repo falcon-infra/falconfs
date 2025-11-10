@@ -103,6 +103,10 @@ table SliceInfoResponse {
     sliceloc1: [uint32];
     sliceloc2: [uint32];
 }
+table SliceIdResponse {
+    startid: uint64;
+    endid: uint64;
+}
 union AnyMetaResponse {
     PlainCommandResponse,
     CreateResponse,
@@ -113,7 +117,8 @@ union AnyMetaResponse {
     OpenDirResponse,
     RenameSubRenameLocallyResponse,
     GetKVMetaResponse,
-    SliceInfoResponse
+    SliceInfoResponse,
+    SliceIdResponse
 }
 table MetaResponse {
     error_code: uint32;
