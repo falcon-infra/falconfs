@@ -647,10 +647,10 @@ FalconErrorCode Connection::SliceDel(const char *filename, uint64_t inodeId, uin
     return ProcessRequest(falcon::meta_proto::SLICE_DEL, paramBuilder, responseHandler, cache);
 }
 
-FalconErrorCode Connection::FetchSliceId(uint32_t count, std::pair<uint64_t, uint64_t> &sliceIds, ConnectionCache *cache)
+FalconErrorCode Connection::FetchSliceId(uint32_t count, uint8_t type, std::pair<uint64_t, uint64_t> &sliceIds, ConnectionCache *cache)
 {
-    auto paramBuilder = [count](flatbuffers::FlatBufferBuilder &builder) {
-        return falcon::meta_fbs::CreateSliceIdParam(builder, count);
+    auto paramBuilder = [count, type](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceIdParam(builder, count, type);
     };
 
     auto responseHandler = [&sliceIds](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {

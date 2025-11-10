@@ -928,6 +928,7 @@ bool SerializedSliceIdParamDecode(SerializedData *param, SliceIdProcessInfo info
 
     auto sliceIdParam = metaParam->param_as_SliceIdParam();
     infoData->count = sliceIdParam->count();
+    infoData->type = sliceIdParam->type();
 
     return true;
 }

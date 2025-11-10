@@ -325,3 +325,15 @@ CREATE TABLE falcon.falcon_kvsliceid_table(
 CREATE UNIQUE INDEX falcon_kvsliceid_table_index ON falcon.falcon_kvsliceid_table using btree(keystr);
 ALTER TABLE falcon.falcon_kvsliceid_table SET SCHEMA pg_catalog;
 GRANT SELECT ON pg_catalog.falcon_kvsliceid_table TO public;
+
+
+----------------------------------------------------------------
+-- falcon_filesliceid_table
+----------------------------------------------------------------]
+CREATE TABLE falcon.falcon_filesliceid_table(
+    keystr text,
+    slice_id bigint
+);
+CREATE UNIQUE INDEX falcon_filesliceid_table_index ON falcon.falcon_filesliceid_table using btree(keystr);
+ALTER TABLE falcon.falcon_filesliceid_table SET SCHEMA pg_catalog;
+GRANT SELECT ON pg_catalog.falcon_filesliceid_table TO public;

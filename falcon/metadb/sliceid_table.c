@@ -2,11 +2,11 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#include "metadb/kvsliceid_table.h"
+#include "metadb/sliceid_table.h"
 #include "utils/utils.h"
 
 const char *KvSliceIdTableName = "falcon_kvsliceid_table";
-const char *KvSliceIdTableIndexName = "falcon_kvsliceid_table_index";
+const char *FileSliceIdTableName = "falcon_filesliceid_table";
 
 Oid KvSliceIdRelationId(void)
 {
@@ -14,10 +14,10 @@ Oid KvSliceIdRelationId(void)
     return CachedRelationOid[CACHED_RELATION_KVSLICEID_TABLE];
 }
 
-Oid KvSliceIdRelationIndexId(void)
+Oid FileSliceIdRelationId(void)
 {
-    GetRelationOid(KvSliceIdTableIndexName, &CachedRelationOid[CACHED_RELATION_KVSLICEID_TABLE_INDEX]);
-    return CachedRelationOid[CACHED_RELATION_KVSLICEID_TABLE_INDEX];
+    GetRelationOid(FileSliceIdTableName, &CachedRelationOid[CACHED_RELATION_FILESLICEID_TABLE]);
+    return CachedRelationOid[CACHED_RELATION_FILESLICEID_TABLE];
 }
 
 

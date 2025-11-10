@@ -1,6 +1,7 @@
 #include "slice_key_gen.h"
 
 #include "falcon_kv_meta.h"
+#include "falcon_slice_id.h"
 
 #include "log/logging.h"
 

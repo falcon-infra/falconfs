@@ -2550,30 +2550,31 @@ void FalconFetchSliceIdHandle(SliceIdProcessInfo info)
 {
     SetUpScanCaches();
 
-    ScanKeyData scanKey[LAST_FALCON_KVSLICEID_TABLE_SCANKEY_TYPE];
-    scanKey[KVSLICEID_TABLE_SLICEID_EQ] = KvSliceIdTableScanKey[KVSLICEID_TABLE_SLICEID_EQ];
-    scanKey[KVSLICEID_TABLE_SLICEID_EQ].sk_argument = CStringGetTextDatum("slice_id");
+    ScanKeyData scanKey[LAST_FALCON_SLICEID_TABLE_SCANKEY_TYPE];
+    scanKey[SLICEID_TABLE_SLICEID_EQ] = SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ];
+    scanKey[SLICEID_TABLE_SLICEID_EQ].sk_argument = CStringGetTextDatum("slice_id");
 
-    Relation sliceIdRel = table_open(KvSliceIdRelationId(), RowExclusiveLock);
+    Oid relationId = info->type == 0 ? KvSliceIdRelationId() : FileSliceIdRelationId();
+    Relation sliceIdRel = table_open(relationId, RowExclusiveLock);
     SysScanDesc scanDesc = systable_beginscan(sliceIdRel, InvalidOid, true, GetTransactionSnapshot(),
-                                              LAST_FALCON_KVSLICEID_TABLE_SCANKEY_TYPE, scanKey);
+                                              LAST_FALCON_SLICEID_TABLE_SCANKEY_TYPE, scanKey);
     TupleDesc tupleDesc = RelationGetDescr(sliceIdRel);
     HeapTuple heapTuple = systable_getnext(scanDesc);
 
-    Datum values[Natts_falcon_kvsliceid_table];
-    bool isNulls[Natts_falcon_kvsliceid_table];
-    bool updates[Natts_falcon_kvsliceid_table];
+    Datum values[Natts_falcon_sliceid_table];
+    bool isNulls[Natts_falcon_sliceid_table];
+    bool updates[Natts_falcon_sliceid_table];
     memset(values, 0, sizeof(values));
     memset(isNulls, false, sizeof(isNulls));
     memset(updates, 0, sizeof(updates));
 
     if (HeapTupleIsValid(heapTuple)) {
         bool isNull;
-        info->start = DatumGetUInt64(heap_getattr(heapTuple, Anum_falcon_kvsliceid_table_sliceid, tupleDesc, &isNull));
+        info->start = DatumGetUInt64(heap_getattr(heapTuple, Anum_falcon_sliceid_table_sliceid, tupleDesc, &isNull));
         info->end = info->start + info->count;
 
-        values[Anum_falcon_kvsliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
-        updates[Anum_falcon_kvsliceid_table_sliceid - 1] = true;
+        values[Anum_falcon_sliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
+        updates[Anum_falcon_sliceid_table_sliceid - 1] = true;
 
         HeapTuple updatedTuple = heap_modify_tuple(heapTuple, tupleDesc, values, isNulls, updates);
         CatalogTupleUpdate(sliceIdRel, &updatedTuple->t_self, updatedTuple);
@@ -2584,8 +2585,8 @@ void FalconFetchSliceIdHandle(SliceIdProcessInfo info)
 
         info->start = 0;
         info->end = info->count;
-        values[Anum_falcon_kvsliceid_table_keystr - 1] = CStringGetTextDatum("slice_id");
-        values[Anum_falcon_kvsliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
+        values[Anum_falcon_sliceid_table_keystr - 1] = CStringGetTextDatum("slice_id");
+        values[Anum_falcon_sliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
 
         HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
         CatalogTupleInsert(sliceIdRel, heapTuple);

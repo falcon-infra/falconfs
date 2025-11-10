@@ -108,6 +108,7 @@ typedef KvMetaProcessInfoData *KvMetaProcessInfo;
 typedef struct SliceIdProcessInfoData
 {
     uint32_t count;
+    uint8_t type;
     uint64_t start;
     uint64_t end;
     FalconErrorCode errorCode;
