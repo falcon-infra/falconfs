@@ -576,6 +576,9 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                     *(uint64_t*)resp_p = infoDataArray[i].st_atim;      resp_p += 8;
                     *(uint64_t*)resp_p = infoDataArray[i].st_mtim;      resp_p += 8;
                     *(uint64_t*)resp_p = infoDataArray[i].st_ctim;      resp_p += 8;
+                } else {
+                    memset(resp_p, 0, 13 * 8);
+                    resp_p += 13 * 8;
                 }
                 break;
 
