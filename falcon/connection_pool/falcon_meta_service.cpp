@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#include "connection_pool/falcon_meta_service.h"
+#include "connection_pool/falcon_meta_service_internal.h"
 #include "connection_pool/pg_connection.h"
 #include "connection_pool/connection_pool_config.h"
 #include "connection_pool/pg_connection_pool.h"
@@ -46,7 +46,7 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
                cntl->response_attachment().size());
         fflush(stdout);
 
-        if (!FalconMetaService::DeserializeResponseFromBinary(
+        if (!FalconMetaServiceSerializer::DeserializeResponseFromBinary(
                 cntl->response_attachment(),
                 &response,
                 original_job->GetRequest().operation)) {
@@ -206,7 +206,8 @@ int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* j
     fflush(stdout);
 
     // 2. 序列化请求参数为二进制格式
-    if (!SerializeRequestToBinary(request, proto_request, &cntl->request_attachment())) {
+    if (!FalconMetaServiceSerializer::SerializeRequestToBinary(
+            request, proto_request, &cntl->request_attachment())) {
         printf("[debug] DispatchFalconMetaServiceJob: ERROR - SerializeRequestToBinary FAILED\n");
         fflush(stdout);
         job->GetResponse().status = -1;
@@ -302,7 +303,7 @@ static falcon::meta_proto::MetaServiceType ConvertToProtoType(FalconMetaOperatio
     }
 }
 
-bool FalconMetaService::SerializeRequestToBinary(
+bool FalconMetaServiceSerializer::SerializeRequestToBinary(
     const FalconMetaServiceRequest& request,
     falcon::meta_proto::MetaRequest* proto_request,
     butil::IOBuf* attachment)
@@ -818,7 +819,7 @@ bool FalconMetaService::SerializeRequestToBinary(
     return true;
 }
 
-bool FalconMetaService::DeserializeResponseFromBinary(
+bool FalconMetaServiceSerializer::DeserializeResponseFromBinary(
     const butil::IOBuf& attachment,
     FalconMetaServiceResponse* response,
     FalconMetaOperationType operation)

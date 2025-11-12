@@ -6,6 +6,7 @@
 #define FALCON_META_SERVICE_H
 
 #include <memory>
+#include <mutex>
 #include "connection_pool/falcon_meta_service_interface.h"
 #include "connection_pool/pg_connection_pool.h"
 
@@ -125,16 +126,6 @@ public:
 
         BinaryHeader() : signature(FALCON_BINARY_SIGNATURE), count(0), operation_type(0), reserved(0) {}
     };
-
-    static bool SerializeRequestToBinary(
-        const FalconMetaServiceRequest& request,
-        falcon::meta_proto::MetaRequest* proto_request,
-        butil::IOBuf* attachment);
-
-    static bool DeserializeResponseFromBinary(
-        const butil::IOBuf& attachment,
-        FalconMetaServiceResponse* response,
-        FalconMetaOperationType operation);
 
 private:
     std::shared_ptr<PGConnectionPool> pgConnectionPool;
