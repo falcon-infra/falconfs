@@ -297,6 +297,7 @@ static falcon::meta_proto::MetaServiceType ConvertToProtoType(FalconMetaOperatio
         case DFC_SLICE_PUT: return falcon::meta_proto::MetaServiceType::SLICE_PUT;
         case DFC_SLICE_GET: return falcon::meta_proto::MetaServiceType::SLICE_GET;
         case DFC_SLICE_DEL: return falcon::meta_proto::MetaServiceType::SLICE_DEL;
+        case DFC_FETCH_SLICE_ID: return falcon::meta_proto::MetaServiceType::FETCH_SLICE_ID;
         default: return falcon::meta_proto::MetaServiceType::PLAIN_COMMAND;
     }
 }
@@ -487,6 +488,14 @@ bool FalconMetaService::SerializeRequestToBinary(
             total_size += sizeof(uint16_t) + param->filename.length() + 4;
             // 每个 slice: inodeid(8) + chunkid(4) + sliceid(8) + slicesize(4) + sliceoffset(4) + slicelen(4) + sliceloc1(4) + sliceloc2(4)
             total_size += param->slicenum * (8 + 4 + 8 + 4 + 4 + 4 + 4 + 4);
+            break;
+        }
+
+        case DFC_FETCH_SLICE_ID: {
+            const SliceIdParam* param = meta_param_helper::Get<SliceIdParam>(request.file_params);
+            if (!param) return false;
+            // header + count(4) + type(1)
+            total_size += 4 + 1;
             break;
         }
 
@@ -785,6 +794,19 @@ bool FalconMetaService::SerializeRequestToBinary(
             break;
         }
 
+        case DFC_FETCH_SLICE_ID: {
+            const SliceIdParam* param = meta_param_helper::Get<SliceIdParam>(request.file_params);
+            if (!param) {
+                delete[] buffer;
+                return false;
+            }
+            *(uint32_t*)p = param->count;
+            p += 4;
+            *(uint8_t*)p = param->type;
+            p += 1;
+            break;
+        }
+
         default:
             delete[] buffer;
             return false;
@@ -1061,6 +1083,21 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         }
 
         response->data = slice_resp;
+        return true;
+    }
+
+    // FETCH_SLICE_ID 操作
+    if (operation == DFC_FETCH_SLICE_ID) {
+        int32_t status = *(int32_t*)p;
+        p += sizeof(int32_t);
+
+        response->status = status;
+
+        SliceIdResponse* sliceid_resp = new SliceIdResponse();
+        sliceid_resp->start = *(uint64_t*)p; p += 8;
+        sliceid_resp->end = *(uint64_t*)p; p += 8;
+
+        response->data = sliceid_resp;
         return true;
     }
 

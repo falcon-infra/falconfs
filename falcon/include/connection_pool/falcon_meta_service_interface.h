@@ -80,6 +80,7 @@ enum FalconMetaOperationType {
     DFC_SLICE_PUT = 24,                // 存储 Slice 元数据
     DFC_SLICE_GET = 25,                // 查询 Slice 元数据
     DFC_SLICE_DEL = 26,                // 删除 Slice 元数据
+    DFC_FETCH_SLICE_ID = 27,           // 分配 Slice ID
     NOT_SUPPORTED
 };
 
@@ -358,6 +359,20 @@ struct SliceInfoParam {
     {}
 };
 
+/**
+ * FETCH_SLICE_ID 操作参数
+ */
+struct SliceIdParam {
+    uint32_t count;
+    uint8_t type;
+
+    SliceIdParam() : count(0), type(0) {}
+
+    SliceIdParam(uint32_t cnt, uint8_t tp)
+        : count(cnt), type(tp)
+    {}
+};
+
 struct EmptyParam {};
 
 using AnyMetaParam = std::variant<
@@ -377,7 +392,8 @@ using AnyMetaParam = std::variant<
     ChownParam,
     ChmodParam,
     SliceIndexParam,
-    SliceInfoParam
+    SliceInfoParam,
+    SliceIdParam
 >;
 
 namespace meta_param_helper {
@@ -586,6 +602,20 @@ struct SliceInfoResponse {
         , slicelen(lens)
         , sliceloc1(loc1s)
         , sliceloc2(loc2s)
+    {}
+};
+
+/**
+ * 响应数据结构 - FETCH_SLICE_ID 操作
+ */
+struct SliceIdResponse {
+    uint64_t start;
+    uint64_t end;
+
+    SliceIdResponse() : start(0), end(0) {}
+
+    SliceIdResponse(uint64_t s, uint64_t e)
+        : start(s), end(e)
     {}
 };
 

@@ -61,6 +61,9 @@ private:
                 case DFC_SLICE_GET:
                     delete static_cast<SliceInfoResponse*>(response.data);
                     break;
+                case DFC_FETCH_SLICE_ID:
+                    delete static_cast<SliceIdResponse*>(response.data);
+                    break;
                 default:
                     // PUT, DELETE, MKDIR, RMDIR, CLOSE, RENAME, UTIMENS, CHOWN, CHMOD, SLICE_PUT, SLICE_DEL 不返回数据
                     break;

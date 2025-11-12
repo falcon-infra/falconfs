@@ -57,6 +57,7 @@ static inline char* ReadString(char** p_ptr)
  * 返回: 响应在共享内存中的偏移量
  */
 static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer);
+static Datum falcon_batch_sliceid_call(char *paramBuffer);
 
 Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 {
@@ -73,6 +74,11 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
 
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
+
+    /* 特殊处理 FETCH_SLICE_ID 操作 (27=FETCH_SLICE_ID) */
+    if (operation_type == 27) {
+        return falcon_batch_sliceid_call(paramBuffer);
+    }
 
     /* 特殊处理 SLICE 操作 (24=SLICE_PUT, 25=SLICE_GET, 26=SLICE_DEL) */
     if (operation_type >= 24 && operation_type <= 26) {
@@ -639,6 +645,62 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     fflush(stdout);
 
     /* 7. 返回响应在共享内存中的偏移量 */
+    PG_RETURN_INT64(responseShmemShift);
+}
+
+/*
+ * falcon_batch_sliceid_call
+ *
+ * FETCH_SLICE_ID 操作的专用处理函数
+ */
+static Datum falcon_batch_sliceid_call(char *paramBuffer)
+{
+    printf("[debug] falcon_batch_sliceid_call: ENTRY\n");
+    fflush(stdout);
+
+    /* 1. 解析头部 */
+    BinaryHeader *header = (BinaryHeader *)paramBuffer;
+    if (header->signature != FALCON_BINARY_SIGNATURE) {
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Invalid signature");
+    }
+
+    char *p = paramBuffer + sizeof(BinaryHeader);
+
+    /* 2. 解析参数 */
+    SliceIdProcessInfoData infoData = {0};
+    infoData.count = *(uint32_t*)p;
+    p += 4;
+    infoData.type = *(uint8_t*)p;
+    p += 1;
+    infoData.errorCode = SUCCESS;
+
+    /* 3. 调用核心处理函数 */
+    FalconFetchSliceIdHandle(&infoData);
+
+    /* 4. 计算响应大小：status(4) + start(8) + end(8) */
+    size_t response_size = sizeof(int32_t) + 16;
+
+    /* 5. 分配共享内存 */
+    FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
+    uint64_t responseShmemShift = FalconShmemAllocatorAlloc(allocator, response_size);
+    if (responseShmemShift == 0)
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocatorAlloc failed. Size: %zu.", response_size);
+
+    char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
+    char *resp_p = responseBuffer;
+
+    /* 6. 写入响应 */
+    *(int32_t*)resp_p = (infoData.errorCode == SUCCESS) ? 0 : -1;
+    resp_p += 4;
+    *(uint64_t*)resp_p = infoData.start;
+    resp_p += 8;
+    *(uint64_t*)resp_p = infoData.end;
+    resp_p += 8;
+
+    printf("[debug] falcon_batch_sliceid_call: EXIT, start=%lu, end=%lu, response_size=%zu\n",
+           infoData.start, infoData.end, response_size);
+    fflush(stdout);
+
     PG_RETURN_INT64(responseShmemShift);
 }
 
