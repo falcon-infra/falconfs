@@ -2380,47 +2380,72 @@ void FalconKvmetaPutHandle(KvMetaProcessInfo info)
         CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
 
     StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
-    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
-    TupleDesc tupleDesc = RelationGetDescr(kvmetaRel);
+    Relation kvmetaRel = NULL;
+    TupleDesc tupleDesc = NULL;
+    Datum *dkeys = NULL;
 
-    Datum values[Natts_falcon_kvmeta_table];
-    bool isNulls[Natts_falcon_kvmeta_table];
-    memset(values, 0, sizeof(values));
-    memset(isNulls, false, sizeof(isNulls));
+    PG_TRY();
+    {
+        kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+        tupleDesc = RelationGetDescr(kvmetaRel);
 
-    values[Anum_falcon_kvmeta_table_userkey - 1] = CStringGetTextDatum(info->userkey);
-    values[Anum_falcon_kvmeta_table_valuelen - 1] = UInt32GetDatum(info->valuelen);
-    values[Anum_falcon_kvmeta_table_slicenum - 1] = UInt16GetDatum(info->slicenum);
+        Datum values[Natts_falcon_kvmeta_table];
+        bool isNulls[Natts_falcon_kvmeta_table];
+        memset(values, 0, sizeof(values));
+        memset(isNulls, false, sizeof(isNulls));
 
-    ArrayType *arr = NULL;
-    int size = info->slicenum;
-    Datum *dkeys = palloc(size * sizeof(Datum));
+        values[Anum_falcon_kvmeta_table_userkey - 1] = CStringGetTextDatum(info->userkey);
+        values[Anum_falcon_kvmeta_table_valuelen - 1] = UInt32GetDatum(info->valuelen);
+        values[Anum_falcon_kvmeta_table_slicenum - 1] = UInt16GetDatum(info->slicenum);
 
-    for (int i = 0; i < size; i ++) {
-        dkeys[i] = UInt64GetDatum(info->valuekey[i]);
+        ArrayType *arr = NULL;
+        int size = info->slicenum;
+        dkeys = palloc(size * sizeof(Datum));
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt64GetDatum(info->valuekey[i]);
+        }
+        arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+        values[Anum_falcon_kvmeta_table_valuekey - 1] = PointerGetDatum(arr);
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt64GetDatum(info->location[i]);
+        }
+        arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+        values[Anum_falcon_kvmeta_table_location - 1] = PointerGetDatum(arr);
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt32GetDatum(info->slicelen[i]);
+        }
+        arr = construct_array(dkeys, size, INT4OID, sizeof(uint32_t), true, 'i');
+        values[Anum_falcon_kvmeta_table_slicelen - 1] = PointerGetDatum(arr);
+
+        pfree(dkeys);
+        dkeys = NULL;
+
+        HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
+        CatalogTupleInsert(kvmetaRel, heapTuple);
+        heap_freetuple(heapTuple);
+
+        table_close(kvmetaRel, RowExclusiveLock);
     }
-    arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
-    values[Anum_falcon_kvmeta_table_valuekey - 1] = PointerGetDatum(arr);
+    PG_CATCH();
+    {
+        if (dkeys != NULL) {
+            pfree(dkeys);
+            dkeys = NULL;
+        }
+        
+        if (kvmetaRel != NULL) {
+            table_close(kvmetaRel, RowExclusiveLock);
+        }
 
-    for (int i = 0; i < size; i ++) {
-        dkeys[i] = UInt64GetDatum(info->location[i]);
+        ErrorData *errorData = CopyErrorData();
+        FlushErrorState();
+        info->errorCode = errorData->sqlerrcode == ERRCODE_UNIQUE_VIOLATION ? UNIQUE_VIOLATION : UNKNOWN;
+        FreeErrorData(errorData);
     }
-    arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
-    values[Anum_falcon_kvmeta_table_location - 1] = PointerGetDatum(arr);
-
-    for (int i = 0; i < size; i ++) {
-        dkeys[i] = UInt32GetDatum(info->slicelen[i]);
-    }
-    arr = construct_array(dkeys, size, INT4OID, sizeof(uint32_t), true, 'i');
-    values[Anum_falcon_kvmeta_table_slicelen - 1] = PointerGetDatum(arr);
-
-    pfree(dkeys);
-
-    HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
-    CatalogTupleInsert(kvmetaRel, heapTuple);
-    heap_freetuple(heapTuple);
-
-    table_close(kvmetaRel, RowExclusiveLock);
+    PG_END_TRY();
 }
 
 void FalconKvmetaGetHandle(KvMetaProcessInfo info)
