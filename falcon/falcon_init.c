@@ -26,8 +26,13 @@
 #include "utils/path_parse.h"
 #include "utils/rwlock.h"
 #include "utils/shmem_control.h"
+#include "utils/falcon_plugin_guc.h"
+#include "plugin/falcon_plugin_loader.h"
 
 PG_MODULE_MAGIC;
+
+/* Plugin system GUC variables */
+char *falcon_plugin_directory = NULL;
 
 void _PG_init(void);
 static void FalconStart2PCCleanupWorker(void);
@@ -52,6 +57,10 @@ void _PG_init(void)
 
     FalconStart2PCCleanupWorker();
     FalconStartConnectionPoolWorker();
+
+    if (falcon_plugin_directory) {
+        FalconPluginSystemInit(falcon_plugin_directory);
+    }
 }
 
 /*
@@ -151,6 +160,7 @@ static void FalconShmemRequest(void)
     RequestAddinShmemSpace(ShardTableShmemsize());
     RequestAddinShmemSpace(DirPathShmemsize());
     RequestAddinShmemSpace(FalconConnectionPoolShmemsize());
+    RequestAddinShmemSpace(FalconPluginShmemSize());
 }
 static void FalconShmemInit(void)
 {
@@ -166,8 +176,12 @@ static void FalconShmemInit(void)
     ShardTableShmemInit();
     DirPathShmemInit();
     FalconConnectionPoolShmemInit();
+    FalconPluginShmemInit();
 
     LWLockRelease(AddinShmemInitLock);
+
+
+    FalconPluginInitBackgroundPlugins();
 }
 static void InitializeFalconShmemStruct(void)
 {
@@ -273,4 +287,15 @@ static void RegisterFalconConfigVariables(void)
                             NULL,
                             NULL);
     FalconConnectionPoolShmemSize = (uint64_t)FalconConnectionPoolShmemSizeInMB * 1024 * 1024;
+
+    DefineCustomStringVariable("falcon_plugin.directory",
+                              gettext_noop("Directory containing Falcon plugins."),
+                              NULL,
+                              &falcon_plugin_directory,
+                              NULL,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
 }

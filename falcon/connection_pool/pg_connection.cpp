@@ -9,6 +9,7 @@
 
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
+#include "connection_pool/falcon_meta_service.h"
 
 extern "C" {
 #include "connection_pool/connection_pool.h"
@@ -98,12 +99,23 @@ void PGConnection::BackgroundWorker()
             uint64_t replyShift = 0;
 
             char command[128];
-            sprintf(command,
-                    "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld);",
-                    serviceType,
-                    totalParamCount,
-                    (int64_t)totalParamShift,
-                    signature);
+            falcon::meta_proto::SerializationFormat format = taskToExec->jobList[0]->GetRequest()->format();
+
+            if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                sprintf(command,
+                        "select falcon_batch_meta_call_by_shmem(%d, %ld, %ld);",
+                        serviceType,
+                        (int64_t)totalParamShift,
+                        signature);
+            } else {
+                sprintf(command,
+                        "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld);",
+                        serviceType,
+                        totalParamCount,
+                        (int64_t)totalParamShift,
+                        signature);
+            }
+
             int sendQuerySucceed = PQsendQuery(conn, command);
             if (sendQuerySucceed != 1)
                 throw std::runtime_error(PQerrorMessage(conn));
@@ -146,24 +158,39 @@ void PGConnection::BackgroundWorker()
                 if (replyShift != 0) {
                     char *replyBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, replyShift);
                     uint64_t replyBufferSize = FALCON_SHMEM_ALLOCATOR_POINTER_GET_SIZE(replyBuffer);
-                    SerializedData replyData;
-                    if (!SerializedDataInit(&replyData, replyBuffer, replyBufferSize, replyBufferSize, NULL))
-                        throw std::runtime_error("reply data is corrupt.");
 
-                    uint32_t p = 0;
-                    for (size_t i = 0; i < taskToExec->jobList.size(); ++i) {
-                        brpc::Controller *cntl = taskToExec->jobList[i]->GetCntl();
+                    if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                        // BINARY 格式：直接复制整个响应缓冲区
+                        // 假设只有一个 job（批处理请求）
+                        if (taskToExec->jobList.size() != 1)
+                            throw std::runtime_error("BINARY format expects single batch job");
 
-                        int count = taskToExec->jobList[i]->GetRequest()->type_size();
-                        uint32_t size = SerializedDataNextSeveralItemSize(&replyData, p, count);
-                        if (size == (sd_size_t)-1)
-                            throw std::runtime_error("response is corrupt.");
-                        char *data = (char *)malloc(size);
-                        memcpy(data, replyBuffer + p, size);
-                        cntl->response_attachment().append_user_data(data, size, NULL);
+                        brpc::Controller *cntl = taskToExec->jobList[0]->GetCntl();
+                        char *data = (char *)malloc(replyBufferSize);
+                        memcpy(data, replyBuffer, replyBufferSize);
+                        cntl->response_attachment().append_user_data(data, replyBufferSize, NULL);
+                        taskToExec->jobList[0]->Done();
+                    } else {
+                        // FlatBuffers 格式：使用 SerializedData 解析
+                        SerializedData replyData;
+                        if (!SerializedDataInit(&replyData, replyBuffer, replyBufferSize, replyBufferSize, NULL))
+                            throw std::runtime_error("reply data is corrupt.");
 
-                        taskToExec->jobList[i]->Done();
-                        p += size;
+                        uint32_t p = 0;
+                        for (size_t i = 0; i < taskToExec->jobList.size(); ++i) {
+                            brpc::Controller *cntl = taskToExec->jobList[i]->GetCntl();
+
+                            int count = taskToExec->jobList[i]->GetRequest()->type_size();
+                            uint32_t size = SerializedDataNextSeveralItemSize(&replyData, p, count);
+                            if (size == (sd_size_t)-1)
+                                throw std::runtime_error("response is corrupt.");
+                            char *data = (char *)malloc(size);
+                            memcpy(data, replyBuffer + p, size);
+                            cntl->response_attachment().append_user_data(data, size, NULL);
+
+                            taskToExec->jobList[i]->Done();
+                            p += size;
+                        }
                     }
                     FalconShmemAllocatorFree(allocator, replyShift);
                 } else {
@@ -192,14 +219,25 @@ void PGConnection::BackgroundWorker()
             }
             char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShift);
             job->GetCntl()->request_attachment().cutn(paramBuffer, paramSize);
-            SerializedData requestData;
-            if (!SerializedDataInit(&requestData, paramBuffer, paramSize, paramSize, NULL))
-                throw std::runtime_error("request attachment is corrupt.");
 
             // 2.2.2
             std::stringstream toSendCommand;
             std::vector<bool> isPlainCommand;
             std::vector<int64_t> signatureList;
+            falcon::meta_proto::SerializationFormat format = job->GetRequest()->format();
+
+            // 只有 FlatBuffers 格式才需要初始化 SerializedData
+            SerializedData requestData;
+            if (format != falcon::meta_proto::SerializationFormat::BINARY) {
+                if (!SerializedDataInit(&requestData, paramBuffer, paramSize, paramSize, NULL))
+                    throw std::runtime_error("request attachment is corrupt.");
+            }
+
+            // BINARY format currently only supports single operation
+            if (format == falcon::meta_proto::SerializationFormat::BINARY && job->GetRequest()->type_size() > 1) {
+                throw std::runtime_error("BINARY format does not support batch operations (type_size > 1)");
+            }
+
             int i = 0;
             uint64_t currentParamSegment = 0;
             while (i < job->GetRequest()->type_size()) {
@@ -211,23 +249,37 @@ void PGConnection::BackgroundWorker()
                 }
                 int currentParamSegmentCount = j - i;
 
-                uint32_t currentParamSegmentSize =
-                    SerializedDataNextSeveralItemSize(&requestData, currentParamSegment, j - i);
+                uint32_t currentParamSegmentSize;
+                if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                    // BINARY 格式：整个 buffer 就是一个完整的请求
+                    currentParamSegmentSize = paramSize;
+                } else {
+                    currentParamSegmentSize =
+                        SerializedDataNextSeveralItemSize(&requestData, currentParamSegment, j - i);
+                }
 
                 if (serviceType == falcon::meta_proto::MetaServiceType::PLAIN_COMMAND) {
-                    //
-                    char *buf = paramBuffer + currentParamSegment + SERIALIZED_DATA_ALIGNMENT;
-                    int size = currentParamSegmentSize - SERIALIZED_DATA_ALIGNMENT;
-                    flatbuffers::Verifier verifier((uint8_t *)buf, size);
-                    if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>())
-                        throw std::runtime_error("request param is corrupt. 1");
-                    const falcon::meta_fbs::MetaParam *param = falcon::meta_fbs::GetMetaParam(buf);
-                    if (param->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_PlainCommandParam)
-                        throw std::runtime_error("request param is corrupt. 2");
+                    std::string command;
 
-                    //
-                    // split PGresult
-                    const char *command = param->param_as_PlainCommandParam()->command()->c_str();
+                    if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                        // BINARY format: skip BinaryHeader (16 bytes) and read string directly
+                        // BinaryHeader structure: signature(4) + count(4) + operation_type(4) + reserved(4)
+                        char *p = paramBuffer + 16;  // Skip BinaryHeader
+                        uint16_t cmd_len = *(uint16_t*)p;
+                        p += sizeof(uint16_t);
+                        command = std::string(p, cmd_len);
+                    } else {
+                        // FlatBuffers format
+                        char *buf = paramBuffer + currentParamSegment + SERIALIZED_DATA_ALIGNMENT;
+                        int size = currentParamSegmentSize - SERIALIZED_DATA_ALIGNMENT;
+                        flatbuffers::Verifier verifier((uint8_t *)buf, size);
+                        if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>())
+                            throw std::runtime_error("request param is corrupt. 1");
+                        const falcon::meta_fbs::MetaParam *param = falcon::meta_fbs::GetMetaParam(buf);
+                        if (param->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_PlainCommandParam)
+                            throw std::runtime_error("request param is corrupt. 2");
+                        command = param->param_as_PlainCommandParam()->command()->c_str();
+                    }
 
                     toSendCommand << command;
 
@@ -235,9 +287,16 @@ void PGConnection::BackgroundWorker()
                     signatureList.push_back(0);
                 } else {
                     signatureList.push_back(FalconShmemAllocatorGetUniqueSignature(allocator));
-                    toSendCommand << "select falcon_meta_call_by_serialized_shmem_internal(" << serviceType << ", "
-                                  << currentParamSegmentCount << ", " << paramShift + currentParamSegment << ", "
-                                  << signatureList.back() << ");";
+
+                    if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                        toSendCommand << "select falcon_batch_meta_call_by_shmem(" << serviceType << ", "
+                                      << paramShift + currentParamSegment << ", "
+                                      << signatureList.back() << ");";
+                    } else {
+                        toSendCommand << "select falcon_meta_call_by_serialized_shmem_internal(" << serviceType << ", "
+                                      << currentParamSegmentCount << ", " << paramShift + currentParamSegment << ", "
+                                      << signatureList.back() << ");";
+                    }
 
                     isPlainCommand.push_back(false);
                 }
@@ -258,67 +317,130 @@ void PGConnection::BackgroundWorker()
                     "reply count cannot match request. maybe there is a request containing several plain commands.");
             }
             // 2.2.4
-            SerializedData replyData;
-            SerializedDataInit(&replyData, NULL, 0, 0, NULL);
-            for (size_t i = 0; i < result.size(); ++i) {
-                res = result[i];
-                if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-                    char *totalErrorMsg = PQresultErrorMessage(res);
-                    const char *validErrorMsg = NULL;
-                    FalconErrorCode errorCode = FalconErrorMsgAnalyse(totalErrorMsg, &validErrorMsg);
-                    if (errorCode == SUCCESS)
-                        errorCode = PROGRAM_ERROR;
+            // For BINARY format, use simple buffer accumulation without SerializedData wrappers
+            // For FlatBuffers format, use SerializedData for proper segment management
+            if (format == falcon::meta_proto::SerializationFormat::BINARY) {
+                // BINARY format: accumulate raw bytes without any wrappers
+                std::vector<char> binaryReplyBuffer;
 
-                    flatBufferBuilder.Clear();
-                    auto metaResponse = falcon::meta_fbs::CreateMetaResponse(flatBufferBuilder, errorCode);
-                    flatBufferBuilder.Finish(metaResponse);
+                for (size_t i = 0; i < result.size(); ++i) {
+                    res = result[i];
+                    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+                        throw std::runtime_error(std::string("BINARY format does not support error responses: ") +
+                                                PQresultErrorMessage(res));
+                    } else if (isPlainCommand[i]) {
+                        // Handle PLAIN_COMMAND in BINARY format
+                        // Response format: status(4) + row(4) + col(4) + data array
+                        int32_t status = 0;  // Success
+                        uint32_t row = PQntuples(res);
+                        uint32_t col = PQnfields(res);
 
-                    char *buf = SerializedDataApplyForSegment(&replyData, flatBufferBuilder.GetSize());
-                    memcpy(buf, flatBufferBuilder.GetBufferPointer(), flatBufferBuilder.GetSize());
-                } else if (isPlainCommand[i]) {
-                    flatBufferBuilder.Clear();
-                    std::vector<flatbuffers::Offset<flatbuffers::String>> plainCommandResponseData;
-                    int row = PQntuples(res);
-                    int col = PQnfields(res);
-                    for (int i = 0; i < row; ++i)
-                        for (int j = 0; j < col; ++j)
-                            plainCommandResponseData.push_back(flatBufferBuilder.CreateString(PQgetvalue(res, i, j)));
-                    auto plainCommandResponse = falcon::meta_fbs::CreatePlainCommandResponse(
-                        flatBufferBuilder,
-                        row,
-                        col,
-                        flatBufferBuilder.CreateVector(plainCommandResponseData));
-                    auto metaResponse = falcon::meta_fbs::CreateMetaResponse(
-                        flatBufferBuilder,
-                        SUCCESS,
-                        falcon::meta_fbs::AnyMetaResponse::AnyMetaResponse_PlainCommandResponse,
-                        plainCommandResponse.Union());
-                    flatBufferBuilder.Finish(metaResponse);
+                        // Write status
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&status, (char*)&status + sizeof(status));
 
-                    char *buf = SerializedDataApplyForSegment(&replyData, flatBufferBuilder.GetSize());
-                    memcpy(buf, flatBufferBuilder.GetBufferPointer(), flatBufferBuilder.GetSize());
-                } else {
-                    int64_t signature = signatureList[i];
-                    if (PQntuples(res) != 1 || PQnfields(res) != 1)
-                        throw std::runtime_error("returned reply is corrupt in non-batch operation. 1");
-                    uint64_t replyShift = (uint64_t)StringToInt64(PQgetvalue(res, 0, 0));
-                    char *replyBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, replyShift);
-                    if (FALCON_SHMEM_ALLOCATOR_GET_SIGNATURE(replyBuffer) != signature)
-                        throw std::runtime_error("returned reply is corrupt in non-batch operation. 2");
-                    uint64_t replyBufferSize = FALCON_SHMEM_ALLOCATOR_POINTER_GET_SIZE(replyBuffer);
+                        // Write row and col
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&row, (char*)&row + sizeof(row));
+                        binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&col, (char*)&col + sizeof(col));
 
-                    SerializedData oneReply;
-                    if (!SerializedDataInit(&oneReply, replyBuffer, replyBufferSize, replyBufferSize, NULL))
-                        throw std::runtime_error("reply data is corrupt.");
-                    SerializedDataAppend(&replyData, &oneReply);
-                    FalconShmemAllocatorFree(allocator, replyShift);
+                        // Write data array
+                        for (uint32_t r = 0; r < row; ++r) {
+                            for (uint32_t c = 0; c < col; ++c) {
+                                const char* value = PQgetvalue(res, r, c);
+                                uint16_t str_len = strlen(value);
+                                binaryReplyBuffer.insert(binaryReplyBuffer.end(), (char*)&str_len, (char*)&str_len + sizeof(str_len));
+                                binaryReplyBuffer.insert(binaryReplyBuffer.end(), value, value + str_len);
+                            }
+                        }
+                    } else {
+                        int64_t signature = signatureList[i];
+                        if (PQntuples(res) != 1 || PQnfields(res) != 1)
+                            throw std::runtime_error("returned reply is corrupt in non-batch operation. 1");
+                        uint64_t replyShift = (uint64_t)StringToInt64(PQgetvalue(res, 0, 0));
+                        char *replyBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, replyShift);
+                        if (FALCON_SHMEM_ALLOCATOR_GET_SIGNATURE(replyBuffer) != signature)
+                            throw std::runtime_error("returned reply is corrupt in non-batch operation. 2");
+                        uint64_t replyBufferSize = FALCON_SHMEM_ALLOCATOR_POINTER_GET_SIZE(replyBuffer);
+
+                        // Directly append raw BINARY response data
+                        size_t oldSize = binaryReplyBuffer.size();
+                        binaryReplyBuffer.resize(oldSize + replyBufferSize);
+                        memcpy(binaryReplyBuffer.data() + oldSize, replyBuffer, replyBufferSize);
+
+                        FalconShmemAllocatorFree(allocator, replyShift);
+                    }
                 }
+
+                // Send raw BINARY data without any SerializedData wrapper
+                char *data = (char *)malloc(binaryReplyBuffer.size());
+                memcpy(data, binaryReplyBuffer.data(), binaryReplyBuffer.size());
+                job->GetCntl()->response_attachment().append_user_data(data, binaryReplyBuffer.size(), NULL);
+                job->Done();
+            } else {
+                // FlatBuffers format: use SerializedData for proper segment management
+                SerializedData replyData;
+                SerializedDataInit(&replyData, NULL, 0, 0, NULL);
+
+                for (size_t i = 0; i < result.size(); ++i) {
+                    res = result[i];
+                    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+                        char *totalErrorMsg = PQresultErrorMessage(res);
+                        const char *validErrorMsg = NULL;
+                        FalconErrorCode errorCode = FalconErrorMsgAnalyse(totalErrorMsg, &validErrorMsg);
+                        if (errorCode == SUCCESS)
+                            errorCode = PROGRAM_ERROR;
+
+                        flatBufferBuilder.Clear();
+                        auto metaResponse = falcon::meta_fbs::CreateMetaResponse(flatBufferBuilder, errorCode);
+                        flatBufferBuilder.Finish(metaResponse);
+
+                        char *buf = SerializedDataApplyForSegment(&replyData, flatBufferBuilder.GetSize());
+                        memcpy(buf, flatBufferBuilder.GetBufferPointer(), flatBufferBuilder.GetSize());
+                    } else if (isPlainCommand[i]) {
+                        flatBufferBuilder.Clear();
+                        std::vector<flatbuffers::Offset<flatbuffers::String>> plainCommandResponseData;
+                        int row = PQntuples(res);
+                        int col = PQnfields(res);
+                        for (int i = 0; i < row; ++i)
+                            for (int j = 0; j < col; ++j)
+                                plainCommandResponseData.push_back(flatBufferBuilder.CreateString(PQgetvalue(res, i, j)));
+                        auto plainCommandResponse = falcon::meta_fbs::CreatePlainCommandResponse(
+                            flatBufferBuilder,
+                            row,
+                            col,
+                            flatBufferBuilder.CreateVector(plainCommandResponseData));
+                        auto metaResponse = falcon::meta_fbs::CreateMetaResponse(
+                            flatBufferBuilder,
+                            SUCCESS,
+                            falcon::meta_fbs::AnyMetaResponse::AnyMetaResponse_PlainCommandResponse,
+                            plainCommandResponse.Union());
+                        flatBufferBuilder.Finish(metaResponse);
+
+                        char *buf = SerializedDataApplyForSegment(&replyData, flatBufferBuilder.GetSize());
+                        memcpy(buf, flatBufferBuilder.GetBufferPointer(), flatBufferBuilder.GetSize());
+                    } else {
+                        int64_t signature = signatureList[i];
+                        if (PQntuples(res) != 1 || PQnfields(res) != 1)
+                            throw std::runtime_error("returned reply is corrupt in non-batch operation. 1");
+                        uint64_t replyShift = (uint64_t)StringToInt64(PQgetvalue(res, 0, 0));
+                        char *replyBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, replyShift);
+                        if (FALCON_SHMEM_ALLOCATOR_GET_SIGNATURE(replyBuffer) != signature)
+                            throw std::runtime_error("returned reply is corrupt in non-batch operation. 2");
+                        uint64_t replyBufferSize = FALCON_SHMEM_ALLOCATOR_POINTER_GET_SIZE(replyBuffer);
+
+                        // FlatBuffers format: use SerializedData
+                        SerializedData oneReply;
+                        if (!SerializedDataInit(&oneReply, replyBuffer, replyBufferSize, replyBufferSize, NULL))
+                            throw std::runtime_error("reply data is corrupt.");
+                        SerializedDataAppend(&replyData, &oneReply);
+
+                        FalconShmemAllocatorFree(allocator, replyShift);
+                    }
+                }
+
+                // Send FlatBuffers data with SerializedData wrapper
+                job->GetCntl()->response_attachment().append_user_data(replyData.buffer, replyData.size, NULL);
+                job->Done();
             }
-            //
-            //
-            // SerializedDataDestroy
-            job->GetCntl()->response_attachment().append_user_data(replyData.buffer, replyData.size, NULL);
-            job->Done();
 
             for (size_t i = 0; i < result.size(); ++i)
                 PQclear(res);

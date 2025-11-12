@@ -27,9 +27,15 @@ enum MetaServiceType {
     CHMOD = 19;
 }
 
+enum SerializationFormat {
+    FLATBUFFER = 0;
+    BINARY = 1;
+}
+
 message MetaRequest {
     bool allow_batch_with_others = 1;
     repeated MetaServiceType type = 2;
+    SerializationFormat format = 3;
 }
 
 message Empty {
