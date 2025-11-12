@@ -58,8 +58,11 @@ private:
                 case DFC_RENAME_SUB_RENAME_LOCALLY:
                     delete static_cast<RenameSubRenameLocallyResponse*>(response.data);
                     break;
+                case DFC_SLICE_GET:
+                    delete static_cast<SliceInfoResponse*>(response.data);
+                    break;
                 default:
-                    // PUT, DELETE, MKDIR, RMDIR, CLOSE, RENAME, UTIMENS, CHOWN, CHMOD 不返回数据
+                    // PUT, DELETE, MKDIR, RMDIR, CLOSE, RENAME, UTIMENS, CHOWN, CHMOD, SLICE_PUT, SLICE_DEL 不返回数据
                     break;
             }
             response.data = nullptr;

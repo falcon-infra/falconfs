@@ -75,6 +75,11 @@ enum FalconMetaOperationType {
     DFC_UTIMENS = 21,                  // 修改文件时间戳
     DFC_CHOWN = 22,                    // 修改文件所有者
     DFC_CHMOD = 23,                    // 修改文件权限
+
+    // Slice 操作
+    DFC_SLICE_PUT = 24,                // 存储 Slice 元数据
+    DFC_SLICE_GET = 25,                // 查询 Slice 元数据
+    DFC_SLICE_DEL = 26,                // 删除 Slice 元数据
     NOT_SUPPORTED
 };
 
@@ -290,6 +295,69 @@ struct ChmodParam {
     ChmodParam() : st_mode(0) {}
 };
 
+/**
+ * SLICE_GET/SLICE_DEL 操作参数
+ */
+struct SliceIndexParam {
+    std::string filename;
+    uint64_t inodeid;
+    uint32_t chunkid;
+
+    SliceIndexParam() : inodeid(0), chunkid(0) {}
+
+    SliceIndexParam(
+        const std::string& fname,
+        uint64_t inid,
+        uint32_t chid
+    )
+        : filename(fname)
+        , inodeid(inid)
+        , chunkid(chid)
+    {}
+};
+
+/**
+ * SLICE_PUT 操作参数
+ */
+struct SliceInfoParam {
+    std::string filename;
+    uint32_t slicenum;
+    std::vector<uint64_t> inodeid;
+    std::vector<uint32_t> chunkid;
+    std::vector<uint64_t> sliceid;
+    std::vector<uint32_t> slicesize;
+    std::vector<uint32_t> sliceoffset;
+    std::vector<uint32_t> slicelen;
+    std::vector<uint32_t> sliceloc1;
+    std::vector<uint32_t> sliceloc2;
+
+    SliceInfoParam() : slicenum(0) {}
+
+    SliceInfoParam(
+        const std::string& fname,
+        uint32_t snum,
+        const std::vector<uint64_t>& inodes,
+        const std::vector<uint32_t>& chids,
+        const std::vector<uint64_t>& slids,
+        const std::vector<uint32_t>& szs,
+        const std::vector<uint32_t>& offs,
+        const std::vector<uint32_t>& lens,
+        const std::vector<uint32_t>& loc1s,
+        const std::vector<uint32_t>& loc2s
+    )
+        : filename(fname)
+        , slicenum(snum)
+        , inodeid(inodes)
+        , chunkid(chids)
+        , sliceid(slids)
+        , slicesize(szs)
+        , sliceoffset(offs)
+        , slicelen(lens)
+        , sliceloc1(loc1s)
+        , sliceloc2(loc2s)
+    {}
+};
+
 struct EmptyParam {};
 
 using AnyMetaParam = std::variant<
@@ -307,7 +375,9 @@ using AnyMetaParam = std::variant<
     RenameSubCreateParam,
     UtimeNsParam,
     ChownParam,
-    ChmodParam
+    ChmodParam,
+    SliceIndexParam,
+    SliceInfoParam
 >;
 
 namespace meta_param_helper {
@@ -478,6 +548,45 @@ struct RenameSubRenameLocallyResponse {
         : st_ino(0), st_dev(0), st_mode(0), st_nlink(0),
           st_uid(0), st_gid(0), st_rdev(0), st_size(0), st_blksize(0),
           st_blocks(0), st_atim(0), st_mtim(0), st_ctim(0), node_id(0) {}
+};
+
+/**
+ * 响应数据结构 - SLICE_GET 操作
+ */
+struct SliceInfoResponse {
+    uint32_t slicenum;
+    std::vector<uint64_t> inodeid;
+    std::vector<uint32_t> chunkid;
+    std::vector<uint64_t> sliceid;
+    std::vector<uint32_t> slicesize;
+    std::vector<uint32_t> sliceoffset;
+    std::vector<uint32_t> slicelen;
+    std::vector<uint32_t> sliceloc1;
+    std::vector<uint32_t> sliceloc2;
+
+    SliceInfoResponse() : slicenum(0) {}
+
+    SliceInfoResponse(
+        uint32_t snum,
+        const std::vector<uint64_t>& inodes,
+        const std::vector<uint32_t>& chids,
+        const std::vector<uint64_t>& slids,
+        const std::vector<uint32_t>& szs,
+        const std::vector<uint32_t>& offs,
+        const std::vector<uint32_t>& lens,
+        const std::vector<uint32_t>& loc1s,
+        const std::vector<uint32_t>& loc2s
+    )
+        : slicenum(snum)
+        , inodeid(inodes)
+        , chunkid(chids)
+        , sliceid(slids)
+        , slicesize(szs)
+        , sliceoffset(offs)
+        , slicelen(lens)
+        , sliceloc1(loc1s)
+        , sliceloc2(loc2s)
+    {}
 };
 
 /**

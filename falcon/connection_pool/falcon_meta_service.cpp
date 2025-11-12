@@ -294,6 +294,9 @@ static falcon::meta_proto::MetaServiceType ConvertToProtoType(FalconMetaOperatio
         case DFC_UTIMENS: return falcon::meta_proto::MetaServiceType::UTIMENS;
         case DFC_CHOWN: return falcon::meta_proto::MetaServiceType::CHOWN;
         case DFC_CHMOD: return falcon::meta_proto::MetaServiceType::CHMOD;
+        case DFC_SLICE_PUT: return falcon::meta_proto::MetaServiceType::SLICE_PUT;
+        case DFC_SLICE_GET: return falcon::meta_proto::MetaServiceType::SLICE_GET;
+        case DFC_SLICE_DEL: return falcon::meta_proto::MetaServiceType::SLICE_DEL;
         default: return falcon::meta_proto::MetaServiceType::PLAIN_COMMAND;
     }
 }
@@ -465,6 +468,25 @@ bool FalconMetaService::SerializeRequestToBinary(
             fflush(stdout);
             // header + command_len(2) + command
             total_size += sizeof(uint16_t) + param->command.length();
+            break;
+        }
+
+        case DFC_SLICE_GET:
+        case DFC_SLICE_DEL: {
+            const SliceIndexParam* param = meta_param_helper::Get<SliceIndexParam>(request.file_params);
+            if (!param) return false;
+            // header + filename_len(2) + filename + inodeid(8) + chunkid(4)
+            total_size += sizeof(uint16_t) + param->filename.length() + 8 + 4;
+            break;
+        }
+
+        case DFC_SLICE_PUT: {
+            const SliceInfoParam* param = meta_param_helper::Get<SliceInfoParam>(request.file_params);
+            if (!param) return false;
+            // header + filename_len(2) + filename + slicenum(4) + arrays
+            total_size += sizeof(uint16_t) + param->filename.length() + 4;
+            // 每个 slice: inodeid(8) + chunkid(4) + sliceid(8) + slicesize(4) + sliceoffset(4) + slicelen(4) + sliceloc1(4) + sliceloc2(4)
+            total_size += param->slicenum * (8 + 4 + 8 + 4 + 4 + 4 + 4 + 4);
             break;
         }
 
@@ -718,6 +740,51 @@ bool FalconMetaService::SerializeRequestToBinary(
             break;
         }
 
+        case DFC_SLICE_GET:
+        case DFC_SLICE_DEL: {
+            const SliceIndexParam* param = meta_param_helper::Get<SliceIndexParam>(request.file_params);
+            if (!param) {
+                delete[] buffer;
+                return false;
+            }
+            write_string(param->filename);
+            *(uint64_t*)p = param->inodeid;
+            p += 8;
+            *(uint32_t*)p = param->chunkid;
+            p += 4;
+            break;
+        }
+
+        case DFC_SLICE_PUT: {
+            const SliceInfoParam* param = meta_param_helper::Get<SliceInfoParam>(request.file_params);
+            if (!param) {
+                delete[] buffer;
+                return false;
+            }
+            write_string(param->filename);
+            *(uint32_t*)p = param->slicenum;
+            p += 4;
+            for (uint32_t i = 0; i < param->slicenum; ++i) {
+                *(uint64_t*)p = param->inodeid[i];
+                p += 8;
+                *(uint32_t*)p = param->chunkid[i];
+                p += 4;
+                *(uint64_t*)p = param->sliceid[i];
+                p += 8;
+                *(uint32_t*)p = param->slicesize[i];
+                p += 4;
+                *(uint32_t*)p = param->sliceoffset[i];
+                p += 4;
+                *(uint32_t*)p = param->slicelen[i];
+                p += 4;
+                *(uint32_t*)p = param->sliceloc1[i];
+                p += 4;
+                *(uint32_t*)p = param->sliceloc2[i];
+                p += 4;
+            }
+            break;
+        }
+
         default:
             delete[] buffer;
             return false;
@@ -946,6 +1013,54 @@ bool FalconMetaService::DeserializeResponseFromBinary(
         }
 
         response->data = plain_resp;
+        return true;
+    }
+
+    // SLICE_DEL 操作
+    if (operation == DFC_SLICE_DEL) {
+        response->status = *(int32_t*)p;
+        response->data = nullptr;
+        return true;
+    }
+
+    // SLICE_PUT 操作
+    if (operation == DFC_SLICE_PUT) {
+        response->status = *(int32_t*)p;
+        response->data = nullptr;
+        return true;
+    }
+
+    // SLICE_GET 操作
+    if (operation == DFC_SLICE_GET) {
+        int32_t status = *(int32_t*)p;
+        p += sizeof(int32_t);
+
+        response->status = status;
+
+        SliceInfoResponse* slice_resp = new SliceInfoResponse();
+        slice_resp->slicenum = *(uint32_t*)p; p += 4;
+
+        slice_resp->inodeid.resize(slice_resp->slicenum);
+        slice_resp->chunkid.resize(slice_resp->slicenum);
+        slice_resp->sliceid.resize(slice_resp->slicenum);
+        slice_resp->slicesize.resize(slice_resp->slicenum);
+        slice_resp->sliceoffset.resize(slice_resp->slicenum);
+        slice_resp->slicelen.resize(slice_resp->slicenum);
+        slice_resp->sliceloc1.resize(slice_resp->slicenum);
+        slice_resp->sliceloc2.resize(slice_resp->slicenum);
+
+        for (uint32_t i = 0; i < slice_resp->slicenum; ++i) {
+            slice_resp->inodeid[i] = *(uint64_t*)p; p += 8;
+            slice_resp->chunkid[i] = *(uint32_t*)p; p += 4;
+            slice_resp->sliceid[i] = *(uint64_t*)p; p += 8;
+            slice_resp->slicesize[i] = *(uint32_t*)p; p += 4;
+            slice_resp->sliceoffset[i] = *(uint32_t*)p; p += 4;
+            slice_resp->slicelen[i] = *(uint32_t*)p; p += 4;
+            slice_resp->sliceloc1[i] = *(uint32_t*)p; p += 4;
+            slice_resp->sliceloc2[i] = *(uint32_t*)p; p += 4;
+        }
+
+        response->data = slice_resp;
         return true;
     }
 

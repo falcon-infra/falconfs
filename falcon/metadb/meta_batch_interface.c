@@ -56,6 +56,8 @@ static inline char* ReadString(char** p_ptr)
  *
  * 返回: 响应在共享内存中的偏移量
  */
+static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer);
+
 Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 {
     int32_t operation_type = PG_GETARG_INT32(0);
@@ -71,6 +73,11 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
 
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
+
+    /* 特殊处理 SLICE 操作 (24=SLICE_PUT, 25=SLICE_GET, 26=SLICE_DEL) */
+    if (operation_type >= 24 && operation_type <= 26) {
+        return falcon_batch_slice_call(operation_type, paramBuffer);
+    }
 
     /* 2. 解析头部 */
     BinaryHeader *header = (BinaryHeader *)paramBuffer;
@@ -632,5 +639,143 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     fflush(stdout);
 
     /* 7. 返回响应在共享内存中的偏移量 */
+    PG_RETURN_INT64(responseShmemShift);
+}
+
+/*
+ * falcon_batch_slice_call
+ *
+ * SLICE 操作的专用处理函数（SLICE_PUT/GET/DEL）
+ */
+static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
+{
+    printf("[debug] falcon_batch_slice_call: ENTRY, operation_type=%d\n", operation_type);
+    fflush(stdout);
+
+    /* 1. 解析头部 */
+    BinaryHeader *header = (BinaryHeader *)paramBuffer;
+    if (header->signature != FALCON_BINARY_SIGNATURE) {
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Invalid signature");
+    }
+
+    uint32_t count = header->count;
+    if (count == 0 || count > 1000) {
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Invalid count");
+    }
+
+    char *p = paramBuffer + sizeof(BinaryHeader);
+
+    /* 2. 构造 SliceProcessInfo 数组 */
+    void *data = palloc((sizeof(SliceProcessInfoData) + sizeof(SliceProcessInfo)) * count);
+    SliceProcessInfoData *sliceInfoArray = data;
+    SliceProcessInfo *sliceArray = (SliceProcessInfo *)(sliceInfoArray + count);
+
+    for (uint32_t i = 0; i < count; i++) {
+        sliceArray[i] = &sliceInfoArray[i];
+        memset(&sliceInfoArray[i], 0, sizeof(SliceProcessInfoData));
+        sliceInfoArray[i].errorCode = SUCCESS;
+
+        /* 解析参数 */
+        if (operation_type == 24) {  /* SLICE_PUT */
+            sliceInfoArray[i].name = ReadString(&p);
+            sliceInfoArray[i].count = *(uint32_t*)p;
+            p += 4;
+
+            /* 分配数组 */
+            sliceInfoArray[i].inodeIds = palloc(sizeof(uint64_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].chunkIds = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceIds = palloc(sizeof(uint64_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceSizes = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceOffsets = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceLens = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceLoc1s = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+            sliceInfoArray[i].sliceloc2s = palloc(sizeof(uint32_t) * sliceInfoArray[i].count);
+
+            /* 读取数组数据 */
+            for (uint32_t j = 0; j < sliceInfoArray[i].count; j++) {
+                sliceInfoArray[i].inodeIds[j] = *(uint64_t*)p; p += 8;
+                sliceInfoArray[i].chunkIds[j] = *(uint32_t*)p; p += 4;
+                sliceInfoArray[i].sliceIds[j] = *(uint64_t*)p; p += 8;
+                sliceInfoArray[i].sliceSizes[j] = *(uint32_t*)p; p += 4;
+                sliceInfoArray[i].sliceOffsets[j] = *(uint32_t*)p; p += 4;
+                sliceInfoArray[i].sliceLens[j] = *(uint32_t*)p; p += 4;
+                sliceInfoArray[i].sliceLoc1s[j] = *(uint32_t*)p; p += 4;
+                sliceInfoArray[i].sliceloc2s[j] = *(uint32_t*)p; p += 4;
+            }
+        } else if (operation_type == 25 || operation_type == 26) {  /* SLICE_GET / SLICE_DEL */
+            sliceInfoArray[i].name = ReadString(&p);
+            sliceInfoArray[i].inputInodeid = *(uint64_t*)p;
+            p += 8;
+            sliceInfoArray[i].inputChunkid = *(uint32_t*)p;
+            p += 4;
+        }
+    }
+
+    /* 3. 调用 Handle 函数 */
+    switch (operation_type) {
+        case 24:  /* SLICE_PUT */
+            FalconSlicePutHandle(sliceArray, count);
+            break;
+        case 25:  /* SLICE_GET */
+            FalconSliceGetHandle(sliceArray, count);
+            break;
+        case 26:  /* SLICE_DEL */
+            FalconSliceDelHandle(sliceArray, count);
+            break;
+        default:
+            FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Unsupported SLICE operation");
+    }
+
+    /* 4. 计算响应大小 */
+    size_t response_size = 0;
+
+    if (operation_type == 24 || operation_type == 26) {  /* SLICE_PUT / SLICE_DEL */
+        /* 简单操作：返回 int32 状态码 */
+        response_size = count * sizeof(int32_t);
+    } else if (operation_type == 25) {  /* SLICE_GET */
+        /* SLICE_GET: int32(status) + slicenum(4) + slice_data */
+        for (uint32_t i = 0; i < count; i++) {
+            response_size += sizeof(int32_t);  /* status */
+            response_size += sizeof(uint32_t);  /* slicenum */
+            response_size += sliceInfoArray[i].count * (8 + 4 + 8 + 4 + 4 + 4 + 4 + 4);  /* 每个slice 40字节 */
+        }
+    }
+
+    /* 5. 分配共享内存 */
+    FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
+    uint64_t responseShmemShift = FalconShmemAllocatorAlloc(allocator, response_size);
+    char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
+    char *resp_p = responseBuffer;
+
+    /* 6. 写入响应 */
+    if (operation_type == 24 || operation_type == 26) {  /* SLICE_PUT / SLICE_DEL */
+        for (uint32_t i = 0; i < count; i++) {
+            *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
+            resp_p += 4;
+        }
+    } else if (operation_type == 25) {  /* SLICE_GET */
+        for (uint32_t i = 0; i < count; i++) {
+            *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
+            resp_p += 4;
+
+            *(uint32_t*)resp_p = sliceInfoArray[i].count;
+            resp_p += 4;
+
+            for (uint32_t j = 0; j < sliceInfoArray[i].count; j++) {
+                *(uint64_t*)resp_p = sliceInfoArray[i].inodeIds[j]; resp_p += 8;
+                *(uint32_t*)resp_p = sliceInfoArray[i].chunkIds[j]; resp_p += 4;
+                *(uint64_t*)resp_p = sliceInfoArray[i].sliceIds[j]; resp_p += 8;
+                *(uint32_t*)resp_p = sliceInfoArray[i].sliceSizes[j]; resp_p += 4;
+                *(uint32_t*)resp_p = sliceInfoArray[i].sliceOffsets[j]; resp_p += 4;
+                *(uint32_t*)resp_p = sliceInfoArray[i].sliceLens[j]; resp_p += 4;
+                *(uint32_t*)resp_p = sliceInfoArray[i].sliceLoc1s[j]; resp_p += 4;
+                *(uint32_t*)resp_p = sliceInfoArray[i].sliceloc2s[j]; resp_p += 4;
+            }
+        }
+    }
+
+    printf("[debug] falcon_batch_slice_call: EXIT, response_size=%zu\n", response_size);
+    fflush(stdout);
+
     PG_RETURN_INT64(responseShmemShift);
 }
