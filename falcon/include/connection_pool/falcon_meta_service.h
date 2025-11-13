@@ -8,9 +8,9 @@
 #include <memory>
 #include <mutex>
 #include "connection_pool/falcon_meta_service_interface.h"
-#include "connection_pool/pg_connection_pool.h"
 
 class PGConnection;
+class PGConnectionPool;
 
 namespace falcon {
 namespace meta_service {
