@@ -392,8 +392,7 @@ using AnyMetaParam = std::variant<
     ChownParam,
     ChmodParam,
     SliceIndexParam,
-    SliceInfoParam,
-    SliceIdParam
+    SliceInfoParam
 >;
 
 namespace meta_param_helper {
@@ -645,6 +644,7 @@ struct FalconMetaServiceRequest {
     FalconMetaOperationType operation;
     FormDataKvIndex kv_data;
     AnyMetaParam file_params;
+    SliceIdParam sliceid_param;
     bool allow_batch_with_others_;
 
     FalconMetaServiceRequest()

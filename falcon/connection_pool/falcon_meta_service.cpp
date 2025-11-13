@@ -493,8 +493,6 @@ bool FalconMetaServiceSerializer::SerializeRequestToBinary(
         }
 
         case DFC_FETCH_SLICE_ID: {
-            const SliceIdParam* param = meta_param_helper::Get<SliceIdParam>(request.file_params);
-            if (!param) return false;
             // header + count(4) + type(1)
             total_size += 4 + 1;
             break;
@@ -796,14 +794,9 @@ bool FalconMetaServiceSerializer::SerializeRequestToBinary(
         }
 
         case DFC_FETCH_SLICE_ID: {
-            const SliceIdParam* param = meta_param_helper::Get<SliceIdParam>(request.file_params);
-            if (!param) {
-                delete[] buffer;
-                return false;
-            }
-            *(uint32_t*)p = param->count;
+            *(uint32_t*)p = request.sliceid_param.count;
             p += 4;
-            *(uint8_t*)p = param->type;
+            *(uint8_t*)p = request.sliceid_param.type;
             p += 1;
             break;
         }
