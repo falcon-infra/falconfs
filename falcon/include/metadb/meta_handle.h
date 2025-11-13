@@ -47,6 +47,41 @@ typedef enum FalconSupportMetaService {
     NOT_SUPPORTED
 } FalconSupportMetaService;
 
+// 获取 FalconSupportMetaService 的字符串名称
+static inline const char* FalconSupportMetaServiceName(FalconSupportMetaService svc) {
+    switch (svc) {
+        case PLAIN_COMMAND: return "PLAIN_COMMAND";
+        case MKDIR: return "MKDIR";
+        case MKDIR_SUB_MKDIR: return "MKDIR_SUB_MKDIR";
+        case MKDIR_SUB_CREATE: return "MKDIR_SUB_CREATE";
+        case CREATE: return "CREATE";
+        case STAT: return "STAT";
+        case OPEN: return "OPEN";
+        case CLOSE: return "CLOSE";
+        case UNLINK: return "UNLINK";
+        case READDIR: return "READDIR";
+        case OPENDIR: return "OPENDIR";
+        case RMDIR: return "RMDIR";
+        case RMDIR_SUB_RMDIR: return "RMDIR_SUB_RMDIR";
+        case RMDIR_SUB_UNLINK: return "RMDIR_SUB_UNLINK";
+        case RENAME: return "RENAME";
+        case RENAME_SUB_RENAME_LOCALLY: return "RENAME_SUB_RENAME_LOCALLY";
+        case RENAME_SUB_CREATE: return "RENAME_SUB_CREATE";
+        case UTIMENS: return "UTIMENS";
+        case CHOWN: return "CHOWN";
+        case CHMOD: return "CHMOD";
+        case KV_PUT: return "KV_PUT";
+        case KV_GET: return "KV_GET";
+        case KV_DEL: return "KV_DEL";
+        case SLICE_PUT: return "SLICE_PUT";
+        case SLICE_GET: return "SLICE_GET";
+        case SLICE_DEL: return "SLICE_DEL";
+        case FETCH_SLICE_ID: return "FETCH_SLICE_ID";
+        case NOT_SUPPORTED: return "NOT_SUPPORTED";
+        default: return "UNKNOWN";
+    }
+}
+
 // func whose name ends with internal is not supposed to be called by external user
 void FalconMkdirHandle(MetaProcessInfo *infoArray, int count);
 void FalconMkdirSubMkdirHandle(MetaProcessInfo *infoArray, int count);

@@ -92,8 +92,8 @@ public:
         fflush(stdout);
 
         if (callback) {
-            printf("[debug] AsyncFalconMetaServiceJob::Done: Calling user callback, opcode=%d, status=%d\n",
-                   response.opcode, response.status);
+            printf("[debug] AsyncFalconMetaServiceJob::Done: Calling user callback, opcode=%d(%s), status=%d\n",
+                   response.opcode, FalconMetaOperationTypeName(response.opcode), response.status);
             fflush(stdout);
 
             callback(response, user_context);

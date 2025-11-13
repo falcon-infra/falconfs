@@ -85,6 +85,43 @@ enum FalconMetaOperationType {
 };
 
 /**
+ * 获取 FalconMetaOperationType 的字符串名称
+ */
+inline const char* FalconMetaOperationTypeName(FalconMetaOperationType op) {
+    switch (op) {
+        case DFC_PUT_KEY_META: return "DFC_PUT_KEY_META";
+        case DFC_GET_KV_META: return "DFC_GET_KV_META";
+        case DFC_DELETE_KV_META: return "DFC_DELETE_KV_META";
+        case DFC_PLAIN_COMMAND: return "DFC_PLAIN_COMMAND";
+        case DFC_MKDIR: return "DFC_MKDIR";
+        case DFC_CREATE: return "DFC_CREATE";
+        case DFC_STAT: return "DFC_STAT";
+        case DFC_OPEN: return "DFC_OPEN";
+        case DFC_CLOSE: return "DFC_CLOSE";
+        case DFC_UNLINK: return "DFC_UNLINK";
+        case DFC_READDIR: return "DFC_READDIR";
+        case DFC_OPENDIR: return "DFC_OPENDIR";
+        case DFC_RMDIR: return "DFC_RMDIR";
+        case DFC_RENAME: return "DFC_RENAME";
+        case DFC_MKDIR_SUB_MKDIR: return "DFC_MKDIR_SUB_MKDIR";
+        case DFC_MKDIR_SUB_CREATE: return "DFC_MKDIR_SUB_CREATE";
+        case DFC_RMDIR_SUB_RMDIR: return "DFC_RMDIR_SUB_RMDIR";
+        case DFC_RMDIR_SUB_UNLINK: return "DFC_RMDIR_SUB_UNLINK";
+        case DFC_RENAME_SUB_RENAME_LOCALLY: return "DFC_RENAME_SUB_RENAME_LOCALLY";
+        case DFC_RENAME_SUB_CREATE: return "DFC_RENAME_SUB_CREATE";
+        case DFC_UTIMENS: return "DFC_UTIMENS";
+        case DFC_CHOWN: return "DFC_CHOWN";
+        case DFC_CHMOD: return "DFC_CHMOD";
+        case DFC_SLICE_PUT: return "DFC_SLICE_PUT";
+        case DFC_SLICE_GET: return "DFC_SLICE_GET";
+        case DFC_SLICE_DEL: return "DFC_SLICE_DEL";
+        case DFC_FETCH_SLICE_ID: return "DFC_FETCH_SLICE_ID";
+        case NOT_SUPPORTED: return "NOT_SUPPORTED";
+        default: return "UNKNOWN";
+    }
+}
+
+/**
  * Shard Table 信息结构（用于 DFC_PLAIN_COMMAND）
  */
 struct ShardTableInfo {

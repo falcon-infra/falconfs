@@ -44,6 +44,41 @@ static inline char* ReadString(char** p_ptr)
     return str;
 }
 
+/* 获取 MetaServiceType 的字符串名称（protobuf 枚举值） */
+static inline const char* MetaServiceTypeNameFromProto(int32_t type)
+{
+    switch (type) {
+        case 0: return "PLAIN_COMMAND";
+        case 1: return "MKDIR";
+        case 2: return "MKDIR_SUB_MKDIR";
+        case 3: return "MKDIR_SUB_CREATE";
+        case 4: return "CREATE";
+        case 5: return "STAT";
+        case 6: return "OPEN";
+        case 7: return "CLOSE";
+        case 8: return "UNLINK";
+        case 9: return "READDIR";
+        case 10: return "OPENDIR";
+        case 11: return "RMDIR";
+        case 12: return "RMDIR_SUB_RMDIR";
+        case 13: return "RMDIR_SUB_UNLINK";
+        case 14: return "RENAME";
+        case 15: return "RENAME_SUB_RENAME_LOCALLY";
+        case 16: return "RENAME_SUB_CREATE";
+        case 17: return "UTIMENS";
+        case 18: return "CHOWN";
+        case 19: return "CHMOD";
+        case 20: return "KV_PUT";
+        case 21: return "KV_GET";
+        case 22: return "KV_DEL";
+        case 23: return "SLICE_PUT";
+        case 24: return "SLICE_GET";
+        case 25: return "SLICE_DEL";
+        case 26: return "FETCH_SLICE_ID";
+        default: return "UNKNOWN";
+    }
+}
+
 /*
  * falcon_batch_meta_call_by_shmem
  *
@@ -65,7 +100,8 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     uint64_t paramShmemShift = (uint64_t)PG_GETARG_INT64(1);
     int64_t signature = PG_GETARG_INT64(2);
 
-    printf("[debug] falcon_batch_meta_call_by_shmem: ENTRY, operation_type=%d\n", operation_type);
+    printf("[debug] falcon_batch_meta_call_by_shmem: ENTRY, operation_type=%d(%s)\n",
+           operation_type, MetaServiceTypeNameFromProto(operation_type));
     fflush(stdout);
 
     /* 1. 从共享内存获取数据 */
@@ -712,7 +748,8 @@ static Datum falcon_batch_sliceid_call(char *paramBuffer, int64_t signature)
  */
 static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer, int64_t signature)
 {
-    printf("[debug] falcon_batch_slice_call: ENTRY, operation_type=%d\n", operation_type);
+    printf("[debug] falcon_batch_slice_call: ENTRY, operation_type=%d(%s)\n",
+           operation_type, MetaServiceTypeNameFromProto(operation_type));
     fflush(stdout);
 
     /* 1. 解析头部 */

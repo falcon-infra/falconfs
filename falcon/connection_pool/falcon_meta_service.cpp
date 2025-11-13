@@ -31,8 +31,8 @@ static void HandleFalconMetaResponse(brpc::Controller* cntl,
     FalconMetaServiceResponse& response = original_job->GetResponse();
     response.opcode = original_job->GetRequest().operation;
 
-    printf("[debug] HandleFalconMetaResponse: opcode=%d, cntl->Failed()=%d\n",
-           response.opcode, cntl->Failed());
+    printf("[debug] HandleFalconMetaResponse: opcode=%d(%s), cntl->Failed()=%d\n",
+           response.opcode, FalconMetaOperationTypeName(response.opcode), cntl->Failed());
     fflush(stdout);
 
     if (cntl->Failed()) {
@@ -194,7 +194,7 @@ int FalconMetaService::DispatchFalconMetaServiceJob(AsyncFalconMetaServiceJob* j
     }
 
     FalconMetaServiceRequest& request = job->GetRequest();
-    printf("[debug] DispatchFalconMetaServiceJob: opcode=%d\n", request.operation);
+    printf("[debug] DispatchFalconMetaServiceJob: opcode=%d(%s)\n", request.operation, FalconMetaOperationTypeName(request.operation));
     fflush(stdout);
 
     // 1. 创建 BRPC Controller 和 Protobuf 请求
@@ -249,8 +249,8 @@ int FalconMetaService::SubmitFalconMetaRequest(const FalconMetaServiceRequest& r
                                                FalconMetaServiceCallback callback,
                                                void* user_context)
 {
-    printf("[debug] FalconMetaService::SubmitFalconMetaRequest: ENTRY, opcode=%d, callback_valid=%d\n",
-           request.operation, callback ? 1 : 0);
+    printf("[debug] FalconMetaService::SubmitFalconMetaRequest: ENTRY, opcode=%d(%s), callback_valid=%d\n",
+           request.operation, FalconMetaOperationTypeName(request.operation), callback ? 1 : 0);
     fflush(stdout);
 
     if (!initialized) {
