@@ -682,9 +682,9 @@ static Datum falcon_batch_sliceid_call(char *paramBuffer)
 
     /* 5. 分配共享内存 */
     FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
-    uint64_t responseShmemShift = FalconShmemAllocatorAlloc(allocator, response_size);
+    uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response_size);
     if (responseShmemShift == 0)
-        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocatorAlloc failed. Size: %zu.", response_size);
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocatorMalloc failed. Size: %zu.", response_size);
 
     char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
     char *resp_p = responseBuffer;
@@ -805,7 +805,7 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
 
     /* 5. 分配共享内存 */
     FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
-    uint64_t responseShmemShift = FalconShmemAllocatorAlloc(allocator, response_size);
+    uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response_size);
     char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
     char *resp_p = responseBuffer;
 

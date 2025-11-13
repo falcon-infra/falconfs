@@ -313,7 +313,7 @@ bool FalconMetaServiceSerializer::SerializeRequestToBinary(
     proto_request->set_allow_batch_with_others(request.allow_batch_with_others());
     proto_request->set_format(falcon::meta_proto::SerializationFormat::BINARY);
 
-    size_t total_size = sizeof(BinaryHeader);
+    size_t total_size = sizeof(FalconMetaService::BinaryHeader);
 
     switch (request.operation) {
         case DFC_MKDIR:
@@ -511,14 +511,14 @@ bool FalconMetaServiceSerializer::SerializeRequestToBinary(
     char* p = buffer;
     total_size = aligned_size;  // 更新 total_size 为对齐后的大小
 
-    BinaryHeader* header = (BinaryHeader*)p;
+    FalconMetaService::BinaryHeader* header = (FalconMetaService::BinaryHeader*)p;
     header->signature = FALCON_BINARY_SIGNATURE;
     header->count = 1;
     // 存储 protobuf MetaServiceType 值，而不是 DFC 枚举值
     // 这样才能和 SQL 调用参数匹配
     header->operation_type = static_cast<uint32_t>(proto_type);
     header->reserved = 0;
-    p += sizeof(BinaryHeader);
+    p += sizeof(FalconMetaService::BinaryHeader);
 
     auto write_string = [&p](const std::string& str) {
         uint16_t len = str.length();
