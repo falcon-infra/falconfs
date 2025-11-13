@@ -2255,6 +2255,7 @@ void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count)
             heap_freetuple(heapTuple);
         }
 
+        CatalogCloseIndexes(indexState);
         table_close(sliceRel, RowExclusiveLock);
     }
 }
