@@ -56,8 +56,8 @@ static inline char* ReadString(char** p_ptr)
  *
  * 返回: 响应在共享内存中的偏移量
  */
-static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer);
-static Datum falcon_batch_sliceid_call(char *paramBuffer);
+static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer, int64_t signature);
+static Datum falcon_batch_sliceid_call(char *paramBuffer, int64_t signature);
 
 Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 {
@@ -77,12 +77,12 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
     /* 特殊处理 FETCH_SLICE_ID 操作 (26=FETCH_SLICE_ID, protobuf枚举值) */
     if (operation_type == 26) {
-        return falcon_batch_sliceid_call(paramBuffer);
+        return falcon_batch_sliceid_call(paramBuffer, signature);
     }
 
     /* 特殊处理 SLICE 操作 (23=SLICE_PUT, 24=SLICE_GET, 25=SLICE_DEL, protobuf枚举值) */
     if (operation_type >= 23 && operation_type <= 25) {
-        return falcon_batch_slice_call(operation_type, paramBuffer);
+        return falcon_batch_slice_call(operation_type, paramBuffer, signature);
     }
 
     /* 2. 解析头部 */
@@ -653,7 +653,7 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
  *
  * FETCH_SLICE_ID 操作的专用处理函数
  */
-static Datum falcon_batch_sliceid_call(char *paramBuffer)
+static Datum falcon_batch_sliceid_call(char *paramBuffer, int64_t signature)
 {
     printf("[debug] falcon_batch_sliceid_call: ENTRY\n");
     fflush(stdout);
@@ -687,6 +687,7 @@ static Datum falcon_batch_sliceid_call(char *paramBuffer)
         FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocatorMalloc failed. Size: %zu.", response_size);
 
     char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
+    FALCON_SHMEM_ALLOCATOR_SET_SIGNATURE(responseBuffer, signature);
     char *resp_p = responseBuffer;
 
     /* 6. 写入响应 */
@@ -709,7 +710,7 @@ static Datum falcon_batch_sliceid_call(char *paramBuffer)
  *
  * SLICE 操作的专用处理函数（SLICE_PUT/GET/DEL）
  */
-static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
+static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer, int64_t signature)
 {
     printf("[debug] falcon_batch_slice_call: ENTRY, operation_type=%d\n", operation_type);
     fflush(stdout);
@@ -807,6 +808,7 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
     FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
     uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response_size);
     char *responseBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, responseShmemShift);
+    FALCON_SHMEM_ALLOCATOR_SET_SIGNATURE(responseBuffer, signature);
     char *resp_p = responseBuffer;
 
     /* 6. 写入响应 */
