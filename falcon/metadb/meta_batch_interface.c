@@ -75,13 +75,13 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
 
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
 
-    /* 特殊处理 FETCH_SLICE_ID 操作 (27=FETCH_SLICE_ID) */
-    if (operation_type == 27) {
+    /* 特殊处理 FETCH_SLICE_ID 操作 (26=FETCH_SLICE_ID, protobuf枚举值) */
+    if (operation_type == 26) {
         return falcon_batch_sliceid_call(paramBuffer);
     }
 
-    /* 特殊处理 SLICE 操作 (24=SLICE_PUT, 25=SLICE_GET, 26=SLICE_DEL) */
-    if (operation_type >= 24 && operation_type <= 26) {
+    /* 特殊处理 SLICE 操作 (23=SLICE_PUT, 24=SLICE_GET, 25=SLICE_DEL, protobuf枚举值) */
+    if (operation_type >= 23 && operation_type <= 25) {
         return falcon_batch_slice_call(operation_type, paramBuffer);
     }
 
@@ -738,7 +738,7 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
         sliceInfoArray[i].errorCode = SUCCESS;
 
         /* 解析参数 */
-        if (operation_type == 24) {  /* SLICE_PUT */
+        if (operation_type == 23) {  /* SLICE_PUT (protobuf值) */
             sliceInfoArray[i].name = ReadString(&p);
             sliceInfoArray[i].count = *(uint32_t*)p;
             p += 4;
@@ -764,7 +764,7 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
                 sliceInfoArray[i].sliceLoc1s[j] = *(uint32_t*)p; p += 4;
                 sliceInfoArray[i].sliceloc2s[j] = *(uint32_t*)p; p += 4;
             }
-        } else if (operation_type == 25 || operation_type == 26) {  /* SLICE_GET / SLICE_DEL */
+        } else if (operation_type == 24 || operation_type == 25) {  /* SLICE_GET / SLICE_DEL (protobuf值) */
             sliceInfoArray[i].name = ReadString(&p);
             sliceInfoArray[i].inputInodeid = *(uint64_t*)p;
             p += 8;
@@ -775,13 +775,13 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
 
     /* 3. 调用 Handle 函数 */
     switch (operation_type) {
-        case 24:  /* SLICE_PUT */
+        case 23:  /* SLICE_PUT (protobuf值) */
             FalconSlicePutHandle(sliceArray, count);
             break;
-        case 25:  /* SLICE_GET */
+        case 24:  /* SLICE_GET (protobuf值) */
             FalconSliceGetHandle(sliceArray, count);
             break;
-        case 26:  /* SLICE_DEL */
+        case 25:  /* SLICE_DEL (protobuf值) */
             FalconSliceDelHandle(sliceArray, count);
             break;
         default:
@@ -791,10 +791,10 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
     /* 4. 计算响应大小 */
     size_t response_size = 0;
 
-    if (operation_type == 24 || operation_type == 26) {  /* SLICE_PUT / SLICE_DEL */
+    if (operation_type == 23 || operation_type == 25) {  /* SLICE_PUT / SLICE_DEL (protobuf值) */
         /* 简单操作：返回 int32 状态码 */
         response_size = count * sizeof(int32_t);
-    } else if (operation_type == 25) {  /* SLICE_GET */
+    } else if (operation_type == 24) {  /* SLICE_GET (protobuf值) */
         /* SLICE_GET: int32(status) + slicenum(4) + slice_data */
         for (uint32_t i = 0; i < count; i++) {
             response_size += sizeof(int32_t);  /* status */
@@ -810,12 +810,12 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer)
     char *resp_p = responseBuffer;
 
     /* 6. 写入响应 */
-    if (operation_type == 24 || operation_type == 26) {  /* SLICE_PUT / SLICE_DEL */
+    if (operation_type == 23 || operation_type == 25) {  /* SLICE_PUT / SLICE_DEL (protobuf值) */
         for (uint32_t i = 0; i < count; i++) {
             *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
             resp_p += 4;
         }
-    } else if (operation_type == 25) {  /* SLICE_GET */
+    } else if (operation_type == 24) {  /* SLICE_GET (protobuf值) */
         for (uint32_t i = 0; i < count; i++) {
             *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
             resp_p += 4;
