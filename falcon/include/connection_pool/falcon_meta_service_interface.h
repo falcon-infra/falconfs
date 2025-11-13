@@ -649,7 +649,7 @@ struct FalconMetaServiceRequest {
 
     FalconMetaServiceRequest()
         : operation(DFC_PUT_KEY_META),
-          allow_batch_with_others_(true) {}
+          allow_batch_with_others_(false) {}
 
     bool allow_batch_with_others() const { return allow_batch_with_others_; }
     void set_allow_batch_with_others(bool value) { allow_batch_with_others_ = value; }
