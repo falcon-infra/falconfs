@@ -727,7 +727,7 @@ static Datum falcon_batch_sliceid_call(char *paramBuffer, int64_t signature)
     char *resp_p = responseBuffer;
 
     /* 6. 写入响应 */
-    *(int32_t*)resp_p = (infoData.errorCode == SUCCESS) ? 0 : -1;
+    *(int32_t*)resp_p = infoData.errorCode;
     resp_p += 4;
     *(uint64_t*)resp_p = infoData.start;
     resp_p += 8;
@@ -851,12 +851,12 @@ static Datum falcon_batch_slice_call(int32_t operation_type, char *paramBuffer, 
     /* 6. 写入响应 */
     if (operation_type == 23 || operation_type == 25) {  /* SLICE_PUT / SLICE_DEL (protobuf值) */
         for (uint32_t i = 0; i < count; i++) {
-            *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
+            *(int32_t*)resp_p = sliceInfoArray[i].errorCode;
             resp_p += 4;
         }
     } else if (operation_type == 24) {  /* SLICE_GET (protobuf值) */
         for (uint32_t i = 0; i < count; i++) {
-            *(int32_t*)resp_p = (sliceInfoArray[i].errorCode == SUCCESS) ? 0 : -1;
+            *(int32_t*)resp_p = sliceInfoArray[i].errorCode;
             resp_p += 4;
 
             *(uint32_t*)resp_p = sliceInfoArray[i].count;
