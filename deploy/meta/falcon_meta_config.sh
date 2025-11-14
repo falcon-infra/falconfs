@@ -4,7 +4,7 @@ cnIp='127.0.0.1'
 workerIpList=('127.0.0.1')
 workerNumList=(1)
 
-metaValidDuration=100
+metaValidDuration=-1
 
 uniquePortPrefix=555
 cnPortPrefix=${uniquePortPrefix}0
