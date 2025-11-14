@@ -48,4 +48,8 @@ void TransactionManagerInit(void);
 
 StringInfo GetImplicitTransactionGid(void);
 
+void FalconXEventBeforeCommit(void);
+void FalconXEventAfterCommit(void);
+void FalconXEventAfterAbort(void);
+
 #endif

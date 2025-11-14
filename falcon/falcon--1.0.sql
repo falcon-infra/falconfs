@@ -12,6 +12,13 @@ CREATE SCHEMA falcon;
 ----------------------------------------------------------------
 -- falcon_control
 ----------------------------------------------------------------
+CREATE TABLE falcon.falcon_expired_inodeid_table(
+    inodeid bigint
+);
+CREATE UNIQUE INDEX falcon_expired_inodeid_table_index ON falcon.falcon_expired_inodeid_table USING btree(inodeid);
+ALTER TABLE falcon.falcon_expired_inodeid_table SET SCHEMA pg_catalog;
+GRANT SELECT ON pg_catalog.falcon_expired_inodeid_table TO public;
+
 CREATE FUNCTION pg_catalog.falcon_start_background_service()
     RETURNS INTEGER
     LANGUAGE C STRICT
@@ -189,7 +196,8 @@ COMMENT ON FUNCTION pg_catalog.falcon_transaction_cleanup_test()
 CREATE TABLE falcon.falcon_directory_table(
     parent_id bigint,
     name text,
-    inodeid bigint
+    inodeid bigint,
+    accesstime bigint
 );
 CREATE UNIQUE INDEX falcon_directory_table_index ON falcon.falcon_directory_table using btree(parent_id, name);
 ALTER TABLE falcon.falcon_directory_table SET SCHEMA pg_catalog;
@@ -226,6 +234,41 @@ CREATE FUNCTION pg_catalog.falcon_run_pooler_server_func()
 COMMENT ON FUNCTION pg_catalog.falcon_run_pooler_server_func()
     IS 'falcon run pooler server';
 
+CREATE FUNCTION pg_catalog.falcon_delete_expired_files_internal(inodeid bigint)
+  RETURNS INTEGER
+  LANGUAGE C STRICT
+  AS 'MODULE_PATHNAME', $$falcon_delete_expired_files_internal$$;
+COMMENT ON FUNCTION pg_catalog.falcon_delete_expired_files_internal(inodeid bigint)
+  IS 'falcon falcon_delete_expired_files_internal';
+
+CREATE FUNCTION pg_catalog.falcon_test_renew_func()
+  RETURNS INTEGER
+  LANGUAGE C STRICT
+  AS 'MODULE_PATHNAME', $$falcon_test_renew_func$$;
+COMMENT ON FUNCTION pg_catalog.falcon_test_renew_func()
+  IS 'falcon falcon_test_renew_func';
+
+CREATE FUNCTION pg_catalog.falcon_get_expired_directory()
+  RETURNS TABLE(parent_id bigint, name text, accesstime bigint)
+  LANGUAGE C STRICT
+  AS 'MODULE_PATHNAME', $$falcon_get_expired_directory$$;
+COMMENT ON FUNCTION pg_catalog.falcon_get_expired_directory()
+  IS 'falcon get expired directory';
+
+CREATE FUNCTION pg_catalog.falcon_delete_expired_directory_internal(parent_id bigint, name cstring)
+  RETURNS INTEGER
+  LANGUAGE C STRICT
+  AS 'MODULE_PATHNAME', $$falcon_delete_expired_directory_internal$$;
+COMMENT ON FUNCTION pg_catalog.falcon_delete_expired_directory_internal(bigint, cstring)
+  IS 'falcon clear expired directory internal';
+
+CREATE FUNCTION pg_catalog.falcon_test_expiration()
+  RETURNS INTEGER
+  LANGUAGE C STRICT
+  AS 'MODULE_PATHNAME', $$falcon_test_expiration$$;
+COMMENT ON FUNCTION pg_catalog.falcon_test_expiration()
+  IS 'falcon test expiration';
+  
 
 CREATE SEQUENCE falcon.pg_dfs_inodeid_seq
     MINVALUE 1

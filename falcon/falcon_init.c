@@ -15,6 +15,7 @@
 
 #include "connection_pool/connection_pool.h"
 #include "control/control_flag.h"
+#include "control/meta_expiration.h"
 #include "control/hook.h"
 #include "dir_path_shmem/dir_path_hash.h"
 #include "metadb/foreign_server.h"
@@ -32,6 +33,7 @@ PG_MODULE_MAGIC;
 void _PG_init(void);
 static void FalconStart2PCCleanupWorker(void);
 static void FalconStartConnectionPoolWorker(void);
+static void FalconStartMetaExpirationWorker(void);
 static void InitializeFalconShmemStruct(void);
 static void RegisterFalconConfigVariables(void);
 
@@ -52,6 +54,7 @@ void _PG_init(void)
 
     FalconStart2PCCleanupWorker();
     FalconStartConnectionPoolWorker();
+    FalconStartMetaExpirationWorker();
 }
 
 /*
@@ -135,6 +138,49 @@ static void FalconStartConnectionPoolWorker(void)
                  errmsg("could not start falcon background process"),
                  errhint("More detials may be available in the server log.")));
 }
+
+/*
+ * Start meta expiration process.
+ */
+static void FalconStartMetaExpirationWorker(void)
+{
+	BackgroundWorker worker;
+	BackgroundWorkerHandle *handle;
+	BgwHandleStatus status;
+	pid_t		pid;
+
+	MemSet(&worker, 0, sizeof(BackgroundWorker));
+    strcpy(worker.bgw_name, "falcon_meta_expiration_process");
+    strcpy(worker.bgw_type, "falcon_daemon");
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
+    worker.bgw_restart_time = 1;
+	strcpy(worker.bgw_library_name, "falcon");
+	strcpy(worker.bgw_function_name, "FalconDaemonMetaExpirationProcessMain");
+
+	if (process_shared_preload_libraries_in_progress)
+	{
+		RegisterBackgroundWorker(&worker);
+		return;
+	}
+
+	/* must set notify PID to wait for startup */
+	worker.bgw_notify_pid = MyProcPid;
+
+	if (!RegisterDynamicBackgroundWorker(&worker, &handle))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("could not register background process"),
+				 errhint("You may need to increase max_worker_processes.")));
+
+	status = WaitForBackgroundWorkerStartup(handle, &pid);
+	if (status != BGWH_STARTED)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("could not start background process"),
+				 errhint("More details may be available in the server log.")));
+}
+
 
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
@@ -273,4 +319,17 @@ static void RegisterFalconConfigVariables(void)
                             NULL,
                             NULL);
     FalconConnectionPoolShmemSize = (uint64_t)FalconConnectionPoolShmemSizeInMB * 1024 * 1024;
+
+    DefineCustomIntVariable("falcon_expiration.meta_valid_duration",
+                            gettext_noop("Metadata is guaranteed to remain valid for this duration (in s) after the most recent access"),
+                            NULL,
+                            &FalconMetaValidDuration,
+                            FALCON_META_NEVER_EXPIRE,
+                            FALCON_META_NEVER_EXPIRE,
+                            INT32_MAX,
+                            PGC_POSTMASTER,
+                            0,
+                            NULL,
+                            NULL,
+                            NULL);
 }

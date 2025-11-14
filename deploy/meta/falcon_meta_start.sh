@@ -44,6 +44,7 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+falcon_expiration.meta_valid_duration = $metaValidDuration
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -90,6 +91,7 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+falcon_expiration.meta_valid_duration = $metaValidDuration
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi

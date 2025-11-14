@@ -20,6 +20,7 @@
 #include "catalog/pg_namespace_d.h"
 #include "common/hashfn.h"
 #include "funcapi.h"
+#include "storage/lmgr.h"
 #include "storage/lock.h"
 #include "utils/builtins.h"
 #include "utils/dynahash.h"
@@ -28,12 +29,14 @@
 #include "utils/palloc.h"
 #include "utils/snapmgr.h"
 
+#include "control/meta_expiration.h"
 #include "metadb/directory_path.h"
 #include "metadb/directory_table.h"
 #include "utils/error_log.h"
 #include "utils/rwlock.h"
 #include "utils/shmem_control.h"
 #include "utils/utils.h"
+#include "utils/utils_standalone.h"
 
 #define NUM_FREELISTS 32
 
@@ -108,7 +111,7 @@ static char DirPathHashToCommitAction[MAX_DIRECTORY_HASH_TO_COMMIT_ACTION_LENGTH
 static DirPathHashItem DirPathHashToCommitActionInfo[MAX_DIRECTORY_HASH_TO_COMMIT_ACTION_LENGTH];
 static int DirPathHashToCommitSize = 0;
 void DirPathHashToCommitAddEntry(uint64_t parentId, const char *fileName);
-void DirPathHashToCommitUpdateEntry(uint64_t parentId, const char *fileName, uint64_t inodeId);
+void DirPathHashToCommitUpdateEntry(uint64_t parentId, const char *fileName, uint64_t inodeId, int64_t accessTime);
 void DirPathHashToCommitClear(void);
 
 void DirPathHashToCommitAddEntry(uint64_t parentId, const char *fileName)
@@ -121,7 +124,7 @@ void DirPathHashToCommitAddEntry(uint64_t parentId, const char *fileName)
     strcpy(DirPathHashToCommitActionInfo[DirPathHashToCommitSize].key.fileName, fileName);
     DirPathHashToCommitSize++;
 }
-void DirPathHashToCommitUpdateEntry(uint64_t parentId, const char *fileName, uint64_t inodeId)
+void DirPathHashToCommitUpdateEntry(uint64_t parentId, const char *fileName, uint64_t inodeId, int64_t accessTime)
 {
     if (DirPathHashToCommitSize >= MAX_DIRECTORY_HASH_TO_COMMIT_ACTION_LENGTH)
         FALCON_ELOG_ERROR(PROGRAM_ERROR,
@@ -130,6 +133,7 @@ void DirPathHashToCommitUpdateEntry(uint64_t parentId, const char *fileName, uin
     DirPathHashToCommitActionInfo[DirPathHashToCommitSize].key.parentId = parentId;
     strcpy(DirPathHashToCommitActionInfo[DirPathHashToCommitSize].key.fileName, fileName);
     DirPathHashToCommitActionInfo[DirPathHashToCommitSize].inodeId = inodeId;
+    DirPathHashToCommitActionInfo[DirPathHashToCommitSize].accessTime = accessTime;
     DirPathHashToCommitSize++;
 }
 void DirPathHashToCommitClear() { DirPathHashToCommitSize = 0; }
@@ -314,6 +318,7 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
     strcpy(dirPathHashKey.fileName, name);
     dirPathHashKey.parentId = parentId;
 
+    int64_t accessTime = 0, updatedAccessTime = 0;
     bool isfound = false;
     uint32 hashcode = dir_path_hash((const void *)&dirPathHashKey, sizeof(DirPathHashKey));
     LWLock *lock = DIR_PATH_HASH_PARTITION_LOCK(hashcode);
@@ -326,7 +331,7 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
     if (!isfound || item->inodeId == DIR_HASH_TABLE_PATH_UNKNOWN) {
         LWLockRelease(lock);
         uint64_t tempId;
-        SearchDirectoryTableInfo(relation, parentId, name, &tempId);
+        SearchDirectoryTableInfo(relation, parentId, name, &tempId, &accessTime, &updatedAccessTime);
         if (tempId != DIR_HASH_TABLE_PATH_NOT_EXIST)
             FALCON_ELOG_ERROR(ARGUMENT_ERROR, "target exists.");
 
@@ -350,9 +355,11 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
                 RWLockInitialize(&item->lock);
                 item->usageCount = 0;
                 item->inodeId = tempId;
+                item->accessTime = accessTime;
                 DirPathHashToCommitAddEntry(dirPathHashKey.parentId, dirPathHashKey.fileName);
             } else if (item->inodeId == DIR_HASH_TABLE_PATH_UNKNOWN) {
                 item->inodeId = tempId;
+                item->accessTime = 0;
             } else if (item->inodeId != tempId)
                 FALCON_ELOG_ERROR(PROGRAM_ERROR, "dir path hash table is corrupt.");
             break;
@@ -360,7 +367,7 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
     }
     if (!item) {
         LWLockRelease(lock);
-        InsertIntoDirectoryTable(relation, indexState, parentId, name, inodeId);
+        InsertIntoDirectoryTable(relation, indexState, parentId, name, inodeId, GetCurrentTimeInUs());
         return;
     }
     item->usageCount++;
@@ -387,9 +394,10 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
         DirectoryHashTableLastAcquiredLock = &item->lock;
     }
 
-    InsertIntoDirectoryTable(relation, indexState, parentId, name, inodeId);
+    int64_t currentTime = GetCurrentTimeInUs();
+    InsertIntoDirectoryTable(relation, indexState, parentId, name, inodeId, currentTime);
 
-    DirPathHashToCommitUpdateEntry(parentId, name, inodeId);
+    DirPathHashToCommitUpdateEntry(parentId, name, inodeId, currentTime);
 }
 
 uint64_t
@@ -401,6 +409,8 @@ SearchDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const 
     strcpy(dirPathHashKey.fileName, name);
     dirPathHashKey.parentId = parentId;
 
+    int64_t accessTime = 0, updatedAccessTime = 0;
+	bool accessTimeChecked = false;
     bool isfound = false;
     uint32 hashcode = dir_path_hash((const void *)&dirPathHashKey, sizeof(DirPathHashKey));
     LWLock *lock = DIR_PATH_HASH_PARTITION_LOCK(hashcode);
@@ -412,7 +422,8 @@ SearchDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const 
                                                                            &isfound);
     if (!isfound || item->inodeId == DIR_HASH_TABLE_PATH_UNKNOWN) {
         LWLockRelease(lock);
-        SearchDirectoryTableInfo(relation, parentId, name, &inodeId);
+        SearchDirectoryTableInfo(relation, parentId, name, &inodeId, &accessTime, &updatedAccessTime);
+        accessTimeChecked = true;
 
         for (;;) {
             LWLockAcquire(lock, LW_EXCLUSIVE);
@@ -434,9 +445,11 @@ SearchDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const 
                 RWLockInitialize(&item->lock);
                 item->usageCount = 0;
                 item->inodeId = inodeId;
+                item->accessTime = accessTime;
                 DirPathHashToCommitAddEntry(dirPathHashKey.parentId, dirPathHashKey.fileName);
             } else if (item->inodeId == DIR_HASH_TABLE_PATH_UNKNOWN) {
                 item->inodeId = inodeId;
+                item->accessTime = accessTime;
             } else if (item->inodeId != inodeId)
                 FALCON_ELOG_ERROR(PROGRAM_ERROR, "dir path hash table is corrupt.");
             break;
@@ -470,12 +483,36 @@ SearchDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const 
         DirectoryHashTableLastAcquiredLock = &item->lock;
     }
 
+    if (item->inodeId == DIR_HASH_TABLE_PATH_NOT_EXIST)
+	{
+		return item->inodeId;
+	}
+    if (!accessTimeChecked)
+	{
+		int64_t currentTime = GetCurrentTimeInUs();
+		accessTime = item->accessTime;
+		if (NeedRenewMetaAccessTime(accessTime, currentTime))
+		{
+			updatedAccessTime = currentTime;
+			LockRelation(relation, RowExclusiveLock);
+			RenewDirectoryTableAccessTime(relation, parentId, name, updatedAccessTime);
+			UnlockRelation(relation, RowExclusiveLock);
+		}
+	}
+    if (updatedAccessTime != 0)
+    {
+        DirPathHashToCommitUpdateEntry(dirPathHashKey.parentId, dirPathHashKey.fileName, item->inodeId, updatedAccessTime);
+    }
+
     return item->inodeId;
 }
+
 void DeleteDirectoryByDirectoryHashTable(Relation relation,
                                          uint64_t parentId,
                                          const char *name,
-                                         DirPathLockMode lockMode)
+                                         DirPathLockMode lockMode,
+                                         bool forExpired,
+                                         uint64_t* inodeId)
 {
     if (lockMode == DIR_LOCK_SHARED)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "not supported lockmode while deleting.");
@@ -522,7 +559,7 @@ void DeleteDirectoryByDirectoryHashTable(Relation relation,
     }
     if (!item) {
         LWLockRelease(lock);
-        DeleteFromDirectoryTable(relation, parentId, name);
+        DeleteFromDirectoryTable(relation, parentId, name, forExpired, inodeId);
         return;
     }
     item->usageCount++;
@@ -536,9 +573,9 @@ void DeleteDirectoryByDirectoryHashTable(Relation relation,
         DirectoryHashTableLastAcquiredLock = &item->lock;
     }
 
-    DeleteFromDirectoryTable(relation, parentId, name);
+    DeleteFromDirectoryTable(relation, parentId, name, forExpired, inodeId);
 
-    DirPathHashToCommitUpdateEntry(dirPathHashKey.parentId, dirPathHashKey.fileName, DIR_HASH_TABLE_PATH_NOT_EXIST);
+    DirPathHashToCommitUpdateEntry(dirPathHashKey.parentId, dirPathHashKey.fileName, DIR_HASH_TABLE_PATH_NOT_EXIST, 0);
 }
 
 static DirPathHashItem *FindNextItem(HASH_SEQ_STATUS *status, int32_t *destroyableCnt)
@@ -647,7 +684,10 @@ void CommitForDirPathHash()
                 strcpy(item->key.fileName, DirPathHashToCommitActionInfo[i].key.fileName);
             }
             if (item)
+            {
                 item->inodeId = DirPathHashToCommitActionInfo[i].inodeId;
+                item->accessTime = DirPathHashToCommitActionInfo[i].accessTime;
+            }
             LWLockRelease(lock);
             break;
         }
