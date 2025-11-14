@@ -2310,6 +2310,13 @@ void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count)
         systable_endscan(scanDesc);
         table_close(sliceRel, RowExclusiveLock);
 
+        /* if result is NIL */
+        if (getResult == NIL) {
+            info->errorCode = FILE_NOT_EXISTS;
+            info->count = 0;
+            continue;
+        }
+
         SliceInfo **infos = (SliceInfo **)getResult->elements;
         info->count = list_length(getResult);
         info->inodeIds = (uint64_t *)palloc(sizeof(uint64_t) * info->count);
