@@ -10,6 +10,8 @@
 
 #include "connection_pool/brpc_server.h"
 #include "dir_path_shmem/dir_path_hash.h"
+#include "distributed_backend/remote_comm_falcon.h"
+#include "metadb/foreign_server.h"
 #include "metadb/meta_process_info.h"
 #include "metadb/shard_table.h"
 #include "utils/error_log.h"
@@ -19,6 +21,7 @@ PG_FUNCTION_INFO_V1(falcon_clear_user_data_func);
 PG_FUNCTION_INFO_V1(falcon_clear_all_data_func);
 PG_FUNCTION_INFO_V1(falcon_clear_cached_relation_oid_func);
 PG_FUNCTION_INFO_V1(falcon_run_pooler_server_func);
+PG_FUNCTION_INFO_V1(falcon_move_shard);
 
 Datum falcon_clear_user_data_func(PG_FUNCTION_ARGS)
 {
@@ -107,5 +110,129 @@ Datum falcon_clear_cached_relation_oid_func(PG_FUNCTION_ARGS)
 Datum falcon_run_pooler_server_func(PG_FUNCTION_ARGS)
 {
     PG_RunConnectionPoolBrpcServer();
+    PG_RETURN_INT16(0);
+}
+
+Datum falcon_move_shard(PG_FUNCTION_ARGS)
+{
+    // TODO: Need move xattr_table too, but this table is not used currently.
+
+    int32_t rangePoint = PG_GETARG_INT32(0);
+    int32_t targetServerId = PG_GETARG_INT32(1);
+
+    int32_t rangePointCheck, sourceServerId;
+    SearchShardInfoByHashValue(rangePoint, &rangePointCheck, &sourceServerId);
+    if (rangePoint != rangePointCheck)
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "No shard matches input range point.");
+    if (FALCON_CN_SERVER_ID != GetLocalServerId())
+        FALCON_ELOG_ERROR(WRONG_WORKER, "falcon_move_shard can only be called on CN.");
+    if (sourceServerId == targetServerId)
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Target server is the same with source server.");
+
+    List* foreignServerIdList = GetAllForeignServerId(false, false);
+    
+    StringInfo updateShardTableCommand = makeStringInfo();
+    appendStringInfo(updateShardTableCommand, 
+        "SELECT falcon_update_shard_table(ARRAY[%d], ARRAY[%d]);",
+        rangePoint, targetServerId);
+    FalconPlainCommandOnWorkerList(updateShardTableCommand->data,
+        REMOTE_COMMAND_FLAG_WRITE, foreignServerIdList);
+    
+    StringInfo createNewTableCommand = makeStringInfo();
+    appendStringInfo(createNewTableCommand, 
+        "SELECT falcon_create_distributed_data_table_by_range_point(%d);",
+        rangePoint);
+    FalconPlainCommandOnWorkerList(createNewTableCommand->data,
+        REMOTE_COMMAND_FLAG_WRITE, list_make1_int(targetServerId));
+    
+    FalconSendCommandAndWaitForResult();
+
+    List* foreignServerConnList = GetForeignServerConnection(list_make2_int(sourceServerId, targetServerId));
+    ForeignServerConnection* sourceServerConn = list_nth(foreignServerConnList, 0);
+    ForeignServerConnection* targetServerConn = list_nth(foreignServerConnList, 1);
+
+    StringInfo sourceCommand = makeStringInfo();
+    appendStringInfo(sourceCommand, "COPY falcon_inode_table_%d TO STDOUT (FORMAT BINARY);",
+        rangePoint);
+    if (PQsendQueryParams(sourceServerConn->conn, sourceCommand->data,
+            0, NULL, NULL, NULL, NULL, 1) != 1)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "Send COPY TO failed.");
+
+    StringInfo targetCommand = makeStringInfo();
+    appendStringInfo(targetCommand, "COPY falcon_inode_table_%d FROM STDIN (FORMAT BINARY);",
+        rangePoint);
+    if (PQsendQueryParams(targetServerConn->conn, targetCommand->data,
+        0, NULL, NULL, NULL, NULL, 1) != 1) 
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "Send COPY TO failed.");
+    
+    if (!PQpipelineSync(sourceServerConn->conn))
+        FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "Source PQpipelineSync failed. ErrorMsg: %s",
+            PQerrorMessage(sourceServerConn->conn));
+    if (!PQpipelineSync(targetServerConn->conn))
+        FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "Target PQpipelineSync failed. ErrorMsg: %s",
+            PQerrorMessage(targetServerConn->conn));
+    
+    PGresult *sourceRes = PQgetResult(sourceServerConn->conn);
+    if (PQresultStatus(sourceRes) != PGRES_COPY_OUT)
+        FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "Source not in COPY_OUT state: %s", 
+            PQerrorMessage(sourceServerConn->conn));
+    PQclear(sourceRes);
+
+
+    PGresult *targetRes = PQgetResult(targetServerConn->conn);
+    if (PQresultStatus(targetRes) != PGRES_COPY_IN)
+        FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "Target not in COPY_IN state: %s", 
+            PQerrorMessage(targetServerConn->conn));
+    PQclear(targetRes);
+    
+    while (true) 
+    {
+        char* buffer;
+        int size = PQgetCopyData(sourceServerConn->conn, &buffer, 0);
+        if (size == -2)
+        {
+            char* errorMsg = PQerrorMessage(sourceServerConn->conn);
+            FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "PQgetCopyData failed. ErrorMsg: %s",
+                errorMsg);
+        }
+        else if (size == -1)
+        {
+            break;
+        }
+        
+        int ret = PQputCopyData(targetServerConn->conn, buffer, size);
+        PQfreemem(buffer);
+        if (ret != 1)
+        {
+            char* errorMsg = PQerrorMessage(targetServerConn->conn);
+            FALCON_ELOG_ERROR_EXTENDED(REMOTE_QUERY_FAILED, "PQputCopyData failed. ErrorMsg: %s",
+                errorMsg);
+        }    
+    }
+    
+    PGresult* res = PQgetResult(sourceServerConn->conn);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "copy from failed.");
+    
+    int ret = PQputCopyEnd(targetServerConn->conn, NULL);
+    if (ret != 1)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "PQputCopyEnd(1) failed.");
+    res = PQgetResult(targetServerConn->conn);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "PQputCopyEnd(2) failed.");
+    res = PQgetResult(targetServerConn->conn);
+    if (res != NULL)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "PQputCopyEnd(3) failed.");
+    res = PQgetResult(targetServerConn->conn);
+    if (PQresultStatus(res) != PGRES_PIPELINE_SYNC)
+        FALCON_ELOG_ERROR(REMOTE_QUERY_FAILED, "PQputCopyEnd(4) failed.");
+
+    StringInfo dropSourceCommand = makeStringInfo();
+    appendStringInfo(dropSourceCommand, "SELECT falcon_drop_distributed_data_table_by_range_point(%d);",
+        rangePoint);
+    FalconPlainCommandOnWorkerList(dropSourceCommand->data, 
+        REMOTE_COMMAND_FLAG_WRITE, list_make1_int(sourceServerId));
+    FalconSendCommandAndWaitForResult();
+
     PG_RETURN_INT16(0);
 }

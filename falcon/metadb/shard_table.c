@@ -136,7 +136,6 @@ Datum falcon_update_shard_table(PG_FUNCTION_ARGS)
     CatalogCloseIndexes(indstate);
     table_close(rel, RowExclusiveLock);
     InvalidateShardTableShmemCache();
-    ReloadShardTableShmemCache();
 
     PG_RETURN_INT16(0);
 }
@@ -237,10 +236,8 @@ Oid ShardRelationIndexId(void)
     return CachedRelationOid[CACHED_RELATION_SHARD_TABLE_INDEX];
 }
 
-void SearchShardInfoByShardValue(uint64_t shardColValue, int32_t *rangePoint, int32_t *serverId)
+void SearchShardInfoByHashValue(int32_t hashValue, int32_t *rangePoint, int32_t *serverId)
 {
-    // Block shard map read only when transfer operations acquire AccessExclusiveLock
-    int32 hashvalue = HashShard(shardColValue);
     while (pg_atomic_read_u32(ShardTableShmemCacheInvalid)) {
         ReloadShardTableShmemCache();
     }
@@ -249,7 +246,7 @@ void SearchShardInfoByShardValue(uint64_t shardColValue, int32_t *rangePoint, in
     int r = *ShardTableShmemCacheCount;
     while (l < r) {
         int mid = (l + r) / 2;
-        if (ShardTableShmemCache[mid].range_point < hashvalue)
+        if (ShardTableShmemCache[mid].range_point < hashValue)
             l = mid + 1;
         else
             r = mid;
@@ -257,12 +254,18 @@ void SearchShardInfoByShardValue(uint64_t shardColValue, int32_t *rangePoint, in
     if (l == *ShardTableShmemCacheCount) {
         FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR,
                                    "shard value %d out of range, max support %d",
-                                   hashvalue,
+                                   hashValue,
                                    ShardTableShmemCache[*ShardTableShmemCacheCount - 1].range_point);
     }
     *rangePoint = ShardTableShmemCache[l].range_point;
     *serverId = ShardTableShmemCache[l].server_id;
     LWLockRelease(&ShardTableShmemControl->lock);
+}
+void SearchShardInfoByShardValue(uint64_t shardColValue, int32_t *rangePoint, int32_t *serverId)
+{
+    // Block shard map read only when transfer operations acquire AccessExclusiveLock
+    int32 hashValue = HashShard(shardColValue);
+    SearchShardInfoByHashValue(hashValue, rangePoint, serverId);
 }
 
 List *GetShardTableData()

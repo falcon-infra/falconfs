@@ -96,6 +96,9 @@ int ErrorCodeToErrno(int errorCode)
     case PATH_NOT_EXISTS:
         ret = ENOENT;
         break;
+    case PATH_VERIFY_FAILED:
+        ret = EINVAL;
+        break;
     default:
         ret = EIO;
         break;

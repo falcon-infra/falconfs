@@ -259,7 +259,7 @@ static HTAB *GetRemotePreparedTransactionSet(int serverId)
     StringInfo commandContainer = makeStringInfo();
     int localId = GetLocalServerId();
     appendStringInfo(commandContainer,
-                     "SELECT gid FROM pg_prepared_xacts WHERE gid LIKE '%s%%:%d:%%'",
+                     "SELECT gid FROM pg_prepared_xacts WHERE gid LIKE '%s%%:%d:%%';",
                      FALCON_TRANSACTION_2PC_HEAD,
                      localId);
     const char *command = commandContainer->data;

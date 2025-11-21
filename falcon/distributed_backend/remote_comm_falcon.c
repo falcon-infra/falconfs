@@ -324,7 +324,7 @@ MultipleServerRemoteCommandResult FalconSendCommandAndWaitForResult()
 
             res = FetchPGresultAndMark(foreignServerConn->conn);
             if (res != NULL)
-                FALCON_ELOG_ERROR(PROGRAM_ERROR, "a NULL is expected");
+                FALCON_ELOG_ERROR(PROGRAM_ERROR, "a NULL is expected.");
         }
 
         multipleServerRemoteCommandResult = lappend(multipleServerRemoteCommandResult, resPerServer);

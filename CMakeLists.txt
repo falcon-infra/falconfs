@@ -5,6 +5,7 @@ project(FalconFS VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_FIND_DEBUG_MODE OFF)
 
 set(CMAKE_CXX_FLAGS "-D_FILE_OFFSET_BITS=64 -DTHREADED -DWITH_FUSE_OPT=${WITH_FUSE_OPT}")
 set(CMAKE_BUILD_TYPE Debug)
@@ -27,7 +28,24 @@ if(WITH_PROMETHEUS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_PROMETHEUS")
 endif()
 
+add_compile_options(
+    -Wno-deprecated
+    -Wno-deprecated-declarations
+    -Wno-sign-compare
+)
+
 # ==================== Dependencies =================
+if(DEFINED ENV{FALCONFS_INSTALL_DIR})
+    set(CMAKE_INSTALL_RPATH "$ENV{FALCONFS_INSTALL_DIR}/lib64:$ENV{FALCONFS_INSTALL_DIR}/lib")
+    include_directories($ENV{FALCONFS_INSTALL_DIR}/include)
+    link_directories($ENV{FALCONFS_INSTALL_DIR}/lib64 $ENV{FALCONFS_INSTALL_DIR}/lib)
+    set(CMAKE_PREFIX_PATH "$ENV{FALCONFS_INSTALL_DIR};$ENV{FALCONFS_INSTALL_DIR}/python;${CMAKE_PREFIX_PATH}" CACHE STRING "" FORCE)
+endif()
+add_compile_options(
+    -Wno-deprecated-declarations
+    -Wno-sign-compare
+)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(BRPC REQUIRED)
 
@@ -38,6 +56,7 @@ find_package(BRPC REQUIRED)
 find_package(GFlags REQUIRED)
 find_package(LevelDB REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Compiler flags with GFlags namespace
 set(GFLAGS_NS "gflags")
@@ -77,6 +96,7 @@ file(GLOB_RECURSE common_src "${COMMON_SRC_PATH}/*.cpp" "${COMMON_SRC_PATH}/*.c"
 
 add_subdirectory(falcon_store)
 add_subdirectory(falcon_client)
+add_subdirectory(python_interface/_pyfalconfs_internal)
 
 if(NOT DEFINED POSTGRES_SRC_DIR)
     message(FATAL_ERROR "POSTGRES_SRC_DIR must be defined")
@@ -113,7 +133,7 @@ target_include_directories(falcon_client PUBLIC
 )
 
 # ==================== Install Targets =================
-install(TARGETS FalconStore FalconClient falcon_client
+install(TARGETS falcon_client
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib

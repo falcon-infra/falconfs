@@ -16,7 +16,7 @@ fi
 
 # 1. Unmount first (will stop the mounted instance)
 if mount | grep -q "$MNT_PATH"; then
-    $SUDO fusermount -u "$MNT_PATH"
+    $SUDO umount -l "$MNT_PATH"
     echo "Unmounted $MNT_PATH and stopped associated falcon_client"
 else
     echo "$MNT_PATH is not mounted"
@@ -24,7 +24,7 @@ fi
 
 # 2. Kill any remaining falcon_client processes (for unmounted instances)
 sleep 1
-pids=$(pgrep -f "^\./bin/falcon_client" | grep -v $$ | grep -v grep || true)
+pids=$(pgrep -f "^\falcon_client" | grep -v $$ | grep -v grep || true)
 if [ -n "$pids" ]; then
     for pid in $pids; do
         if ps -p "$pid" >/dev/null; then

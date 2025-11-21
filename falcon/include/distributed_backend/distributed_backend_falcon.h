@@ -10,6 +10,8 @@
 #include "metadb/metadata.h"
 
 void FalconCreateDistributedDataTable(void);
+void FalconCreateDistributedDataTableByRangePoint(int);
+void FalconDropDistributedDataTableByRangePoint(int);
 void FalconPrepareCommands(void);
 
 #endif

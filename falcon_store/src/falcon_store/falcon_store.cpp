@@ -11,6 +11,7 @@
 #include "init/falcon_init.h"
 #include "stats/falcon_stats.h"
 #include "storage/obs_storage.h"
+#include "util/utils.h"
 
 void FalconStore::SetFalconStoreParam(std::string &newNodeConfig) { nodeConfig = newNodeConfig; }
 

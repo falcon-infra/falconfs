@@ -470,6 +470,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                                           0,
                                                           &info->st_mode,
                                                           NULL,
+                                                          MODE_CHECK_NONE,
                                                           NULL,
                                                           NULL,
                                                           NULL,
@@ -533,6 +534,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                                   0,
                                                   NULL,
                                                   NULL,
+                                                  MODE_CHECK_NONE,
                                                   NULL,
                                                   NULL,
                                                   info->etag,
@@ -741,6 +743,7 @@ void FalconOpenHandle(MetaProcessInfo *infoArray, int count)
                                                            0,
                                                            &info->st_mode,
                                                            NULL,
+                                                           MODE_CHECK_NONE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -851,6 +854,7 @@ void FalconCloseHandle(MetaProcessInfo *infoArray, int count)
                                                            0,
                                                            NULL,
                                                            NULL,
+                                                           MODE_CHECK_NONE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -919,7 +923,8 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
 
     HASH_SEQ_STATUS status;
     hash_seq_init(&status, batchMetaProcessInfoListPerShard);
-    while ((entry = hash_seq_search(&status)) != 0) {
+    while ((entry = hash_seq_search(&status)) != 0) 
+    {
         StringInfo inodeShardName = GetInodeShardName(entry->shardId);
         StringInfo inodeIndexShardName = GetInodeIndexShardName(entry->shardId);
 
@@ -946,6 +951,7 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
                                                            -1,
                                                            &mode,
                                                            NULL,
+                                                           MODE_CHECK_MUST_BE_FILE,
                                                            NULL,
                                                            NULL,
                                                            NULL,
@@ -956,7 +962,9 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
                                                            NULL);
             if (!fileExist)
                 info->errorCode = FILE_NOT_EXISTS;
-            else if (nlink != 1 || !S_ISREG(mode))
+            else if (!S_ISREG(mode))
+                info->errorCode = PATH_VERIFY_FAILED;
+            else if (nlink != 1)
                 info->errorCode = PROGRAM_ERROR;
             else
                 info->errorCode = SUCCESS;
@@ -1323,6 +1331,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    -1,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1331,13 +1340,13 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    NULL,
                                                    NULL,
                                                    NULL);
-    if (nlink != 1)
-        FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
     if (!fileExist)
         FALCON_ELOG_ERROR_EXTENDED(FILE_NOT_EXISTS,
                                    UINT64_PRINT_SYMBOL ":%s is not existed in inode_table.",
                                    parentId_partId,
                                    name);
+    if (nlink != 1)
+        FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
 
     info->errorCode = SUCCESS;
 }
@@ -1743,6 +1752,7 @@ void FalconUtimeNsHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1802,6 +1812,7 @@ void FalconChownHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    NULL,
+                                                   MODE_CHECK_NONE,
                                                    &info->st_uid,
                                                    &info->st_gid,
                                                    NULL,
@@ -1863,6 +1874,7 @@ void FalconChmodHandle(MetaProcessInfo info)
                                                    0,
                                                    NULL,
                                                    &newExecMode,
+                                                   MODE_CHECK_NONE,
                                                    NULL,
                                                    NULL,
                                                    NULL,
