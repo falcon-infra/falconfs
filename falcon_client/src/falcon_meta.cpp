@@ -374,6 +374,10 @@ int FalconReadDir(const std::string &path, void *buf, FalconFuseFiller filler, o
                                         : dirOpenInstance->lastFileNames[ipPort].c_str());
             }
 #endif
+            if (ret != SUCCESS) {
+                FALCON_LOG(LOG_ERROR) << "FalconReadDir failed for path: " << path << ", DN: " << conn->server.id << ", ip: " << conn->server.ip << ", error code: " << ret;
+                return ret;
+            }
             dirOpenInstance->lastShardIndexes[ipPort] = readDirResponse.response->last_shard_index();
             if (readDirResponse.response->last_file_name() == nullptr)
                 dirOpenInstance->lastFileNames[ipPort] = "";
