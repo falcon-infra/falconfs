@@ -8,6 +8,12 @@
 
 Oid GetRelationOidByName_FALCON(const char *relationName);
 
+enum ModeCheckType
+{
+    MODE_CHECK_NONE,
+    MODE_CHECK_MUST_BE_FILE,
+    MODE_CHECK_MUST_BE_DIRECTORY
+};
 bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    Relation workerInodeRelation,
                                    const char *workerInodeRelationIndexName,
@@ -23,6 +29,7 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    const int nlinkChangeNum,
                                    mode_t *mode,
                                    const mode_t *newExecMode,
+                                   int modeCheckType,
                                    uint32_t *newUid,
                                    uint32_t *newGid,
                                    const char *newEtag,

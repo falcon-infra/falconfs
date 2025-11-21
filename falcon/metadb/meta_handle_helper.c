@@ -1,6 +1,7 @@
 #include "metadb/meta_handle_helper.h"
 
 #include "string.h"
+#include "sys/stat.h"
 
 #include "access/genam.h"
 #include "access/table.h"
@@ -53,6 +54,7 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    const int nlinkChangeNum,
                                    mode_t *mode,
                                    const mode_t *newExecMode,
+                                   int modeCheckType,
                                    uint32_t *newUid,
                                    uint32_t *newGid,
                                    const char *newEtag,
@@ -141,6 +143,15 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
     }
     if (mode) {
         *mode = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_st_mode, tupleDesc, &isNull));
+        if ((modeCheckType == MODE_CHECK_MUST_BE_FILE && !S_ISREG(*mode)) || 
+            (modeCheckType == MODE_CHECK_MUST_BE_DIRECTORY && !S_ISDIR(*mode))) {
+            systable_endscan(scanDescriptor);
+            if (!workerInodeRelation) {
+                table_close(workerInodeRel, doUpdate ? RowExclusiveLock : AccessShareLock);
+            }
+            // file exists, but is not the type expected
+            return true;
+        }
     }
     if (primaryNodeId) {
         *primaryNodeId = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_primary_nodeid, tupleDesc, &isNull));

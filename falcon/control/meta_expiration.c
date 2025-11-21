@@ -298,7 +298,9 @@ Datum falcon_delete_expired_directory_internal(PG_FUNCTION_ARGS)
         uint64_t nlink;
 	    bool fileExist = SearchAndUpdateInodeTableInfo(inodeShardName->data, NULL, inodeIndexShardName->data, InvalidOid,
 												       parentId_partId, name, true,
-                                      		    	   NULL, NULL, NULL, NULL, &nlink, -1, NULL, NULL, NULL, NULL, NULL, NULL,
+                                      		    	   NULL, NULL, NULL, NULL, &nlink, -1, NULL, NULL, 
+                                                       MODE_CHECK_MUST_BE_DIRECTORY, 
+                                                       NULL, NULL, NULL, NULL,
                                                        NULL, NULL, NULL, NULL);
         if (!fileExist)
             FALCON_ELOG_ERROR(ARGUMENT_ERROR, "file not exist.");
