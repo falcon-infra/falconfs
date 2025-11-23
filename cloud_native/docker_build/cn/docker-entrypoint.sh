@@ -7,4 +7,4 @@ if [ ! -d "/home/falconMeta/data/metadata" ]; then
     chmod 777 /home/falconMeta/data/metadata
 fi
 
-su falconMeta -c "bash /home/falconMeta/start.sh"
+su falconMeta -c "bash /home/falconMeta/start.sh >/home/falconMeta/data/start.log 2>&1"
