@@ -648,7 +648,7 @@ static int ClearExpiredDirectory()
         FlushErrorState();
         RollbackAndReleaseCurrentSubTransaction();
         FalconXEventAfterAbort();
-        elog(WARNING, "falcon: get expired directory failed.");
+        FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: get expired directory failed.");
     }
     PG_END_TRY();
     if (!expiredDirectoryHashTable)
@@ -665,16 +665,21 @@ static int ClearExpiredDirectory()
         {
             BeginInternalSubTransaction("delete_expired_directory");
             DeleteExpiredDirectory(entry->key.parentId, entry->key.name);
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 1");
             FalconXEventBeforeCommit();
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 2");
             ReleaseCurrentSubTransaction();
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 3");
             FalconXEventAfterCommit();
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 4");
         }
         PG_CATCH();
         {
+            EmitErrorReport();
             FlushErrorState();
             RollbackAndReleaseCurrentSubTransaction();
             FalconXEventAfterAbort();
-            elog(WARNING, "falcon: delete expired directory failed.");
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: delete expired directory failed.");
         }
         PG_END_TRY();
     }
@@ -694,7 +699,7 @@ static int ClearExpiredDirectory()
         FlushErrorState();
         RollbackAndReleaseCurrentSubTransaction();
         FalconXEventAfterAbort();
-        elog(WARNING, "falcon: delete expired file by inode id failed.");
+        FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: delete expired file by inode id failed.");
     }
     PG_END_TRY();
 
