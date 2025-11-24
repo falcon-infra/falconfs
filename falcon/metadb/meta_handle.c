@@ -1000,19 +1000,51 @@ void FalconUnlinkHandle(MetaProcessInfo *infoArray, int count)
 
 void FalconReadDirHandle(MetaProcessInfo info)
 {
+    printf("[debug] FalconReadDirHandle: ENTRY, info=%p\n", (void*)info);
+    fflush(stdout);
+
     const char *path = info->path;
+    printf("[debug] FalconReadDirHandle: path=%p ('%s')\n", (void*)path, path ? path : "NULL");
+    fflush(stdout);
+
     int32_t maxReadCount = info->readDirMaxReadCount;
+    printf("[debug] FalconReadDirHandle: maxReadCount=%d\n", maxReadCount);
+    fflush(stdout);
+
     if (maxReadCount == -1)
         maxReadCount = INT32_MAX;
     int32_t lastShardIndex = info->readDirLastShardIndex;
+    printf("[debug] FalconReadDirHandle: lastShardIndex=%d\n", lastShardIndex);
+    fflush(stdout);
+
     const char *lastFileName = info->readDirLastFileName;
+    printf("[debug] FalconReadDirHandle: lastFileName=%p ('%s')\n",
+           (void*)lastFileName, lastFileName ? lastFileName : "NULL");
+    fflush(stdout);
+
+    printf("[debug] FalconReadDirHandle: About to call VerifyPathValidity\n");
+    fflush(stdout);
 
     int32_t property;
     VerifyPathValidity(path, VERIFY_PATH_VALIDITY_REQUIREMENT_MUST_BE_DIRECTORY, &property);
 
+    printf("[debug] FalconReadDirHandle: VerifyPathValidity returned, property=%d\n", property);
+    fflush(stdout);
+
     uint64_t directoryId;
     uint64_t parentId;
+
+    printf("[debug] FalconReadDirHandle: About to call table_open\n");
+    fflush(stdout);
+
     Relation directoryRel = table_open(DirectoryRelationId(), AccessShareLock);
+
+    printf("[debug] FalconReadDirHandle: table_open returned, directoryRel=%p\n", (void*)directoryRel);
+    fflush(stdout);
+
+    printf("[debug] FalconReadDirHandle: About to call PathParseTreeInsert\n");
+    fflush(stdout);
+
     FalconErrorCode errorCode = PathParseTreeInsert(NULL,
                                                     directoryRel,
                                                     path,
@@ -1021,9 +1053,20 @@ void FalconReadDirHandle(MetaProcessInfo info)
                                                     &parentId,
                                                     NULL,
                                                     &directoryId);
+
+    printf("[debug] FalconReadDirHandle: PathParseTreeInsert returned, errorCode=%d\n", errorCode);
+    fflush(stdout);
+
     if (errorCode != SUCCESS)
         FALCON_ELOG_ERROR(errorCode, "path parse error.");
+
+    printf("[debug] FalconReadDirHandle: About to call table_close\n");
+    fflush(stdout);
+
     table_close(directoryRel, AccessShareLock);
+
+    printf("[debug] FalconReadDirHandle: table_close returned\n");
+    fflush(stdout);
 
     bool firstCall = lastShardIndex == -1;
 

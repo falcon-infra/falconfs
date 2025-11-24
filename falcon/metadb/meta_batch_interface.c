@@ -32,13 +32,28 @@ typedef struct BinaryHeader {
 static inline char* ReadString(char** p_ptr)
 {
     char* p = *p_ptr;
+    printf("[debug] ReadString: reading at p=%p\n", p);
+    fflush(stdout);
+
     uint16_t len = *(uint16_t*)p;
+    printf("[debug] ReadString: string length=%u\n", len);
+    fflush(stdout);
+
     p += sizeof(uint16_t);
 
+    printf("[debug] ReadString: allocating %u+1 bytes\n", len);
+    fflush(stdout);
+
     char* str = palloc(len + 1);
+    printf("[debug] ReadString: allocated str=%p, copying from p=%p\n", str, p);
+    fflush(stdout);
+
     memcpy(str, p, len);
     str[len] = '\0';
     p += len;
+
+    printf("[debug] ReadString: result='%s', next p=%p\n", str, p);
+    fflush(stdout);
 
     *p_ptr = p;
     return str;
@@ -100,46 +115,92 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
     uint64_t paramShmemShift = (uint64_t)PG_GETARG_INT64(1);
     int64_t signature = PG_GETARG_INT64(2);
 
-    printf("[debug] falcon_batch_meta_call_by_shmem: ENTRY, operation_type=%d(%s)\n",
-           operation_type, MetaServiceTypeNameFromProto(operation_type));
+    printf("[debug] falcon_batch_meta_call_by_shmem: ENTRY, operation_type=%d(%s), paramShmemShift=%lu, signature=%ld\n",
+           operation_type, MetaServiceTypeNameFromProto(operation_type), paramShmemShift, signature);
     fflush(stdout);
 
     /* 1. 从共享内存获取数据 */
     FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
-    if (paramShmemShift > allocator->pageCount * FALCON_SHMEM_ALLOCATOR_PAGE_SIZE)
+
+    printf("[debug] allocator=%p, allocatableSpaceBase=%p, pageCount=%u, pageSize=%d\n",
+           allocator, allocator->allocatableSpaceBase, allocator->pageCount, FALCON_SHMEM_ALLOCATOR_PAGE_SIZE);
+    fflush(stdout);
+
+    printf("[debug] paramShmemShift check: %lu vs max=%u\n",
+           paramShmemShift, (unsigned int)(allocator->pageCount * FALCON_SHMEM_ALLOCATOR_PAGE_SIZE));
+    fflush(stdout);
+
+    if (paramShmemShift > allocator->pageCount * FALCON_SHMEM_ALLOCATOR_PAGE_SIZE) {
+        printf("[debug] ERROR: paramShmemShift is OUT OF RANGE!\n");
+        fflush(stdout);
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
+    }
+
+    printf("[debug] Before FALCON_SHMEM_ALLOCATOR_GET_POINTER...\n");
+    fflush(stdout);
 
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
 
+    printf("[debug] After FALCON_SHMEM_ALLOCATOR_GET_POINTER: paramBuffer=%p\n", paramBuffer);
+    fflush(stdout);
+
     /* 特殊处理 FETCH_SLICE_ID 操作 (26=FETCH_SLICE_ID, protobuf枚举值) */
     if (operation_type == 26) {
+        printf("[debug] Dispatching to falcon_batch_sliceid_call\n");
+        fflush(stdout);
         return falcon_batch_sliceid_call(paramBuffer, signature);
     }
 
     /* 特殊处理 SLICE 操作 (23=SLICE_PUT, 24=SLICE_GET, 25=SLICE_DEL, protobuf枚举值) */
     if (operation_type >= 23 && operation_type <= 25) {
+        printf("[debug] Dispatching to falcon_batch_slice_call\n");
+        fflush(stdout);
         return falcon_batch_slice_call(operation_type, paramBuffer, signature);
     }
 
     /* 2. 解析头部 */
+    printf("[debug] Parsing BinaryHeader at paramBuffer=%p\n", paramBuffer);
+    fflush(stdout);
+
     BinaryHeader *header = (BinaryHeader *)paramBuffer;
+
+    printf("[debug] Read BinaryHeader: signature=0x%08X (expected=0x%08X), count=%u, operation_type=%u\n",
+           header->signature, FALCON_BINARY_SIGNATURE, header->count, header->operation_type);
+    fflush(stdout);
+
     if (header->signature != FALCON_BINARY_SIGNATURE) {
+        printf("[debug] ERROR: Invalid signature!\n");
+        fflush(stdout);
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Invalid signature");
     }
 
     uint32_t count = header->count;
     if (count == 0 || count > 1000) {  /* 安全检查 */
+        printf("[debug] ERROR: Invalid count=%u\n", count);
+        fflush(stdout);
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "Invalid count");
     }
 
+    printf("[debug] BinaryHeader validated successfully, count=%u\n", count);
+    fflush(stdout);
+
     char *p = paramBuffer + sizeof(BinaryHeader);
+
+    printf("[debug] Starting to parse parameters, p=%p (offset from paramBuffer=%ld)\n", p, p - paramBuffer);
+    fflush(stdout);
 
     /* 3. 构造 MetaProcessInfo 数组 */
     void *data = palloc((sizeof(MetaProcessInfoData) + sizeof(MetaProcessInfo)) * count);
     MetaProcessInfoData *infoDataArray = data;
     MetaProcessInfo *infoArray = (MetaProcessInfo *)(infoDataArray + count);
 
+    printf("[debug] Allocated infoDataArray=%p, infoArray=%p\n", infoDataArray, infoArray);
+    fflush(stdout);
+
     for (uint32_t i = 0; i < count; i++) {
+        printf("[debug] Processing request %u/%u, p=%p\n", i+1, count, p);
+        fflush(stdout);
+
         infoArray[i] = &infoDataArray[i];
         memset(&infoDataArray[i], 0, sizeof(MetaProcessInfoData));
         infoDataArray[i].errorCode = SUCCESS;
@@ -175,12 +236,22 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
                 break;
 
             case 9:  /* READDIR (protobuf enum) */
+                printf("[debug] READDIR: parsing path at p=%p\n", p);
+                fflush(stdout);
                 infoDataArray[i].path = ReadString(&p);
+                printf("[debug] READDIR: path='%s', parsing maxReadCount at p=%p\n", infoDataArray[i].path, p);
+                fflush(stdout);
                 infoDataArray[i].readDirMaxReadCount = *(int32_t*)p;
                 p += 4;
+                printf("[debug] READDIR: maxReadCount=%d, parsing lastShardIndex at p=%p\n", infoDataArray[i].readDirMaxReadCount, p);
+                fflush(stdout);
                 infoDataArray[i].readDirLastShardIndex = *(int32_t*)p;
                 p += 4;
+                printf("[debug] READDIR: lastShardIndex=%d, parsing lastFileName at p=%p\n", infoDataArray[i].readDirLastShardIndex, p);
+                fflush(stdout);
                 infoDataArray[i].readDirLastFileName = ReadString(&p);
+                printf("[debug] READDIR: lastFileName='%s', parsing complete\n", infoDataArray[i].readDirLastFileName);
+                fflush(stdout);
                 break;
 
             case 2: /* MKDIR_SUB_MKDIR (protobuf enum) */
@@ -344,7 +415,16 @@ Datum falcon_batch_meta_call_by_shmem(PG_FUNCTION_ARGS)
             FalconUnlinkHandle(infoArray, count);
             break;
         case 9:  /* READDIR (protobuf enum) */
+            printf("[debug] READDIR: About to call FalconReadDirHandle, infoArray[0]=%p\n", (void*)infoArray[0]);
+            fflush(stdout);
+            if (infoArray[0] != NULL) {
+                printf("[debug] READDIR: infoArray[0] valid, path=%p, readDirMaxReadCount=%d, readDirLastShardIndex=%d\n",
+                       (void*)infoArray[0]->path, infoArray[0]->readDirMaxReadCount, infoArray[0]->readDirLastShardIndex);
+                fflush(stdout);
+            }
             FalconReadDirHandle(infoArray[0]);  /* READDIR 不支持批处理 */
+            printf("[debug] READDIR: FalconReadDirHandle returned successfully\n");
+            fflush(stdout);
             break;
         case 10: /* OPENDIR (protobuf enum) */
             FalconOpenDirHandle(infoArray[0]);  /* OPENDIR 不支持批处理 */
