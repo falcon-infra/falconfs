@@ -65,9 +65,10 @@ bool NeedRenewMetaAccessTime(int64_t accessTime, int64_t currentTime)
     return currentTime - accessTime > (int64_t)FalconMetaValidDuration * 1000000ll;
 }
 
-#define CLEAR_EXPIRED_DIRECTORY_MAX_COUNT_ONCE    1024
+#define CLEAR_EXPIRED_DIRECTORY_MAX_COUNT_ONCE      32
 
 static int ClearExpiredDirectory(void);
+static int DeleteFilesByExpiredInodeId(void);
 
 PG_FUNCTION_INFO_V1(falcon_get_expired_directory);
 PG_FUNCTION_INFO_V1(falcon_delete_expired_directory_internal);
@@ -312,6 +313,7 @@ Datum falcon_delete_expired_directory_internal(PG_FUNCTION_ARGS)
 Datum falcon_test_expiration(PG_FUNCTION_ARGS)
 {
     int clearCount = ClearExpiredDirectory();
+    clearCount += DeleteFilesByExpiredInodeId();
     PG_RETURN_INT32(clearCount);
 }
 
@@ -355,19 +357,46 @@ void FalconDaemonMetaExpirationProcessMain(Datum main_arg)
             for (;;)
             {
                 StartTransactionCommand();
-                int clearCount = ClearExpiredDirectory();
-                CommitTransactionCommand();
-
-                if (clearCount == 0)
-                    break;
-                if (clearCount > 0)
-                    totalClearCount += clearCount;
+                PG_TRY();
+                {
+                    ClearExpiredDirectory();
+                    CommitTransactionCommand();
+                }
+                PG_CATCH();
+                {
+                    AbortCurrentTransaction();
+                    FlushErrorState();
+                    FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: clear expired directory failed.");
+                }
+                PG_END_TRY();
                 
-                sleep(1);
+                // delete files located in expired directories
+                int deleteFilesCount = 0;
+                StartTransactionCommand();
+                PG_TRY();
+                {
+                    deleteFilesCount = DeleteFilesByExpiredInodeId();
+                    CommitTransactionCommand();
+                }
+                PG_CATCH();
+                {
+                    AbortCurrentTransaction();
+                    FlushErrorState();
+                    FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: delete files by expired inoded id failed.");
+                    deleteFilesCount = -1;
+                }
+                PG_END_TRY();
+                
+                if (deleteFilesCount > 0)
+                    totalClearCount += deleteFilesCount;
+
+                // If there are no expired directories/files, we will sleep for a while
+                if (deleteFilesCount == 0)
+                    break;
             }
 
             if (totalClearCount != 0) {
-                elog(LOG, "ClearExpiredDirectoryProcess: clear %d expired directories.", totalClearCount);
+                elog(LOG, "ClearExpiredDirectoryProcess: clear %d expired directories/files.", totalClearCount);
             }
 
             MemoryContextSwitchTo(oldContext);
@@ -634,74 +663,20 @@ static int ClearExpiredDirectory()
 {
     // 1. get candidate
     HTAB* expiredDirectoryHashTable = NULL;
-    PG_TRY();
-    {
-        BeginInternalSubTransaction("get_all_expired_directory");
-		expiredDirectoryHashTable = GetAllExpiredDirectory();
-        FalconXEventBeforeCommit();
-        ReleaseCurrentSubTransaction();
-        FalconXEventAfterCommit();
-	}
-	PG_CATCH();
-    {
-        expiredDirectoryHashTable = NULL;
-        FlushErrorState();
-        RollbackAndReleaseCurrentSubTransaction();
-        FalconXEventAfterAbort();
-        FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: get expired directory failed.");
-    }
-    PG_END_TRY();
+	expiredDirectoryHashTable = GetAllExpiredDirectory();
     if (!expiredDirectoryHashTable)
         return -1;
 
     // 2. use 2pc to delete one by one
+    int clearCount = 0;
     HASH_SEQ_STATUS scan;
     ExpiredDirectoryEntry* entry;
     hash_seq_init(&scan, expiredDirectoryHashTable);
     while ((entry = (ExpiredDirectoryEntry*)hash_seq_search(&scan)))
     {
-        // sub transaction doesn't trigger XactCallback, so we should call them mannually
-        PG_TRY();
-        {
-            BeginInternalSubTransaction("delete_expired_directory");
-            DeleteExpiredDirectory(entry->key.parentId, entry->key.name);
-            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 1");
-            FalconXEventBeforeCommit();
-            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 2");
-            ReleaseCurrentSubTransaction();
-            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 3");
-            FalconXEventAfterCommit();
-            FALCON_ELOG_WARNING(PROGRAM_ERROR, "point 4");
-        }
-        PG_CATCH();
-        {
-            EmitErrorReport();
-            FlushErrorState();
-            RollbackAndReleaseCurrentSubTransaction();
-            FalconXEventAfterAbort();
-            FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: delete expired directory failed.");
-        }
-        PG_END_TRY();
+        DeleteExpiredDirectory(entry->key.parentId, entry->key.name);
+        ++clearCount;
     }
-    
-    // 3. traverse deleted directory, clear sub directories and files
-    int successClearCount = 0;
-    PG_TRY();
-    {
-        BeginInternalSubTransaction("DeleteExpiredInodeId");
-        successClearCount = DeleteFilesByExpiredInodeId();
-        FalconXEventBeforeCommit();
-        ReleaseCurrentSubTransaction();
-        FalconXEventAfterCommit();
-    }
-    PG_CATCH();
-    {
-        FlushErrorState();
-        RollbackAndReleaseCurrentSubTransaction();
-        FalconXEventAfterAbort();
-        FALCON_ELOG_WARNING(PROGRAM_ERROR, "falcon: delete expired file by inode id failed.");
-    }
-    PG_END_TRY();
 
-    return successClearCount;
+    return clearCount;
 }
