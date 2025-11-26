@@ -192,12 +192,6 @@ services:
       - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-1/data:/home/falconMeta/data
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
-      zk1:
-        condition: service_healthy
-      zk2:
-        condition: service_healthy
-      zk3:
-        condition: service_healthy
       cn1:
         condition: service_started
       cn2:
@@ -224,12 +218,6 @@ services:
       - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-2/data:/home/falconMeta/data
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
-      zk1:
-        condition: service_healthy
-      zk2:
-        condition: service_healthy
-      zk3:
-        condition: service_healthy
       cn1:
         condition: service_started
       cn2:
@@ -256,12 +244,6 @@ services:
       - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-3/data:/home/falconMeta/data
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
-      zk1:
-        condition: service_healthy
-      zk2:
-        condition: service_healthy
-      zk3:
-        condition: service_healthy
       cn1:
         condition: service_started
       cn2:

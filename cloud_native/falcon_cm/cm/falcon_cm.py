@@ -62,6 +62,22 @@ class FalconCM:
         self._send_msg_dst = os.environ.get("REPORT_DST", "None")
         self._use_error_report = int(os.environ.get("USE_ERROR_REPORT", "0"))
 
+    @property
+    def _replica_server_num(self):
+        """Getter for _replica_server_num"""
+        return self.__replica_server_num
+
+    @_replica_server_num.setter
+    def _replica_server_num(self, value):
+        """
+        The implement of cluster support replica_server_num bigger than 2.
+        Now value 0/1/2 has been tested, for safe let the valid range of
+        replica_server_num from 0 to 2.
+        """
+        if value > 2 or value < 0:
+            raise ValueError("value of replica_server_num must between [0, 2]")
+        self.__replica_server_num = value
+
     def connect_zk(self):
         try:
             self._zk_client = KazooClient(hosts=self._hosts, timeout=self._timeout)
@@ -562,7 +578,9 @@ class FalconCM:
                 self._cluster_name, len(candidates)
             )
         )
-        if self._replica_server_num > 0 and len(candidates) >= self._replica_server_num:
+        if self._replica_server_num > 0 and len(candidates) >= (
+            self._replica_server_num / 2 + 1
+        ):
             max_lsn = 0
             new_host_port = ""
             for candidate in candidates:

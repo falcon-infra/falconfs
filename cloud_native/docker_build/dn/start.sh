@@ -14,10 +14,13 @@ else
     echo "max_wal_senders=10" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "hot_standby=on" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "synchronous_commit=on" >>/home/falconMeta/data/metadata/postgresql.conf
-    if [ ${replica_server_num} == '0' ]; then
+    # default replica_server_num set to 2, compatible to ADS.
+    replica_server_num=${replica_server_num:-2}
+    sync_replica_num=$(((replica_server_num + 1) / 2))
+    if [ "${replica_server_num}" == "0" ]; then
         echo "synchronous_standby_names=''" >>/home/falconMeta/data/metadata/postgresql.conf
     else
-        echo "synchronous_standby_names='*'" >>/home/falconMeta/data/metadata/postgresql.conf
+        echo "synchronous_standby_names='${sync_replica_num}(*)'" >>/home/falconMeta/data/metadata/postgresql.conf
     fi
     echo "full_page_writes=on" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "wal_log_hints=on" >>/home/falconMeta/data/metadata/postgresql.conf
