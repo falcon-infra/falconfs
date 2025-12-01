@@ -61,6 +61,23 @@ class FalconCM:
         self._check_meta_period = int(os.environ.get("CHECK_META_PERIOD", "2")) * 3600
         self._send_msg_dst = os.environ.get("REPORT_DST", "None")
         self._use_error_report = int(os.environ.get("USE_ERROR_REPORT", "0"))
+
+    @property
+    def _replica_server_num(self):
+        """Getter for _replica_server_num"""
+        return self.__replica_server_num
+
+    @_replica_server_num.setter
+    def _replica_server_num(self, value):
+        """
+        The implement of cluster support replica_server_num bigger than 2.
+        Now value 0/1/2 has been tested, for safe let the valid range of
+        replica_server_num from 0 to 2.
+        """
+        if value > 2 or value < 0:
+            raise ValueError("value of replica_server_num must between [0, 2]")
+        self.__replica_server_num = value
+
     def connect_zk(self):
         try:
             self._zk_client = KazooClient(hosts=self._hosts, timeout=self._timeout)
@@ -341,7 +358,9 @@ class FalconCM:
                 self._cluster_name = "cn"
                 self._cluster_id = 0
             return
-        dn_cluster_num = int((self._dn_num - self._dn_supplement_num) / 3)
+        dn_cluster_num = int(
+            (self._dn_num - self._dn_supplement_num) / (self._replica_server_num + 1)
+        )
         while not found_cluster:
             if not self._zk_client.exists(self._cluster_path):
                 time.sleep(1)
@@ -549,7 +568,9 @@ class FalconCM:
                 self._cluster_name, len(candidates)
             )
         )
-        if len(candidates) >= self._replica_server_num:
+        if self._replica_server_num > 0 and len(candidates) >= (
+            self._replica_server_num / 2 + 1
+        ):
             max_lsn = 0
             new_host_port = ""
             for candidate in candidates:
@@ -634,6 +655,9 @@ class FalconCM:
             raise ex
         idx = 0
         for i in range(live_cn_num):
+            # replica num reach max value, the remains can't be added to hostNodes, and will be used as supplement.
+            if idx == self._replica_server_num:
+                break
             if self._cn_list[i] == self._host_node_name:
                 continue
             else:
@@ -647,11 +671,11 @@ class FalconCM:
                     self.logger.error("Failed to build the cluster: {}".format(ex))
                     raise ex
                 idx += 1
-            if idx == 2:
-                break
         self._dn_list = self._zk_client.get_children(self._dn_path)
         live_dn_num = len(self._dn_list)
-        cluster_num = int((live_dn_num - self._dn_supplement_num) / 3)
+        cluster_num = int(
+            (live_dn_num - self._dn_supplement_num) / (self._replica_server_num + 1)
+        )
         node_idx = 0
         for dn_idx in range(cluster_num):
             du_cluster_name = "dn{}".format(dn_idx)
@@ -698,7 +722,7 @@ class FalconCM:
                     data = self._zk_client.get(cluster_leader_path)
                     leader_infos[cluster_name] = bytes.decode(data[0])
             time.sleep(1)
-        init_filesystem(leader_infos, self._user_name)
+        init_filesystem(leader_infos, self._user_name, self._replica_server_num)
         self.build_all_membership()
 
     def build_all_membership(self):
@@ -800,14 +824,14 @@ class FalconCM:
                     self._lost_node_time[name] = self._lost_node_time[name] + 10
                 else:
                     self._lost_node_time[name] = 0
-                self.logger.info('lost time is {}'.format(self._lost_node_time[name]))
+                self.logger.info("lost time is {}".format(self._lost_node_time[name]))
                 if self._lost_node_time[name] >= self._wait_replica_time - 10:
                     retry_num = 0
             else:
                 if name in self._lost_node_time:
                     del self._lost_node_time[name]
         if retry_num == 0:
-            self.logger.info('check replica lost')
+            self.logger.info("check replica lost")
             for name in host_nodes:
                 node_path = ""
                 if self._is_cn:
@@ -908,7 +932,9 @@ class FalconCM:
             retry_num = 10
             while not cluster_is_healthy and retry_num > 0:
                 time.sleep(60)
-                cluster_is_healthy, error_message, error_node = check_replication_status()
+                cluster_is_healthy, error_message, error_node = (
+                    check_replication_status()
+                )
                 if not cluster_is_healthy:
                     self.logger.error("cluster is not healthy!")
                 retry_num -= 1
@@ -919,7 +945,7 @@ class FalconCM:
     def watch_need_supplement(self):
         @self._zk_client.ChildrenWatch(self._need_supplement_path)
         def watch_nodes(children):
-            self.logger.info('in need supplement watch')
+            self.logger.info("in need supplement watch")
             self._watch_need_supplement_lock.acquire()
             self._need_supplement_num += 1
             self._watch_need_supplement_lock.release()
@@ -929,7 +955,7 @@ class FalconCM:
 
         @self._zk_client.ChildrenWatch(replica_path)
         def watch_nodes(children):
-            self.logger.info('in watch replicas')
+            self.logger.info("in watch replicas")
             self._watch_replica_lock.acquire()
             self._replica_change_num += 1
             self._watch_replica_lock.release()

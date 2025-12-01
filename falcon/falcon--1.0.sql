@@ -337,3 +337,4 @@ CREATE TABLE falcon.falcon_filesliceid_table(
 CREATE UNIQUE INDEX falcon_filesliceid_table_index ON falcon.falcon_filesliceid_table using btree(keystr);
 ALTER TABLE falcon.falcon_filesliceid_table SET SCHEMA pg_catalog;
 GRANT SELECT ON pg_catalog.falcon_filesliceid_table TO public;
+

@@ -1,0 +1,312 @@
+version: "3.8"
+
+x-falcon-env: &falcon-env
+  POD_NAMESPACE: falconfs
+  zk_endpoint: zk-1:2181,zk-2:2181,zk-3:2181
+  cluster_name: "/falcon"
+  STORAGE_THRESHOLD: "0.9"
+  BRPC_PORT: "50039"
+  wait_replica_time: "600"
+  data_dir: "/home/falconMeta/data"
+  cn_num: "3"
+  cn_sup_num: "0"
+  dn_num: "3"
+  dn_sup_num: "0"
+  replica_server_num: 2
+  has_falcon_stor: "False"
+
+x-falcon-common: &falcon-common
+  privileged: true
+  restart: unless-stopped
+  stop_grace_period: 10s
+
+x-falcon-healthcheck: &falcon-healthcheck
+  test: ["CMD-SHELL", "bash /home/falconMeta/check_liveness.sh"]
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+x-store-healthcheck: &store-healthcheck
+  test: ["CMD-SHELL", "bash /root/check_liveness.sh"]
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+services:
+  zk1:
+    image: localhost:5000/zookeeper:3.8.3
+    container_name: falcon-zk-1
+    hostname: zk-1
+    networks:
+      falcon-net:
+        aliases:
+          - zk-1
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      # 2181 is the client port; 2888 and 3888 are used for replication and leader election respectively.
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/zk-1/data:/data
+
+  zk2:
+    image: localhost:5000/zookeeper:3.8.3
+    container_name: falcon-zk-2
+    hostname: zk-2
+    networks:
+      falcon-net:
+        aliases:
+          - zk-2
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      ZOO_MY_ID: 2
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/zk-2/data:/data
+
+  zk3:
+    image: localhost:5000/zookeeper:3.8.3
+    container_name: falcon-zk-3
+    hostname: zk-3
+    networks:
+      falcon-net:
+        aliases:
+          - zk-3
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      ZOO_MY_ID: 3
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/zk-3/data:/data
+
+  cn1:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-cn:ubuntu24.04
+    container_name: falcon-cn-1
+    hostname: cn-1
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.11
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-1
+      NODE_IP: 172.18.0.11
+      POD_NAME: falcon-cn-1
+      POD_IP: 172.18.0.11
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-1/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck
+
+  cn2:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-cn:ubuntu24.04
+    container_name: falcon-cn-2
+    hostname: cn-2
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.12
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-2
+      NODE_IP: 172.18.0.12
+      POD_NAME: falcon-cn-2
+      POD_IP: 172.18.0.12
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-2/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck
+
+  cn3:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-cn:ubuntu24.04
+    container_name: falcon-cn-3
+    hostname: cn-3
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.13
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-3
+      NODE_IP: 172.18.0.13
+      POD_NAME: falcon-cn-3
+      POD_IP: 172.18.0.13
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-3/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck
+
+  dn1:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-dn:ubuntu24.04
+    container_name: falcon-dn-1
+    hostname: dn-1
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.21
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-1
+      NODE_IP: 172.18.0.21
+      POD_NAME: falcon-dn-1
+      POD_IP: 172.18.0.21
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-1/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      cn1:
+        condition: service_started
+      cn2:
+        condition: service_started
+      cn3:
+        condition: service_started
+    healthcheck: *falcon-healthcheck
+
+  dn2:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-dn:ubuntu24.04
+    container_name: falcon-dn-2
+    hostname: dn-2
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.22
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-2
+      NODE_IP: 172.18.0.22
+      POD_NAME: falcon-dn-2
+      POD_IP: 172.18.0.22
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-2/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      cn1:
+        condition: service_started
+      cn2:
+        condition: service_started
+      cn3:
+        condition: service_started
+    healthcheck: *falcon-healthcheck
+
+  dn3:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-dn:ubuntu24.04
+    container_name: falcon-dn-3
+    hostname: dn-3
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.23
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-3
+      NODE_IP: 172.18.0.23
+      POD_NAME: falcon-dn-3
+      POD_IP: 172.18.0.23
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-3/data:/home/falconMeta/data
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      cn1:
+        condition: service_started
+      cn2:
+        condition: service_started
+      cn3:
+        condition: service_started
+    healthcheck: *falcon-healthcheck
+
+  store1:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-store:ubuntu24.04
+    container_name: falcon-store-1
+    hostname: store-1
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.31
+    environment:
+      <<: *falcon-env
+      NODE_NAME: store-1
+      NODE_IP: 172.18.0.31
+      POD_NAME: falcon-store-1
+      POD_IP: 172.18.0.31
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/cache:/opt/falcon
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/log:/opt/log
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+      - type: bind
+        source: ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/data
+        target: /mnt/data
+        bind:
+          propagation: rshared
+    depends_on:
+      dn1:
+        condition: service_started
+      dn2:
+        condition: service_started
+      dn3:
+        condition: service_started
+    healthcheck: *store-healthcheck
+
+  regress1:
+    <<: *falcon-common
+    image: localhost:5000/falconfs-regress:ubuntu24.04
+    container_name: falcon-regress-1
+    hostname: regress-1
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.41
+    environment:
+      <<: *falcon-env
+    volumes:
+      - type: bind
+        source: ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/data
+        target: /mnt/data
+        bind:
+          propagation: rshared
+    depends_on:
+      store1:
+        condition: service_started
+
+networks:
+  falcon-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.18.0.0/16"

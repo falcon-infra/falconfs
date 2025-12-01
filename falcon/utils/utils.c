@@ -67,7 +67,6 @@ Oid CachedRelationOid[LAST_CACHED_RELATION_TYPE] = {0};
 
 void GetRelationOid(const char *relationName, Oid *relOid)
 {
-    InitializeInvalidationCallbacks();
     if (*relOid == InvalidOid) {
         *relOid = get_relname_relid(relationName, PG_CATALOG_NAMESPACE);
 

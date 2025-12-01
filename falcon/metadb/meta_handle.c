@@ -107,6 +107,8 @@ void FalconMkdirHandle(MetaProcessInfo *infoArray, int count)
         info->errorCode = SUCCESS;
         info->errorMsg = NULL;
 
+        elog(LOG, "[DEBUG] FalconMkdirHandle: path=%s, path_len=%zu", info->path, strlen(info->path));
+
         int32_t property;
         FalconErrorCode errorCode =
             VerifyPathValidity(info->path, VERIFY_PATH_VALIDITY_REQUIREMENT_MUST_BE_DIRECTORY, &property);
@@ -352,6 +354,9 @@ void FalconMkdirSubCreateHandle(MetaProcessInfo *infoArray, int count)
             MetaProcessInfo info = list_nth(entry->info, i);
             info->etag = (char *)"";
 
+            elog(LOG, "[DEBUG] FalconMkdirSubCreateHandle: shardId=%d, parentId_partId=%lu, name=%s, name_len=%zu, inodeId=%lu",
+                 entry->shardId, info->parentId_partId, info->name, strlen(info->name), info->inodeId);
+
             InsertIntoInodeTable(workerInodeRel,
                                  indexState,
                                  info->inodeId,
@@ -359,7 +364,7 @@ void FalconMkdirSubCreateHandle(MetaProcessInfo *infoArray, int count)
                                  info->name,
                                  0,
                                  info->st_mode,
-                                 1,
+                                 2,
                                  0,
                                  0,
                                  0,
@@ -426,8 +431,10 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->parentId_partId = CombineParentIdWithPartId(info->parentId, partId);
         info->st_mode = S_IFREG | 0644;
         info->st_mtim = GetCurrentTimestamp();
+        info->st_atim = info->st_mtim;
+        info->st_ctim = info->st_mtim;
         info->st_size = 0;
-        info->node_id = -1;
+        info->node_id = GetLocalServerId();
         info->st_nlink = 1;
         info->etag = (char *)"";
         info->st_dev = 0;
@@ -436,8 +443,6 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->st_rdev = 0;
         info->st_blksize = 0;
         info->st_blocks = 0;
-        info->st_atim = 0;
-        info->st_ctim = 0;
 
         int shardId, workerId;
         SearchShardInfoByShardValue(info->parentId_partId, &shardId, &workerId);
@@ -527,12 +532,12 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                          info->st_size,
                                          0,
                                          0,
+                                         info->st_atim,
                                          info->st_mtim,
-                                         info->st_mtim,
-                                         info->st_mtim,
+                                         info->st_ctim,
                                          info->etag,
                                          0,
-                                         -1,
+                                         info->node_id,
                                          -1);
                     --currentGroupHandled;
                 }
@@ -588,6 +593,8 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
         //
         info->errorCode = SUCCESS;
         info->errorMsg = NULL;
+
+        elog(LOG, "[DEBUG] FalconStatHandle: path=%s, path_len=%zu", info->path, strlen(info->path));
 
         int32_t property;
         //
@@ -645,6 +652,9 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
         for (int i = 0; i < list_length(entry->info); ++i) {
             MetaProcessInfo info = list_nth(entry->info, i);
 
+            elog(LOG, "[DEBUG] FalconStatHandle query: shardId=%d, parentId_partId=%lu, name=%s, name_len=%zu",
+                 entry->shardId, info->parentId_partId, info->name, strlen(info->name));
+
             ScanKeyData scanKey[2];
             int scanKeyCount = 2;
             SysScanDesc scanDescriptor = NULL;
@@ -665,6 +675,7 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
             TupleDesc tupleDesc = RelationGetDescr(workerInodeRel);
             if (!HeapTupleIsValid(heapTuple)) {
                 info->errorCode = FILE_NOT_EXISTS;
+                elog(LOG, "[DEBUG] FalconStatHandle result: NOT FOUND for name=%s", info->name);
             } else {
                 Datum datumArray[Natts_pg_dfs_inode_table];
                 bool isNullArray[Natts_pg_dfs_inode_table];
@@ -683,6 +694,9 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
                 info->st_mtim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_mtim - 1]);
                 info->st_ctim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_ctim - 1]);
                 info->etag = TextDatumGetCString(datumArray[Anum_pg_dfs_file_etag - 1]);
+                if (!isNullArray[Anum_pg_dfs_file_primary_nodeid - 1]) {
+                    info->node_id = DatumGetInt32(datumArray[Anum_pg_dfs_file_primary_nodeid - 1]);
+                }
             }
             systable_endscan(scanDescriptor);
         }
@@ -1269,6 +1283,8 @@ void FalconRmdirHandle(MetaProcessInfo info)
                               "RmdirSubUnlink is supposed to be successful, "
                               "but it failed.");
     }
+
+    info->errorCode = SUCCESS;
 }
 
 void FalconRmdirSubRmdirHandle(MetaProcessInfo info)
@@ -1351,7 +1367,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    NULL,
                                                    NULL,
                                                    &nlink,
-                                                   -1,
+                                                   -2,
                                                    NULL,
                                                    NULL,
                                                    NULL,
@@ -1362,7 +1378,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    NULL,
                                                    NULL,
                                                    NULL);
-    if (nlink != 1)
+    if (nlink != 2)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
     if (!fileExist)
         FALCON_ELOG_ERROR_EXTENDED(FILE_NOT_EXISTS,
@@ -2221,6 +2237,7 @@ void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count)
 {
     for (int i = 0; i < count; ++i) {
         SliceProcessInfo info = infoArray[i];
+        info->errorCode = SUCCESS;
 
         int shardId, workerId;
         uint16_t partId = HashPartId(info->name);
@@ -2252,6 +2269,7 @@ void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count)
             heap_freetuple(heapTuple);
         }
 
+        CatalogCloseIndexes(indexState);
         table_close(sliceRel, RowExclusiveLock);
     }
 }
@@ -2306,6 +2324,13 @@ void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count)
         systable_endscan(scanDesc);
         table_close(sliceRel, RowExclusiveLock);
 
+        /* if result is NIL */
+        if (getResult == NIL) {
+            info->errorCode = FILE_NOT_EXISTS;
+            info->count = 0;
+            continue;
+        }
+
         SliceInfo **infos = (SliceInfo **)getResult->elements;
         info->count = list_length(getResult);
         info->inodeIds = (uint64_t *)palloc(sizeof(uint64_t) * info->count);
@@ -2338,6 +2363,7 @@ void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count)
 
     for (int i = 0; i < count; ++i) {
         SliceProcessInfo info = infoArray[i];
+        info->errorCode = SUCCESS;
 
         int shardId, workerId;
         uint16_t partId = HashPartId(info->name);
@@ -2373,6 +2399,8 @@ void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count)
 
 void FalconKvmetaPutHandle(KvMetaProcessInfo info)
 {
+    MemoryContext oldcontext = CurrentMemoryContext;
+
     int shardId, workerId;
     uint16_t partId = HashPartId(info->userkey);
     SearchShardInfoByShardValue(partId, &shardId, &workerId);
@@ -2384,9 +2412,11 @@ void FalconKvmetaPutHandle(KvMetaProcessInfo info)
     TupleDesc tupleDesc = NULL;
     Datum *dkeys = NULL;
 
+    kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+    CatalogIndexState indexState = CatalogOpenIndexes(kvmetaRel);
+
     PG_TRY();
     {
-        kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
         tupleDesc = RelationGetDescr(kvmetaRel);
 
         Datum values[Natts_falcon_kvmeta_table];
@@ -2424,25 +2454,29 @@ void FalconKvmetaPutHandle(KvMetaProcessInfo info)
         dkeys = NULL;
 
         HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
-        CatalogTupleInsert(kvmetaRel, heapTuple);
+        CatalogTupleInsertWithInfo(kvmetaRel, heapTuple, indexState);
         heap_freetuple(heapTuple);
 
+        CatalogCloseIndexes(indexState);
         table_close(kvmetaRel, RowExclusiveLock);
     }
     PG_CATCH();
     {
+        MemoryContextSwitchTo(oldcontext);
+        ErrorData *errorData = CopyErrorData();
+        FlushErrorState();
+
         if (dkeys != NULL) {
             pfree(dkeys);
             dkeys = NULL;
         }
-        
+
+        CatalogCloseIndexes(indexState);
         if (kvmetaRel != NULL) {
             table_close(kvmetaRel, RowExclusiveLock);
         }
 
-        ErrorData *errorData = CopyErrorData();
-        FlushErrorState();
-        info->errorCode = errorData->sqlerrcode == ERRCODE_UNIQUE_VIOLATION ? UNIQUE_VIOLATION : UNKNOWN;
+        info->errorCode = errorData->sqlerrcode == ERRCODE_UNIQUE_VIOLATION ? SUCCESS : UNKNOWN;
         FreeErrorData(errorData);
     }
     PG_END_TRY();
@@ -2506,7 +2540,10 @@ void FalconKvmetaGetHandle(KvMetaProcessInfo info)
     for (int i = 0; i < nitems; i++) {
         info->valuekey[i] = DatumGetUInt64(array[i]);
     }
-    pfree(array);
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
 
     arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_location, tupleDesc, &isNull));
     get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
@@ -2517,7 +2554,10 @@ void FalconKvmetaGetHandle(KvMetaProcessInfo info)
     for (int i = 0; i < nitems; i++) {
         info->location[i] = DatumGetUInt64(array[i]);
     }
-    pfree(array);
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
 
     arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_slicelen, tupleDesc, &isNull));
     get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
@@ -2528,7 +2568,10 @@ void FalconKvmetaGetHandle(KvMetaProcessInfo info)
     for (int i = 0; i < nitems; i++) {
         info->slicelen[i] = DatumGetUInt32(array[i]);
     }
-    pfree(array);
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
 
     systable_endscan(scanDesc);
     table_close(kvmetaRel, AccessShareLock);

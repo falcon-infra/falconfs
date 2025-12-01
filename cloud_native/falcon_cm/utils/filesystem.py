@@ -8,7 +8,7 @@ def split_ip_port(leader_info):
     return split_str[0], split_str[1]
 
 
-def init_filesystem(leader_infos, user):
+def init_filesystem(leader_infos, user, replica_server_num):
     logger = logging.getLogger("logger")
     cluster_names = list(leader_infos.keys())
     server_num = len(cluster_names)
@@ -22,10 +22,10 @@ def init_filesystem(leader_infos, user):
         # check if the replication is ready
         with conn:
             cursor = conn.cursor()
-            while True:
+            while replica_server_num > 0:
                 cursor.execute(stat_replication_sql)
                 res = cursor.fetchall()
-                if len(res) >= 2 and res[0][0] == "streaming":
+                if len(res) >= replica_server_num and res[0][0] == "streaming":
                     logger.info("{}--pg_stat_replication results: {}".format(ip, name))
                     break
                 time.sleep(0.5)
@@ -54,7 +54,7 @@ def init_filesystem(leader_infos, user):
     shard_count = 100 * (server_num - 1)
     for i in range(server_num):
         ip, port = split_ip_port(leader_infos[cluster_names[i]])
-        build_shard_map_sql = "SELECT falcon_build_shard_table({});SELECT falcon_create_distributed_data_table();SELECT falcon_start_background_service();".format(
+        build_shard_map_sql = "SELECT falcon_build_shard_table({});SELECT falcon_create_distributed_data_table();SELECT falcon_create_slice_table();SELECT falcon_create_kvmeta_table();SELECT falcon_start_background_service();".format(
             shard_count
         )
         conn = psycopg2.connect(host=ip, port=port, user=user, database="postgres")

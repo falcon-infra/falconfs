@@ -27,6 +27,7 @@ int FalconPGPort = 0;
 int FalconConnectionPoolPort = FALCON_CONNECTION_POOL_PORT_DEFAULT;
 int FalconConnectionPoolSize = FALCON_CONNECTION_POOL_SIZE_DEFAULT;
 uint64_t FalconConnectionPoolShmemSize = FALCON_CONNECTION_POOL_SHMEM_SIZE_DEFAULT;
+char *FalconNodeLocalIp = NULL;
 static char *FalconConnectionPoolShmemBuffer = NULL;
 FalconShmemAllocator FalconConnectionPoolShmemAllocator;
 

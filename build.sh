@@ -8,6 +8,7 @@ WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
 WITH_RDMA=false
 WITH_PROMETHEUS=false
+WITH_ASAN=false
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
 export FALCONFS_INSTALL_DIR=$FALCONFS_INSTALL_DIR
@@ -43,14 +44,22 @@ build_pg() {
     local BLD_OPT=${1:-"deploy"}
     [[ "$BUILD_TYPE" == "Debug" ]] && BLD_OPT="debug"
     local CONFIGURE_OPTS=()
+    local CFLAGS_EXTRA=""
+    local LDFLAGS_EXTRA="-Wl,-rpath,$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib"
 
-    echo "Building PostgreSQL (mode: $BLD_OPT) ..."
+    echo "Building PostgreSQL (mode: $BLD_OPT, asan: $WITH_ASAN) ..."
     rm -rf "$POSTGRES_SRC_DIR/contrib/falcon"
     cp -rf "$FALCONFS_DIR/falcon" "$POSTGRES_SRC_DIR/contrib/falcon"
 
     # 设置构建选项
     if [[ "$BLD_OPT" == "debug" ]]; then
-        CONFIGURE_OPTS+=(--enable-debug)
+        CONFIGURE_OPTS+=(--enable-debug --enable-cassert)
+    fi
+
+    # ASAN 选项
+    if [[ "$WITH_ASAN" == "true" ]]; then
+        CFLAGS_EXTRA="-fsanitize=address -fno-omit-frame-pointer -O0"
+        LDFLAGS_EXTRA="-fsanitize=address $LDFLAGS_EXTRA"
     fi
 
     # 进入源码目录
@@ -63,7 +72,9 @@ build_pg() {
 
     # 生成配置并构建
     ./configure --prefix=${PG_INSTALL_DIR} "${CONFIGURE_OPTS[@]}" \
-        --enable-rpath LDFLAGS="-Wl,-rpath,$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib" &&
+        --enable-rpath \
+        CFLAGS="$CFLAGS_EXTRA" \
+        LDFLAGS="$LDFLAGS_EXTRA" &&
         make -j$(nproc) &&
         cd "$POSTGRES_SRC_DIR/contrib" && make -j
     echo "PostgreSQL build complete."
@@ -215,6 +226,11 @@ build)
             BUILD_TYPE="Release"
             shift
             ;;
+        --asan)
+            WITH_ASAN=true
+            BUILD_TYPE="Debug"
+            shift
+            ;;
         --help | -h)
             print_help "build"
             exit 0
@@ -222,7 +238,7 @@ build)
         *)
             # Only break if this isn't the combined build case
             [[ -z "${2:-}" || "$2" == "pg" || "$2" == "falcon" ]] && break
-            echo "Error: Combined build only supports --debug or --deploy" >&2
+            echo "Error: Combined build only supports --debug, --deploy or --asan" >&2
             exit 1
             ;;
         esac
@@ -231,7 +247,8 @@ build)
     case "${2:-}" in
     pg)
         for arg in "${@:3}"; do
-            if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
+            case "$arg" in
+            --help | -h)
                 echo "Usage: $0 build pg [options]"
                 echo ""
                 echo "Build PostgreSQL Components"
@@ -239,8 +256,20 @@ build)
                 echo "Options:"
                 echo "  --debug    Build in debug mode"
                 echo "  --deploy   Build in deploy mode"
+                echo "  --asan     Build with AddressSanitizer (implies --debug)"
                 exit 0
-            fi
+                ;;
+            --asan)
+                WITH_ASAN=true
+                BUILD_TYPE="Debug"
+                ;;
+            --debug)
+                BUILD_TYPE="Debug"
+                ;;
+            --deploy)
+                BUILD_TYPE="Release"
+                ;;
+            esac
         done
         build_pg "${@:3}"
         ;;
@@ -360,11 +389,19 @@ clean)
     esac
     ;;
 test)
-    TARGET_DIR="$FALCONFS_DIR/build/tests/falcon_store/"
-    find "$TARGET_DIR" -type f -executable | while read -r executable_file; do
-        echo "Executing: $executable_file"
-        "$executable_file"
-        echo "---------------------------------------------------------------------------------------"
+    TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
+
+    for TARGET_DIR in "${TARGET_DIRS[@]}"; do
+        if [ -d "$TARGET_DIR" ]; then
+            echo "Running tests in: $TARGET_DIR"
+            find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
+                echo "Executing: $executable_file"
+                "$executable_file"
+                echo "---------------------------------------------------------------------------------------"
+            done
+        else
+            echo "Test directory not found: $TARGET_DIR"
+        fi
     done
     echo "All unit tests passed."
     ;;

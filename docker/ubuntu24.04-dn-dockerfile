@@ -1,0 +1,53 @@
+#FROM ghcr.io/falcon-infra/falconfs-base-builder:v0.1.0-alpha-ubuntu24.04 AS builder
+#FROM 127.0.0.1:5000/falconfs-base-builder:ubuntu24.04_UBS_2.0 AS builder
+FROM 127.0.0.1:5000/falconfs-base-builder:v1.0-release AS builder
+
+# 运行时镜像
+FROM ubuntu:24.04
+RUN apt update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt install -y locales && locale-gen en_US.UTF-8
+
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+RUN apt update && apt install -y gdb vim tar python3 python3-pip libreadline-dev liblz4-dev libzstd-dev libssl-dev
+
+# 创建非root用户
+ARG USER_NAME=falconMeta
+RUN useradd -m -s /bin/bash $USER_NAME
+USER $USER_NAME
+
+# 复制文件到用户目录
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/dn/metadb/ /home/falconMeta/metadb/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/dn/falcon_cm/ /home/falconMeta/falcon_cm/
+
+# 复制脚本文件
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/docker-entrypoint.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/start.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/stop.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/check_liveness.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/rm_logs.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/postgresql_falcon.conf /home/falconMeta/
+
+# 创建必要的目录
+RUN mkdir -p /home/falconMeta/readiness/ /home/falconMeta/data/
+
+# 环境变量
+ENV PATH=/home/falconMeta/metadb/bin/:$PATH
+ENV LD_LIBRARY_PATH=/home/falconMeta/metadb/lib/
+ENV TMOUT=0
+RUN echo PATH=$PATH >> ~/.bashrc
+
+# 安装Python依赖
+RUN pip3 install --break-system-packages psycopg2 && \
+    pip3 install --break-system-packages kazoo && \
+    pip3 install --break-system-packages requests
+
+# 设置脚本权限
+RUN chmod +x /home/falconMeta/docker-entrypoint.sh
+
+# 设置工作目录和入口点
+WORKDIR /home/falconMeta
+#//TO DO 指定/home/falconMeta可能会遇到权限问题
+ENTRYPOINT ["/home/falconMeta/docker-entrypoint.sh"]

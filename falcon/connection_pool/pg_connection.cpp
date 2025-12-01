@@ -107,12 +107,14 @@ void PGConnection::BackgroundWorker()
                     totalParamCount,
                     (int64_t)totalParamShift,
                     signature);
+
             int sendQuerySucceed = PQsendQuery(conn, command);
             if (sendQuerySucceed != 1)
                 throw std::runtime_error(PQerrorMessage(conn));
 
             PGresult *res = NULL;
             res = PQgetResult(conn);
+
             if (res == NULL)
                 throw std::runtime_error(PQerrorMessage(conn));
             // param is useless now
@@ -250,11 +252,13 @@ void PGConnection::BackgroundWorker()
             }
 
             // 2.2.3
+
             PQsendQuery(conn, toSendCommand.str().c_str());
             std::vector<PGresult *> result;
             PGresult *res = NULL;
             while ((res = PQgetResult(conn)) != NULL)
                 result.push_back(res);
+
             FalconShmemAllocatorFree(allocator, paramShift);
             if (result.size() != isPlainCommand.size()) {
                 throw std::runtime_error(
