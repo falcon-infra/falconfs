@@ -8,6 +8,7 @@
     "falcon_block_size": 524288,
     "falcon_read_big_file_size": 2097152,
     "falcon_preblock_num": 1000,
+    "falcon_max_open_num": 0,
     "falcon_node_id": 0,
     "falcon_cluster_view": [
       "127.0.0.1:56039",
