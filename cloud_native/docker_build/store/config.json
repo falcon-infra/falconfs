@@ -20,11 +20,13 @@
     "falcon_async": false,
     "falcon_persist": false,
     "falcon_eviction": 0.1,
-    "falcon_stat": true,
     "falcon_is_inference": false,
-    "falcon_mount_path": "/mnt/falcon",
+    "falcon_mount_path": "/mnt/data",
     "falcon_to_local": false,
     "falcon_log_reserved_num": 50,
-    "falcon_log_reserved_time": 168
+    "falcon_log_reserved_time": 168,
+    "falcon_stat_max": true,
+    "falcon_use_prometheus": true,
+    "falcon_prometheus_port": "50040"
   }
 }

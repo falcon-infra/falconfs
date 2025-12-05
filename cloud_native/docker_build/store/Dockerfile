@@ -20,5 +20,5 @@ COPY check_liveness.sh /root/
 
 EXPOSE 50039
 COPY docker-entrypoint.sh /root/
-RUN chmod a+x /root/docker-entrypoint.sh
+RUN chmod a+x /root/*.sh
 ENTRYPOINT ["/root/docker-entrypoint.sh"]
