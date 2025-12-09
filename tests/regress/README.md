@@ -15,7 +15,7 @@
 ## Create a local registry for acceleration
 
 - Create container for local registry
-   $localDirForRegistry: the storage volume where you want to save images
+   $localDirForRegistry: the path where you want to save images
 
    ``` bash
    docker run -d \
@@ -34,7 +34,17 @@
    }
    ```
 
-- restart docker service and start docker container `registry`
+- Creating a cross-compilation builder for Docker using the host network.
+
+   ``` bash
+   docker buildx create --name multi-platform-builder \
+   --driver docker-container \
+   --driver-opt network=host \
+   --use
+   docker buildx inspect --bootstrap
+   ```
+
+- Restart docker service and start docker container `registry`
 
    ``` bash
    sudo systemctl daemon-reload
@@ -54,7 +64,7 @@
    docker run -it --privileged --name falcon-dev -d -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 /bin/bash
    ```
 
-## Start FalconFS regerss test
+## Start FalconFS regress test
 
 - Configure NOPASSWD privilege for the test account. Add the following content to the end of the /etc/sudoers file
 
@@ -62,9 +72,18 @@
    $USER	ALL=(ALL:ALL)	NOPASSWD: ALL
    ```
 
-- $data_path: the path provided for the regression test, which requires larger space more than 512GB
+- Download zookeeper:3.8.3 image and push to local registry for regress test
+
+  ```bash
+  docker pull zookeeper:3.8.3
+  docker tag zookeeper:3.8.3 localhost:5000/zookeeper:3.8.3
+  docker push localhost:5000/zookeeper:3.8.3
+  ```
+
+- Run regress test using the command bellow
   
    ``` bash
+   # ${data_path}: the storage path provided for the regression test, which requires larger space more than 512GB
    cd ~/code/falconfs/tests/regress
    bash start_regress_test.sh $data_path
    ```  
