@@ -66,30 +66,45 @@ int StoreNode::UpdateNodeConfig()
 {
     int ret = 0;
 #ifdef ZK_INIT
-    std::unordered_map<int, std::string> storeNodes;
-    ret = FalconCM::GetInstance()->FetchStoreNodes(storeNodes);
+    std::unordered_map<int, std::string> zkStoreNodes;
+    ret = FalconCM::GetInstance()->FetchStoreNodes(zkStoreNodes);
     if (ret != 0) {
         return ret;
     }
+    UpdateNodeConfigByValue(zkStoreNodes);
+#endif
+    return ret;
+}
+
+void StoreNode::UpdateNodeConfigByValue(std::unordered_map<int, std::string> &zkStoreNodes)
+{
     std::unique_lock<std::shared_mutex> nodeLock(nodeMutex);
 
     std::vector<int> toDel;
     for (auto &kv : nodeMap) {
-        if (storeNodes.count(kv.first) == 0) {
+        if (zkStoreNodes.count(kv.first) == 0) {
+            // nodeId in local map not in zk, delete local
+            toDel.emplace_back(kv.first);
+        } else if (SplitIp(kv.second.first) != SplitIp(zkStoreNodes[kv.first])) {
+            // nodeId -> host has changed, delete local
             toDel.emplace_back(kv.first);
         } else {
-            storeNodes.erase(kv.first);
+            // same info between zk and local, no need to update
+            zkStoreNodes.erase(kv.first);
         }
     }
     for (auto &delNode : toDel) {
         nodeMap.erase(delNode);
     }
-    for (auto &newNodeKv : storeNodes) {
-        std::shared_ptr<FalconIOClient> connection(CreateIOConnection(newNodeKv.second));
+    for (auto &newNodeKv : zkStoreNodes) {
+        auto conn = CreateIOConnection(newNodeKv.second);
+        if (conn == nullptr) {
+            FALCON_LOG(LOG_ERROR) << "Fail to CreateIOConnection for " << newNodeKv.second;
+            continue;
+        }
+        std::shared_ptr<FalconIOClient> connection(conn);
         nodeMap.emplace(newNodeKv.first, std::make_pair(newNodeKv.second, connection));
     }
-#endif
-    return ret;
 }
 
 int StoreNode::SetNodeConfig(std::string &rootPath)
@@ -199,6 +214,10 @@ bool StoreNode::IsLocal(int otherNodeId)
 bool StoreNode::IsLocal(std::string_view ipPort)
 {
     std::shared_lock lock(nodeMutex);
+    if (nodeMap.find(nodeId) == nodeMap.end()) {
+        FALCON_LOG(LOG_ERROR) << "Local nodeId " << nodeId << " not in nodeMap.";
+        return false;
+    }
     return SplitIp(ipPort) == SplitIp(nodeMap[nodeId].first);
 }
 

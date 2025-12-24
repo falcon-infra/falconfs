@@ -34,6 +34,11 @@ add_compile_options(
     -Wno-sign-compare
 )
 
+option(BUILD_TEST "Enable test compile" OFF)
+if(BUILD_TEST)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNIT_TEST")
+endif()
+
 # ==================== Dependencies =================
 if(DEFINED ENV{FALCONFS_INSTALL_DIR})
     set(CMAKE_INSTALL_RPATH "$ENV{FALCONFS_INSTALL_DIR}/lib64:$ENV{FALCONFS_INSTALL_DIR}/lib")

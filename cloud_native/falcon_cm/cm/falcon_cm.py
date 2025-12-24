@@ -579,7 +579,7 @@ class FalconCM:
             )
         )
         if self._replica_server_num > 0 and len(candidates) >= (
-            self._replica_server_num / 2 + 1
+            self._replica_server_num // 2 + 1
         ):
             max_lsn = 0
             new_host_port = ""

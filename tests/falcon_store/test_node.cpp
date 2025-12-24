@@ -98,6 +98,52 @@ TEST_F(NodeUT, GetNextNode)
     EXPECT_TRUE(nextConn);
 }
 
+TEST_F(NodeUT, UpdateNodeConfigByValueValid)
+{
+    int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
+    std::string endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId);
+    EXPECT_EQ(endpoint, localEndpoint);
+
+    std::unordered_map<int, std::string> zkNodes;
+    std::string newNode = "localhost:56039";
+    zkNodes[nodeId] = newNode;
+    zkNodes[nodeId + 10] = newNode;
+    zkNodes[nodeId + 100] = newNode;
+    StoreNode::GetInstance()->UpdateNodeConfigByValue(zkNodes);
+    
+    int newNumber = StoreNode::GetInstance()->GetNumberofAllNodes();
+    EXPECT_EQ(newNumber, 3);
+
+    endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId + 100);
+    EXPECT_EQ(endpoint, newNode);
+    endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId + 10);
+    EXPECT_EQ(endpoint, newNode);
+    endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId);
+    EXPECT_EQ(endpoint, newNode);
+}
+
+TEST_F(NodeUT, UpdateNodeConfigByValueInvalid)
+{
+    int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
+
+    std::unordered_map<int, std::string> zkNodes;
+    std::string newNode = "localhost:56039";
+    zkNodes[nodeId] = newNode;
+    zkNodes[nodeId + 10] = newNode;
+    zkNodes[nodeId + 100] = "fakehost:56039";
+    StoreNode::GetInstance()->UpdateNodeConfigByValue(zkNodes);
+    
+    int newNumber = StoreNode::GetInstance()->GetNumberofAllNodes();
+    EXPECT_EQ(newNumber, 2);
+
+    std::string endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId + 100);
+    EXPECT_EQ(endpoint, std::string(""));
+    endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId + 10);
+    EXPECT_EQ(endpoint, newNode);
+    endpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId);
+    EXPECT_EQ(endpoint, newNode);
+}
+
 TEST_F(NodeUT, DeleteNode)
 {
     int oldNumber = StoreNode::GetInstance()->GetNumberofAllNodes();

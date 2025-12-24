@@ -14,6 +14,8 @@ FalconCM FalconCM::singleton;
 std::atomic<bool> FalconCM::init = false;
 int FalconCM::initStatus = 0;
 
+std::string FalconCM::exitControlFilePath = "/opt/falcon/exit";
+
 FalconCM *FalconCM::GetInstance(const std::string &zkEndPoint, int zkTimeout, const std::string &clusterName)
 {
     if (init.exchange(true)) {
@@ -50,32 +52,34 @@ void FalconCM::DestroyCM()
         zhandle = nullptr;
     }
     init.store(false);
-    isConnected = false;
-    connectionFailed = false;
-    isConning = false;
+    connectionStatus = ZOO_NOTCONNECTED;
 }
 
 int FalconCM::WaitForConnect()
 {
     std::unique_lock<std::mutex> checkLock(zkMutex);
-    while (!zkCV.wait_for(checkLock, std::chrono::seconds(3), [this] { return isConnected || connectionFailed || isConning; })) {
+    while (!zkCV.wait_for(checkLock, std::chrono::seconds(3), [this] { return connectionStatus != ZOO_NOTCONNECTED; })) {
         FALCON_LOG(LOG_WARNING) << "WaitForConnect: Waiting 3s for zookeeper connection";
     }
-    
-    if (isConnected) {
+
+    if (connectionStatus == ZOO_CONNECTED) {
         return RETURN_OK;
-    } else if (isConning) {
-        return RETURN_ERROR;
     }
+    // only OK for rapid connection
     return RETURN_ERROR;
 }
 
 void FalconCM::HandleConnected()
 {
     std::unique_lock<std::mutex> checkLock(zkMutex);
-    isConnected = true;
     if (isReconnection == 1) {
-        ReUpload();
+        std::function<int()> reUploadFunc = [this]() {
+            return ReUpload();
+        };
+        if (!RetryWithNumAndInterval(reUploadFunc, 3, 3)) {
+            FALCON_LOG(LOG_ERROR) << "ReUpload failed after 3 times! exit process";
+            ExitByControlFile(1);
+        }
     }
     isReconnection = 0;
     zkCV.notify_one();
@@ -84,22 +88,22 @@ void FalconCM::HandleConnected()
 void FalconCM::HandleNotConnected()
 {
     std::unique_lock<std::mutex> checkLock(zkMutex);
-    connectionFailed = true;
     zkCV.notify_one();
 }
 
 void FalconCM::HandleConnecting()
 {
     std::unique_lock<std::mutex> checkLock(zkMutex);
-    isConning = true;
     zkCV.notify_one();
 }
 
 void FalconCM::HandleExpired()
 {
     std::unique_lock<std::mutex> checkLock(zkMutex);
+    localNodeStatus = localNodeStatus == UNINITIALIZED ? UNINITIALIZED : EXPIRED;
     ReConnect();
 }
+
 void FalconCM::InitWatcher(zhandle_t * /*zh*/, int type, int state, const char * /*path*/, void *ctx)
 {
     auto *falconCM = static_cast<FalconCM *>(ctx);
@@ -108,18 +112,22 @@ void FalconCM::InitWatcher(zhandle_t * /*zh*/, int type, int state, const char *
         return;
     }
     if (state == ZOO_CONNECTED_STATE) {
+        FALCON_LOG(LOG_INFO) << "connection success";
+        falconCM->connectionStatus = ZOO_CONNECTED;
         falconCM->HandleConnected();
-        FALCON_LOG(LOG_INFO) << "connection success:" << ZOO_CONNECTED_STATE;
     } else if (state == ZOO_CONNECTING_STATE) {
+        FALCON_LOG(LOG_INFO) << "zk connecting";
+        falconCM->connectionStatus = ZOO_CONNECTING;
         falconCM->HandleConnecting();
-        FALCON_LOG(LOG_INFO) << "zk connecting : " << state;
     } else if (state == ZOO_EXPIRED_SESSION_STATE) {
-        falconCM->HandleExpired();
         FALCON_LOG(LOG_ERROR) << "zk expired";
+        falconCM->connectionStatus = ZOO_EXPIRED_SESSION;
+        falconCM->HandleExpired();
     } else {
+        FALCON_LOG(LOG_ERROR) << "Connection failed : " << state;
+        falconCM->connectionStatus = ZOO_CONNECTION_FAILED;
         falconCM->HandleNotConnected();
-        FALCON_LOG(LOG_ERROR) << "Connecte failed : " << state;
-        exit(1);
+        ExitByControlFile(1);
     }
 }
 
@@ -249,14 +257,26 @@ void MetaDataStatusCallback(zhandle_t * /*zh*/, int type, int /*state*/, const c
 int FalconCM::Upload(const std::string & /*path*/, std::string &nodeInfoParam, int &nodeIdParam, std::string &rootPath)
 {
     int ret = 0;
+    exitControlFilePath = rootPath + "/exit";
     std::string myidPath = rootPath + "/myid";
     std::string nodePath = clusterName + "/StoreNode/Nodes/Node";
     int tmpNodeId = -1;
+    if (access(exitControlFilePath.c_str(), F_OK) != 0) {
+        FALCON_LOG(LOG_WARNING) << "write 1 to local exit control file: " << exitControlFilePath;
+        std::ofstream fout;
+        fout.open(exitControlFilePath.c_str(), std::ios::out);
+        if (!fout.is_open()) {
+            FALCON_LOG(LOG_ERROR) << "create exitControlFilePath file failed " << strerror(errno);
+            return RETURN_ERROR;
+        }
+        fout << 1;
+        fout.close();
+    }
     if (access(myidPath.c_str(), F_OK) == 0) {
         std::ifstream fin;
         fin.open(myidPath.c_str(), std::ios::in);
         if (!fin.is_open()) {
-            FALCON_LOG(LOG_ERROR) << "open existed myid faile failed " << strerror(errno);
+            FALCON_LOG(LOG_ERROR) << "open existed myid file failed " << strerror(errno);
             return RETURN_ERROR;
         }
         fin >> tmpNodeId;
@@ -316,12 +336,13 @@ int FalconCM::Upload(const std::string & /*path*/, std::string &nodeInfoParam, i
     int length = BUFF_SIZE;
     ret = zoo_wget(zhandle, statusPath.c_str(), clusterStatusCallback, this, buf, &length, nullptr);
     if (ret != ZOK) {
-        FALCON_LOG(LOG_ERROR) << "wget failed in zk " << ret;
+        FALCON_LOG(LOG_ERROR) << "wget " << statusPath << " failed in zk " << ret;
         return RETURN_ERROR;
     }
     if (strcmp(buf, "1") == 0) {
         UpdateNodeStatus();
     }
+    localNodeStatus = VALID;
     return RETURN_OK;
 }
 
@@ -356,8 +377,17 @@ int FalconCM::FetchStoreNodes(std::unordered_map<int, std::string> &storeNodes)
     return RETURN_OK;
 }
 
+/*
+ * Should be called single threaded by zk watcher
+*/
 int FalconCM::ReUpload()
 {
+    // Reupload after previous uploaded zk nodeId expired due to connection breakdown
+    if (localNodeStatus.load() == UNINITIALIZED) {
+        // reconnect before store node initialized, failed node initialization should terminate the process
+        return RETURN_OK;
+    }
+    assert(localNodeStatus.load() == EXPIRED);
     int ret = 0;
     std::string nodePath = clusterName + "/StoreNode/Nodes/Node00" + std::to_string(nodeId);
     std::cout << nodePath << std::endl;
@@ -370,9 +400,10 @@ int FalconCM::ReUpload()
                      nullptr,
                      0);
     if (ret != ZOK) {
-        FALCON_LOG(LOG_ERROR) << "create node failed in zk " << ret;
+        FALCON_LOG(LOG_ERROR) << "Create node " << nodeId << " = " << nodeInfo << " failed in zk: " << ret;
         return RETURN_ERROR;
     }
+    localNodeStatus = VALID;
     return RETURN_OK;
 }
 
@@ -417,3 +448,36 @@ void FalconCM::UpdateMetaDataStatus()
 std::condition_variable &FalconCM::GetStoreNodeCompleteCv() { return storeNodeCompleteCv; }
 
 std::condition_variable &FalconCM::GetMetaDataReadyCv() { return metaDataReadyCv; }
+
+bool FalconCM::RetryWithNumAndInterval(std::function<int()> func, int retryCnt, int sleepTimeS)
+{
+    while (retryCnt--) {
+        if (func() == RETURN_OK) {
+            return true;
+        }
+        sleep(sleepTimeS);
+    }
+    return false;
+}
+
+void FalconCM::ExitByControlFile(int err) {
+    FALCON_LOG(LOG_INFO) << "exitControlFilePath = " << exitControlFilePath;
+    if (access(exitControlFilePath.c_str(), F_OK) == 0) {
+        uint32_t doExit = 0;
+        std::ifstream fin;
+        fin.open(exitControlFilePath.c_str(), std::ios::in);
+        if (!fin.is_open()) {
+            FALCON_LOG(LOG_ERROR) << "open existed " << exitControlFilePath << " file failed, do not exit: " << strerror(errno);
+            return;
+        }
+        fin >> doExit;
+        fin.close();
+        if (doExit > 0) {
+            FALCON_LOG(LOG_ERROR) << "exitControlFilePath contains x > 0, exit";
+            exit(err);
+        }
+        FALCON_LOG(LOG_WARNING) << "exitControlFilePath contains 0, do not exit";
+    } else {
+        FALCON_LOG(LOG_WARNING) << "exitControlFile " << exitControlFilePath << " does not exist, do not exit";
+    }
+}

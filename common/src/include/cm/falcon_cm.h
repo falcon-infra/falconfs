@@ -12,6 +12,8 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <functional>
+#include <cassert>
 
 #include <sys/stat.h>
 
@@ -24,6 +26,20 @@
 #ifndef RETURN_ERROR
 #define RETURN_ERROR (-1)
 #endif
+
+typedef enum {
+    UNINITIALIZED = 0,
+    EXPIRED,
+    VALID
+} StoreNodeStatus;
+
+typedef enum {
+    ZOO_NOTCONNECTED = 0,
+    ZOO_CONNECTED,
+    ZOO_CONNECTING,
+    ZOO_EXPIRED_SESSION,
+    ZOO_CONNECTION_FAILED
+} ZKConnectionStatus;
 
 class FalconCM {
   public:
@@ -46,6 +62,19 @@ class FalconCM {
     void CheckMetaDataStatus();
     std::condition_variable &GetStoreNodeCompleteCv();
     std::condition_variable &GetMetaDataReadyCv();
+    bool RetryWithNumAndInterval(std::function<int()> func, int retryCnt, int sleepTimeS);
+    static std::string GetExitControlFilePath() { return exitControlFilePath; };
+    static void ExitByControlFile(int err);
+    ZKConnectionStatus GetConnState() { return connectionStatus.load(); };
+    StoreNodeStatus GetNodeState() { return localNodeStatus.load(); };
+
+    // ut function
+    #ifdef UNIT_TEST
+    void TestTriggerWatcher(int type, int state) {
+        InitWatcher(nullptr, type, state, nullptr, this);
+    }
+    void ResetState() { connectionStatus = ZOO_NOTCONNECTED; }
+    #endif
 
   private:
     static FalconCM singleton;
@@ -54,6 +83,7 @@ class FalconCM {
     std::string zkEndPoint;
     int zkTimeout{10000};
     std::string clusterName{"/falcon"};
+    std::atomic<StoreNodeStatus> localNodeStatus = UNINITIALIZED;
     int nodeId{-1};
     std::string nodeInfo;
     int isReconnection{0};
@@ -62,9 +92,8 @@ class FalconCM {
     zhandle_t *zhandle = nullptr;
     std::mutex zkMutex;
     std::condition_variable zkCV;
-    bool isConnected = false;
+    std::atomic<ZKConnectionStatus> connectionStatus = ZOO_NOTCONNECTED;
     bool connectionFailed = false;
-    bool isConning = false;
     static void InitWatcher(zhandle_t *zh, int type, int state, const char *path, void *ctx);
     void HandleConnected();
     void HandleNotConnected();
@@ -76,4 +105,5 @@ class FalconCM {
     void DestroyCM();
     std::condition_variable storeNodeCompleteCv;
     std::condition_variable metaDataReadyCv;
+    static std::string exitControlFilePath;
 };

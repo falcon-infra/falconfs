@@ -44,6 +44,7 @@ int FalconInitWithZK(std::string zkEndPoint, const std::string &zkPath)
     if (ret != SUCCESS) {
         return ret;
     }
+    // init connection to zk, fetch meta ready info from zk
     FalconCM::GetInstance()->CheckMetaDataStatus();
     {
         std::mutex mu;
@@ -52,6 +53,7 @@ int FalconInitWithZK(std::string zkEndPoint, const std::string &zkPath)
             return FalconCM::GetInstance()->GetMetaDataStatus();
         });
     }
+    // init store, and upload node info to zk
     ret = FalconStore::GetInstance()->GetInitStatus();
     if (ret != SUCCESS) {
         return ret;

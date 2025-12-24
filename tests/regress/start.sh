@@ -23,3 +23,7 @@ sed -i 's|META_SERVER_PORT=.*$|META_SERVER_PORT=5442|' /root/falconfs/local-run.
 cd /root/falconfs/
 
 bash local-run.sh
+
+# run falcon_cm test
+export CONFIG_FILE=/opt/conf/config.json
+./bin/FalconCMIT

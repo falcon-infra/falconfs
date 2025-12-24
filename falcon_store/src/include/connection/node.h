@@ -39,4 +39,5 @@ class StoreNode {
     void DeleteNode(int nodeId);
     std::vector<int> GetAllNodeId();
     int UpdateNodeConfig();
+    void UpdateNodeConfigByValue(std::unordered_map<int, std::string> &zkStoreNodes);
 };
