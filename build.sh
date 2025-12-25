@@ -113,6 +113,8 @@ clean_falconfs() {
     echo "Cleaning FalconFS Meta"
     cd $FALCONFS_DIR/falcon
     make USE_PGXS=1 clean
+    rm -rf $FALCONFS_DIR/falcon/connection_pool/fbs
+    rm -rf $FALCONFS_DIR/falcon/connection_pool/proto
 
     echo "Cleaning FalconFS Client..."
     rm -rf "$BUILD_DIR"
