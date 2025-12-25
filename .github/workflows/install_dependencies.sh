@@ -53,7 +53,7 @@ wget -O- "${PROMETHEUS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp &&
     make -j$(nproc) && make install &&
     rm -rf "/tmp/prometheus-cpp-with-submodule"
 
-sudo apt-get install -y fio
+sudo apt-get install -y fio rsync
 # mdtest
 sudo apt-get install -y openmpi-bin libopenmpi-dev
 git clone https://github.com/hpc/ior.git
