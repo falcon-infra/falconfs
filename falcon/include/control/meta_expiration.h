@@ -2,7 +2,9 @@
 #define LMY_FALCON_CONTROL_META_EXPIRATION_H
 
 #include "postgres.h"
+#include "fmgr.h"
 
+__attribute__((visibility("default")))
 void FalconDaemonMetaExpirationProcessMain(Datum main_arg);
 
 #define FALCON_META_NEVER_EXPIRE ((int32_t)(-1))

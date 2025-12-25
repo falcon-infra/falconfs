@@ -24,7 +24,8 @@ extern void TransactionCleanupShmemInit(void);
 extern void AddInprogressTransaction(const char *transactionName);
 extern void RemoveInprogressTransaction(const char *transactionName);
 
-extern void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg);
+__attribute__((visibility("default")))
+void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg);
 
 // functions declared for worker transactions
 extern void Write2PCRecord(int32 serverId, char *gid);

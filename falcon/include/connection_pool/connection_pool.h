@@ -8,6 +8,7 @@
 #include "connection_pool/connection_pool_config.h"
 #include "utils/falcon_shmem_allocator.h"
 
+__attribute__((visibility("default")))
 void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg);
 
 extern FalconShmemAllocator FalconConnectionPoolShmemAllocator;
