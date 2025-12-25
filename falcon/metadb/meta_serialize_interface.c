@@ -6,6 +6,7 @@
 
 #include "fmgr.h"
 #include "utils/palloc.h"
+#include "varatt.h"
 
 #include <unistd.h>
 

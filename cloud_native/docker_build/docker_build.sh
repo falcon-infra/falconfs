@@ -18,10 +18,12 @@ gen_config() {
 }
 
 pushd $FALCONFS_DIR
-./build.sh clean
+./build.sh clean pg
 ./build.sh build pg
+./build.sh install pg
+./build.sh clean falcon
 ./build.sh build falcon --with-zk-init --with-prometheus
-./build.sh install
+./build.sh install falcon
 popd
 pushd $DIR
 

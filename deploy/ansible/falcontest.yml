@@ -71,11 +71,6 @@
         force: yes
         recursive: yes
       when: inventory_hostname in unique_hosts
-    - name: Apply Patch
-      shell: ./patches/apply.sh
-      args:
-        chdir: "{{ remote_src_dir }}"
-      when: inventory_hostname in unique_hosts
     - name: Build and install
       shell: ./build.sh && ./build.sh install
       args:

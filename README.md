@@ -99,7 +99,6 @@ suppose at the `~/code` dir
 git clone https://github.com/falcon-infra/falconfs.git
 cd falconfs
 git submodule update --init --recursive # submodule update postresql
-./patches/apply.sh
 docker run -it --privileged -d -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 /bin/zsh
 ./build.sh
 ln -s /root/code/falconfs/falcon/build/compile_commands.json . # use for clangd

@@ -3,6 +3,7 @@
 .vscode
 *.log
 *.a
+*.o
 *.so
 *.egg-info
 __pycache__
@@ -25,3 +26,6 @@ cloud_native/falcon_cm/tool/__pycache__
 cloud_native/falcon_cm/utils/__pycache__
 tests/regress/falconfs
 tests/falcon_cm/__pycache__
+
+falcon/connection_pool/fbs
+falcon/connection_pool/proto

@@ -60,7 +60,6 @@
    git clone https://github.com/falcon-infra/falconfs.git
    cd falconfs
    git submodule update --init --recursive # submodule update postresql
-   ./patches/apply.sh
    docker run -it --privileged --name falcon-dev -d -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 /bin/bash
    ```
 

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-BUILD_TYPE="Release"
+BUILD_TYPE="Debug"
 BUILD_TEST=true
 WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
@@ -43,12 +43,10 @@ gen_proto() {
 build_pg() {
     local BLD_OPT=${1:-"deploy"}
     [[ "$BUILD_TYPE" == "Debug" ]] && BLD_OPT="debug"
-    local CONFIGURE_OPTS=()
+    local CONFIGURE_OPTS=(--without-icu)
     local PG_CFLAGS=""
 
     echo "Building PostgreSQL (mode: $BLD_OPT) ..."
-    rm -rf "$POSTGRES_SRC_DIR/contrib/falcon"
-    cp -rf "$FALCONFS_DIR/falcon" "$POSTGRES_SRC_DIR/contrib/falcon"
 
     # 设置构建选项
     if [[ "$BLD_OPT" == "debug" ]]; then
@@ -85,7 +83,17 @@ clean_pg() {
 # 构建 FalconFS
 build_falconfs() {
     gen_proto
-    echo "Building FalconFS (mode: $BUILD_TYPE)..."
+
+    PG_CFLAGS=""
+    if [[ "$BUILD_TYPE" == "Debug" ]]; then
+        CONFIGURE_OPTS+=(--enable-debug)
+        PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
+    fi
+    echo "Building FalconFS Meta (mode: $BUILD_TYPE)..."
+    cd $FALCONFS_DIR/falcon
+    make USE_PGXS=1 CFLAGS="-Wno-shadow $PG_CFLAGS" CXXFLAGS="-Wno-shadow $PG_CFLAGS"
+
+    echo "Building FalconFS Client (mode: $BUILD_TYPE)..."
     cmake -B "$BUILD_DIR" -GNinja "$FALCONFS_DIR" \
         -DCMAKE_INSTALL_PREFIX=$FALCON_CLIENT_INSTALL_DIR \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
@@ -102,7 +110,11 @@ build_falconfs() {
 
 # 清理 FalconFS
 clean_falconfs() {
-    echo "Cleaning FalconFS..."
+    echo "Cleaning FalconFS Meta"
+    cd $FALCONFS_DIR/falcon
+    make USE_PGXS=1 clean
+
+    echo "Cleaning FalconFS Client..."
     rm -rf "$BUILD_DIR"
     echo "FalconFS clean complete."
 }
@@ -124,12 +136,19 @@ install_pg() {
     echo "PostgreSQL installed to $PG_INSTALL_DIR"
 }
 
+install_falcon_meta() {
+    echo "Installing FalconFS meta ..."
+    cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install
+    echo "FalconFS meta installed"
+}
+
 install_falcon_client() {
     echo "Installing FalconFS client to $FALCON_CLIENT_INSTALL_DIR..."
     cd "$BUILD_DIR" && ninja install
     if [[ "$CREATE_SOFT_LINK" == "true" ]]; then
         bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $FALCON_CLIENT_INSTALL_DIR $FALCONFS_INSTALL_DIR
     fi
+
     echo "FalconFS client installed to $FALCON_CLIENT_INSTALL_DIR"
 }
 
@@ -378,10 +397,23 @@ test)
     echo "All unit tests passed."
     ;;
 install)
-    install_pg
-    install_falcon_client
-    install_falcon_python_sdk
-    install_deploy_scripts
+    case "${2:-}" in
+    pg)
+        install_pg
+        ;;
+    falcon)
+        install_falcon_meta
+        install_falcon_client
+        install_falcon_python_sdk
+        install_deploy_scripts
+        ;;
+    *)
+        install_pg
+        install_falcon_meta
+        install_falcon_client
+        install_falcon_python_sdk
+        install_deploy_scripts
+    esac
     ;;
 *)
     print_help "build"

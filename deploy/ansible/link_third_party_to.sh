@@ -52,12 +52,24 @@ is_cmake_special_dir() {
     fi
 }
 
+is_postgresql_dir() {
+    local path="$1"
+    local base=$(basename "$path")
+    local parent_base=$(basename "$(dirname "$path")")
+
+    if [[ "$base" == "postgresql" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 link_recursive() {
     local src_path="$1"
     local dst_path="$2"
 
     # for special directories
-    if is_python_lib_dir "$src_path" || is_cmake_special_dir "$src_path"; then
+    if is_python_lib_dir "$src_path" || is_cmake_special_dir "$src_path" || is_postgresql_dir "$src_path"; then
         if [ ! -e "$dst_path" ]; then
             local rel_link
             rel_link=$(realpath --relative-to="$(dirname "$dst_path")" "$src_path")

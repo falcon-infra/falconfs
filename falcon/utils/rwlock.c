@@ -48,7 +48,7 @@ static int8_t RWLockAttemptLock(RWLock *lock, RWLockMode mode)
 {
     uint64_t old_state;
 
-    AssertArg(mode == RW_EXCLUSIVE || mode == RW_SHARED);
+    Assert(mode == RW_EXCLUSIVE || mode == RW_SHARED);
 
     old_state = pg_atomic_read_u64(&lock->state);
     while (true) {

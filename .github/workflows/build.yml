@@ -38,7 +38,7 @@ jobs:
 
     - name: Build
       shell: bash
-      run: sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c './patches/apply.sh && ./build.sh build && ./build.sh install'
+      run: sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c './build.sh build && ./build.sh install'
 
     - name: Deploy and run tests
       shell: bash

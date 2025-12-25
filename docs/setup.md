@@ -141,7 +141,6 @@ suppose at the `~/code` dir
 git clone https://github.com/falcon-infra/falconfs.git
 cd falconfs
 git submodule update --init --recursive # submodule update postresql
-./patches/apply.sh
 
 docker run -it --privileged --rm -v `pwd`/..:/root/code -w /root/code/falconfs ghcr.io/falcon-infra/falcon-dockerbuild:0.1.1 /bin/bash
 

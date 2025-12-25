@@ -415,7 +415,7 @@ def lsn_to_num(lsn):
     return num
 
 
-def get_receive_lsn(connection_string, sql_string):
+def get_lsn_internal(connection_string, sql_string):
     lsn = None
     try:
         conn = psycopg2.connect(dsn=connection_string)
@@ -437,14 +437,14 @@ def get_receive_lsn(connection_string, sql_string):
 
 
 def get_lsn(host, port, user):
-    sql_get_lsn = "SELECT * FROM pg_last_wal_receive_lsn();"
-    sql_get_lsn_falcon = "SELECT * FROM pg_last_wal_receive_lsn_for_falcon();"
+    sql_get_lsn = "SELECT * FROM pg_current_wal_flush_lsn();"
+    sql_get_lsn_falcon = "SELECT * FROM pg_last_wal_replay_lsn();"
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
     )
-    lsn = get_receive_lsn(connection_string, sql_get_lsn)
-    lsn_falcon = get_receive_lsn(connection_string, sql_get_lsn_falcon)
+    lsn = get_lsn_internal(connection_string, sql_get_lsn)
+    lsn_falcon = get_lsn_internal(connection_string, sql_get_lsn_falcon)
     max_lsn = max(lsn_to_num(lsn), lsn_to_num(lsn_falcon))
     return max_lsn
 

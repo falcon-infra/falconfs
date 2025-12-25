@@ -69,10 +69,8 @@ function rebuild_falcon() {
     # rebuild falconfs using "cloud_native/docker_build/docker_build.sh" manually.
     cd ${FALCON_CODE_PATH}/third_party/postgres
     git restore .
-    sudo rm -rf contrib/falcon/
     cd ${FALCON_CODE_PATH}
     git pull --rebase
-    ./patches/apply.sh
     docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
         /root/code/falconfs/cloud_native/docker_build/docker_build.sh
 }
@@ -150,7 +148,6 @@ function run_regress() {
         ((waited_times += sleep_interval))
     done
     echo "fuse.falcon_client file system ready, cost ${waited_times} second."
-
     META_SERVER_IP=$(docker exec falcon-zk-1 zkCli.sh -server localhost:2181 get /falcon/leaders/cn | grep ":5432" | sed 's/:5432//')
     docker exec -e META_SERVER_IP="${META_SERVER_IP}" falcon-regress-1 /root/falconfs/start.sh
 }
