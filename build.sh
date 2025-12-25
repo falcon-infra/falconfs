@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-BUILD_TYPE="Debug"
+BUILD_TYPE="Release"
 BUILD_TEST=true
 WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
