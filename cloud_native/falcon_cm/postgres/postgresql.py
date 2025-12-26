@@ -437,7 +437,7 @@ def get_lsn_internal(connection_string, sql_string):
 
 
 def get_lsn(host, port, user):
-    sql_get_lsn = "SELECT * FROM pg_current_wal_flush_lsn();"
+    sql_get_lsn = "SELECT * FROM pg_last_wal_receive_lsn();"
     sql_get_lsn_falcon = "SELECT * FROM pg_last_wal_replay_lsn();"
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
@@ -473,7 +473,31 @@ def stop_replication(host, port, user):
     res1 = alter_postgresql_config(connection_string, "primary_conninfo", "")
     res2 = alter_postgresql_config(connection_string, "primary_slot_name", "")
     res = res1 and res2
-    return res
+    if res == False:
+        return False
+    
+    conn = None
+    cursor = None
+    try:
+        conn = psycopg2.connect(dsn=connection_string)
+        conn.autocommit = True
+        cursor = conn.cursor()
+        sql = "select * from pg_stat_wal_receiver;"
+        while True:
+            cursor.execute(sql)
+            result = cursor.fetchall()
+            if not result:
+                return True
+            time.sleep(1)
+    except Exception as e:
+        logging.getLogger("logger").error(f"Error stopping replication: {e}")
+    finally:
+        if (cursor):
+            cursor.close()
+        if (conn):
+            conn.close()
+    
+    return False
 
 
 def clean_for_supplement(host, port, user):

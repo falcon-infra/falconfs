@@ -1,7 +1,7 @@
 #! /bin/bash
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-FALCONFS_INSTALL_DIR=~/metadb
+export FALCONFS_INSTALL_DIR=~/metadb
 FALCONFS_DIR=$DIR/../../
 
 gen_config() {
@@ -18,6 +18,7 @@ gen_config() {
 }
 
 pushd $FALCONFS_DIR
+rm -rf $FALCONFS_INSTALL_DIR
 ./build.sh clean pg
 ./build.sh build pg
 ./build.sh install pg
@@ -55,9 +56,13 @@ cp -f $FALCONFS_DIR/tests/regress/docker-entrypoint.sh $FALCONFS_DIR/tests/regre
 
 # prepare image data for cn/dn
 ./ldd_copy.sh -b ~/metadb/lib/postgresql/falcon.so -t ~/metadb/lib/
+rm -rf ./cn/metadb
 cp -rf ~/metadb ./cn/
+rm -rf ./dn/metadb
 cp -rf ~/metadb ./dn/
+rm -rf ./cn/falcon_cm
 cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./cn/
+rm -rf ./dn/falcon_cm
 cp -rf $FALCONFS_DIR/cloud_native/falcon_cm ./dn/
 
 chmod 777 -R ./cn/metadb
