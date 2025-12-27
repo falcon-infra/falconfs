@@ -439,13 +439,13 @@ class FalconCM:
                 self._pod_ip, self._meta_port, self._user_name
             ):
                 self.logger.info("Stop the replication successfully")
+                lsn = postgresql.get_lsn(self._pod_ip, self._meta_port, self._user_name)
+                if not self._zk_client.exists(candidate_node_path):
+                    self._zk_client.create(candidate_node_path, value=str.encode(str(lsn)))
+                else:
+                    self._zk_client.set(candidate_node_path, value=str.encode(str(lsn)))
             else:
                 self.logger.error("Failed to stop the replication")
-            lsn = postgresql.get_lsn(self._pod_ip, self._meta_port, self._user_name)
-            if not self._zk_client.exists(candidate_node_path):
-                self._zk_client.create(candidate_node_path, value=str.encode(str(lsn)))
-            else:
-                self._zk_client.set(candidate_node_path, value=str.encode(str(lsn)))
         else:
             self.logger.info("The node is not in the membership")
 
