@@ -2,8 +2,6 @@ FROM openeuler/openeuler:24.03-lts-sp2
 
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
 
-RUN rm -f /etc/yum.repos.d/*.repo
-
 RUN dnf clean all && \
     dnf makecache && \
     dnf groupinstall "Development Tools" -y && \
@@ -17,7 +15,8 @@ RUN dnf clean all && \
     libzstd-devel xz-devel libxml2-devel expat-devel jansson-devel \
     systemd-devel libffi-devel \
     autoconf automake libtool cppunit-devel \
-    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks && \
+    protobuf-devel protobuf-compiler flatbuffers-devel flatbuffers-compiler jsoncpp-devel thrift-devel \
+    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks rsync libstdc++=static && \
     dnf clean all
 
 ENV LANG=en_US.UTF-8
@@ -27,36 +26,8 @@ RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && \
     echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local.conf && \
     echo "/usr/local/obs/lib" > /etc/ld.so.conf.d/obs.conf
 
-ARG THRIFT_VERSION=0.19.0
-ARG THRIFT_URL=https://archive.apache.org/dist/thrift/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}.tar.gz
 
-RUN wget --no-check-certificate -O- "${THRIFT_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/thrift-${THRIFT_VERSION}" && \
-    ./configure --with-cpp \
-                --without-python \
-                --without-java \
-                --without-go \
-                --without-lua \
-                --without-nodejs \
-                --without-erlang && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/thrift-${THRIFT_VERSION}"
-
-ARG PROTOBUF_VERSION=3.12.4
-ARG PROTOBUF_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
-
-RUN wget --no-check-certificate -O- "${PROTOBUF_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
-    ./autogen.sh && \
-    CXXFLAGS="-fPIC" ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/protobuf-${PROTOBUF_VERSION}"
-
-ARG BRPC_VERSION=1.12.1
+ARG BRPC_VERSION=1.14.1
 ARG BRPC_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
 
 RUN wget --no-check-certificate -O- "${BRPC_URL}" | tar -xz -C /tmp && \
@@ -67,6 +38,7 @@ RUN wget --no-check-certificate -O- "${BRPC_URL}" | tar -xz -C /tmp && \
           -DWITH_RDMA=ON \
           -DCMAKE_INSTALL_PREFIX=/usr/local \
           -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_CXX_FLAGS="-Wno-error -Wno-deprecated-declarations" \
           .. && \
     ninja && \
     ninja install && \
@@ -87,34 +59,6 @@ RUN wget --no-check-certificate -O- "${PROMETHEUS_URL}" | tar -xz -C /tmp && \
     make install && \
     ldconfig && \
     rm -rf "/tmp/prometheus-cpp-with-submodules"
-
-ARG FLATBUFFERS_VERSION=25.2.10
-ARG FLATBUFFERS_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
-RUN wget --no-check-certificate -O- "${FLATBUFFERS_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
-    mkdir build && cd build && \
-    cmake -GNinja .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    ninja && \
-    ninja install && \
-    ldconfig && \
-    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
-
-ARG JSONCPP_VERSION=1.9.6
-ARG JSONCPP_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
-
-RUN wget --no-check-certificate -O- "${JSONCPP_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
-    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
-    mkdir build && cd build && \
-    cmake .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
 
 ARG ZK_VERSION=3.9.1
 ARG ZK_URL=https://archive.apache.org/dist/zookeeper/zookeeper-${ZK_VERSION}/apache-zookeeper-${ZK_VERSION}.tar.gz
