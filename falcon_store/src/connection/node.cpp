@@ -5,9 +5,9 @@
 #include "connection/node.h"
 
 #include <chrono>
-#include <print>
 #include <ranges>
 #include <thread>
+#include <iostream>
 
 #include "cm/falcon_cm.h"
 #include "log/logging.h"
@@ -20,45 +20,45 @@ int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
 {
     std::unique_lock<std::shared_mutex> nodeLock(nodeMutex);
     nodeId = initNodeId;
-    std::println("falcon_store nodeId = {}", nodeId);
+    std::cout << "falcon_store nodeId = " << nodeId << std::endl;  
     initStatus = 0;
-    std::ranges::for_each(clusterView | std::views::split(',') | std::views::transform([](auto &&rng) {
-                              return std::string(&*rng.begin(), std::ranges::distance(rng));
-                          }) | std::views::enumerate,
-                          [this](auto &&enumerated) {
-                              auto &&[i, rpcEndPoint] = enumerated;
-                              FALCON_LOG(LOG_INFO) << "node " << i << " = " << rpcEndPoint;
-                              bool connected = false;
-                              int retry_num = 0;
+    int i = 0;
+    for (auto&& rpcEndPoint : clusterView | std::views::split(',') | std::views::transform([](auto &&rng) {
+             return std::string(&*rng.begin(), std::ranges::distance(rng));
+         })) { 
+        FALCON_LOG(LOG_INFO) << "node " << i << " = " << rpcEndPoint;
+        bool connected = false;
+        int retry_num = 0;
 #ifdef USE_RDMA
-                              std::shared_ptr<FalconIOClient> connection;
-                              do {
-                                  connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
-                                  connected = connection->CheckConnection() == 0;
-                                  if (!connected) {
-                                      retry_num++;
-                                      std::this_thread::sleep_for(1s);
-                                      FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
-                                  }
-                              } while (!connected && retry_num < CONNECTION_RETRY_NUM);
+        std::shared_ptr<FalconIOClient> connection;
+        do {
+            connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
+            connected = connection->CheckConnection() == 0;
+            if (!connected) {
+                retry_num++;
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
+            }
+        } while (!connected && retry_num < CONNECTION_RETRY_NUM);
 #else
-                              auto connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
-                              do {
-                                  connected = connection->CheckConnection() == 0;
-                                  if (!connected) {
-                                      retry_num++;
-                                      std::this_thread::sleep_for(1s);
-                                      FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
-                                  }
-                              } while (!connected && retry_num < CONNECTION_RETRY_NUM);
+        auto connection = std::shared_ptr<FalconIOClient>(CreateIOConnection(rpcEndPoint));
+        do {
+            connected = connection->CheckConnection() == 0;
+            if (!connected) {
+                retry_num++;
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                FALCON_LOG(LOG_WARNING) << "Connect failed, retry";
+            }
+        } while (!connected && retry_num < CONNECTION_RETRY_NUM);
 #endif
-                              if (connected) {
-                                  nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
-                              } else {
-                                  initStatus = 1;
-                                  return;
-                              }
-                          });
+        if (connected) {
+            nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
+        } else {
+            initStatus = 1;
+        }
+        i++;
+    }
+
     return initStatus;
 }
 

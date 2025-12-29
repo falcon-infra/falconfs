@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <csignal>
 #include <fstream>
+#include <iomanip>
+#include <string>
 
 #include "log/logging.h"
 
@@ -43,7 +45,7 @@ std::string formatU64(size_t size)
         unitIdx++;
     }
 
-    return std::format("{}{}", size, units[unitIdx]);
+    return std::to_string(size) + units[unitIdx];
 }
 
 std::string formatOp(size_t size)
@@ -59,7 +61,7 @@ std::string formatOp(size_t size)
         unitIdx++;
     }
 
-    return std::format("{}{}", size, units[unitIdx]);
+    return std::to_string(size) + units[unitIdx];
 }
 
 double formatTimeDouble(size_t mus, size_t ops)
@@ -89,7 +91,7 @@ void PrintStats(std::string_view mountPath, std::stop_token stoken)
     // Process mount path
     auto lastNonSlash = mountPath.find_last_not_of('/');
     auto lastSlash = mountPath.substr(0, lastNonSlash).find_last_of('/');
-    std::string statPath = std::format("{}/stats.out", mountPath.substr(0, lastSlash + 1));
+    std::string statPath = std::string(mountPath.substr(0, lastSlash + 1)) + "/stats.out";
 
     std::remove(statPath.c_str());
     std::ofstream outFile;
@@ -113,59 +115,50 @@ void PrintStats(std::string_view mountPath, std::stop_token stoken)
         }
 
         // Using std::println for all outputs
-        std::println(outFile, "Falcon File System Statistics");
-        std::println(outFile, "============================");
-        std::println(outFile);
+        outFile << "Falcon File System Statistics\n";
+        outFile << "============================\n";
+        outFile << "\n";
 
         // FUSE Operations
-        std::println(outFile, "FUSE Operations:");
-        std::println(outFile, "  Total Operations: {}", currentStats[FUSE_OPS]);
-        std::println(outFile, "  Average Latency: {} μs", formatTime(currentStats[FUSE_LAT], currentStats[FUSE_OPS]));
-        std::println(outFile, "  Read: {}", formatU64(currentStats[FUSE_READ]));
-        std::println(outFile, "  Read Operations: {}", currentStats[FUSE_READ_OPS]);
-        std::println(outFile,
-                     "  Read Average Latency: {} μs",
-                     formatTime(currentStats[FUSE_READ_LAT], currentStats[FUSE_READ_OPS]));
-        std::println(outFile, "  Write: {}", formatU64(currentStats[FUSE_WRITE]));
-        std::println(outFile, "  Write Operations: {}", currentStats[FUSE_WRITE_OPS]);
-        std::println(outFile,
-                     "  Write Average Latency: {} μs\n",
-                     formatTime(currentStats[FUSE_WRITE_LAT], currentStats[FUSE_WRITE_OPS]));
+        outFile << "FUSE Operations:\n";
+        outFile << "  Total Operations: " << currentStats[FUSE_OPS] << "\n";
+        outFile << "  Average Latency: " << formatTime(currentStats[FUSE_LAT], currentStats[FUSE_OPS]) << " μs\n";
+        outFile << "  Read: " << formatU64(currentStats[FUSE_READ]) << "\n";
+        outFile << "  Read Operations: " << currentStats[FUSE_READ_OPS] << "\n";
+        outFile << "  Read Average Latency: " << formatTime(currentStats[FUSE_READ_LAT], currentStats[FUSE_READ_OPS]) << " μs\n";
+        outFile << "  Write: " << formatU64(currentStats[FUSE_WRITE]) << "\n";
+        outFile << "  Write Operations: " << currentStats[FUSE_WRITE_OPS] << "\n";
+        outFile << "  Write Average Latency: " << formatTime(currentStats[FUSE_WRITE_LAT], currentStats[FUSE_WRITE_OPS]) << " μs\n\n";
 
         // Metadata Operations
-        std::println(outFile, "Metadata Operations:");
-        // std::println(outFile, "  Total Operations: {}", formatOp(currentStats[META_OPS]));
-        // std::println(outFile, "  Average Latency: {} μs", formatTime(currentStats[META_LAT],
-
-        std::println(outFile, "  Open: {}", currentStats[META_OPEN]);
-        std::println(outFile, "  Open Atomic: {}", currentStats[META_OPEN_ATOMIC]);
-        std::println(outFile, "  Release: {}", currentStats[META_RELEASE]);
-        std::println(outFile, "  Stat: {}", currentStats[META_STAT]);
-        std::println(outFile,
-                     "  Stat Latency: {} μs",
-                     formatTime(currentStats[META_STAT_LAT], currentStats[META_STAT]));
-        std::println(outFile, "  Lookup: {}", currentStats[META_LOOKUP]);
-        std::println(outFile, "  Create: {}", currentStats[META_CREATE]);
-        std::println(outFile, "  Unlink: {}", currentStats[META_UNLINK]);
-        std::println(outFile, "  Mkdir: {}", currentStats[META_MKDIR]);
-        std::println(outFile, "  Rmdir: {}", currentStats[META_RMDIR]);
-        std::println(outFile, "  Opendir: {}", currentStats[META_OPENDIR]);
-        std::println(outFile, "  Readdir: {}", currentStats[META_READDIR]);
-        std::println(outFile, "  Rename: {}", currentStats[META_RENAME]);
-        std::println(outFile, "  Access: {}", currentStats[META_ACCESS]);
-        std::println(outFile, "  Releasedir: {}", currentStats[META_RELEASEDIR]);
-        std::println(outFile, "  Truncate: {}", currentStats[META_TRUNCATE]);
-        std::println(outFile, "  Flush: {}", currentStats[META_FLUSH]);
-        std::println(outFile, "  Fsync: {}", currentStats[META_FSYNC]);
+        outFile << "Metadata Operations:\n";
+        outFile << "  Open: " << currentStats[META_OPEN] << "\n";
+        outFile << "  Open Atomic: " << currentStats[META_OPEN_ATOMIC] << "\n";
+        outFile << "  Release: " << currentStats[META_RELEASE] << "\n";
+        outFile << "  Stat: " << currentStats[META_STAT] << "\n";
+        outFile << "  Stat Latency: " << formatTime(currentStats[META_STAT_LAT], currentStats[META_STAT]) << " μs\n";
+        outFile << "  Lookup: " << currentStats[META_LOOKUP] << "\n";
+        outFile << "  Create: " << currentStats[META_CREATE] << "\n";
+        outFile << "  Unlink: " << currentStats[META_UNLINK] << "\n";
+        outFile << "  Mkdir: " << currentStats[META_MKDIR] << "\n";
+        outFile << "  Rmdir: " << currentStats[META_RMDIR] << "\n";
+        outFile << "  Opendir: " << currentStats[META_OPENDIR] << "\n";
+        outFile << "  Readdir: " << currentStats[META_READDIR] << "\n";
+        outFile << "  Rename: " << currentStats[META_RENAME] << "\n";
+        outFile << "  Access: " << currentStats[META_ACCESS] << "\n";
+        outFile << "  Releasedir: " << currentStats[META_RELEASEDIR] << "\n";
+        outFile << "  Truncate: " << currentStats[META_TRUNCATE] << "\n";
+        outFile << "  Flush: " << currentStats[META_FLUSH] << "\n";
+        outFile << "  Fsync: " << currentStats[META_FSYNC] << "\n";
 
         // Block Cache and Object Operations
-        std::println(outFile, "\nBlock Cache Operations:");
-        std::println(outFile, "  Reads: {}", formatU64(currentStats[BLOCKCACHE_READ]));
-        std::println(outFile, "  Writes: {}", formatU64(currentStats[BLOCKCACHE_WRITE]));
+        outFile << "\nBlock Cache Operations:\n";
+        outFile << "  Reads: " << formatU64(currentStats[BLOCKCACHE_READ]) << "\n";
+        outFile << "  Writes: " << formatU64(currentStats[BLOCKCACHE_WRITE]) << "\n";
 
-        std::println(outFile, "\nObject Operations:");
-        std::println(outFile, "  Gets: {}", currentStats[OBJ_GET]);
-        std::println(outFile, "  Puts: {}", currentStats[OBJ_PUT]);
+        outFile << "\nObject Operations:\n";
+        outFile << "  Gets: " << currentStats[OBJ_GET] << "\n";
+        outFile << "  Puts: " << currentStats[OBJ_PUT] << "\n";
 
         outFile.close();
         {

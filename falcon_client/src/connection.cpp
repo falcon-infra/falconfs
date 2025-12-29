@@ -5,6 +5,7 @@
 #include "connection.h"
 
 #include <memory>
+#include <string>
 
 #include <brpc/server.h>
 
@@ -93,10 +94,9 @@ FalconErrorCode Connection::ProcessRequest(falcon::meta_proto::MetaServiceType p
     falcon::meta_proto::Empty dummyResponse;
     stub.MetaCall(&cntl, &request, &dummyResponse, nullptr);
     if (cntl.Failed()) {
-        FALCON_LOG(LOG_ERROR) << std::format("{}: Send request failed, error code = {}, error text = {}",
-                                             __func__,
-                                             cntl.ErrorCode(),
-                                             cntl.ErrorText());
+        FALCON_LOG(LOG_ERROR) << __func__ << ": Send request failed, error code = "
+                              << cntl.ErrorCode() << ", error text = " 
+                              << cntl.ErrorText();
 
         if (cntl.ErrorCode() == brpc::ELOGOFF || cntl.ErrorCode() == EHOSTDOWN) {
             return SERVER_FAULT;
