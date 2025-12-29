@@ -11,6 +11,7 @@
 #include <stop_token>
 #include <numeric>
 #include <iostream>
+#include <vector>
 
 enum {
     FUSE_OPS = 0,

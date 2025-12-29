@@ -4,7 +4,6 @@
 
 #include "router.h"
 
-#include <format>
 #include <ranges>
 
 #include "cm/falcon_cm.h"
@@ -111,7 +110,8 @@ int Router::GetAllWorkerConnection(std::unordered_map<std::string, std::shared_p
 {
     std::shared_lock<std::shared_mutex> lock(mapMtx);
     for (const auto &[server, conn] : routeMap) {
-        workerInfo.emplace(std::format("{}:{}", server.ip, server.port), conn);
+        workerInfo.emplace(server.ip + ":" + std::to_string(server.port), conn);
+
     }
     return 0;
 }
