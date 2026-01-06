@@ -209,3 +209,7 @@ void FalconShmemAllocatorFree(FalconShmemAllocator *allocator, uint64_t shift)
             break;
     }
 }
+
+FalconShmemAllocator g_falconConnectionPoolShmemAllocator;
+// Get FalconConnectionPoolShmemAllocator, decouple the init and usage of FalconShmemAllocator
+FalconShmemAllocator *GetFalconConnectionPoolShmemAllocator(void) { return &g_falconConnectionPoolShmemAllocator; }

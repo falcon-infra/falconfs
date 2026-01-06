@@ -9,15 +9,14 @@
 #include "varatt.h"
 
 #include <unistd.h>
-
-#include "connection_pool/connection_pool.h"
 #include "metadb/meta_serialize_interface_helper.h"
 #include "utils/error_log.h"
+#include "utils/falcon_shmem_allocator.h"
 
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_shmem_internal);
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_data);
 
-static SerializedData MetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
+static SerializedData MetaProcess(FalconMetaServiceType metaService, int count, char *paramBuffer)
 {
     if (count != 1 && !(metaService == MKDIR || metaService == MKDIR_SUB_MKDIR || metaService == MKDIR_SUB_CREATE ||
                         metaService == CREATE || metaService == STAT || metaService == OPEN || metaService == CLOSE ||
@@ -114,9 +113,9 @@ Datum falcon_meta_call_by_serialized_shmem_internal(PG_FUNCTION_ARGS)
     uint64_t paramShmemShift = (uint64_t)PG_GETARG_INT64(2);
     int64_t signature = PG_GETARG_INT64(3);
 
-    FalconSupportMetaService metaService = MetaServiceTypeDecode(type);
-
-    FalconShmemAllocator *allocator = &FalconConnectionPoolShmemAllocator;
+    // set type to FalconMetaServiceType from the send end.
+    FalconMetaServiceType metaService = (FalconMetaServiceType)type;
+    FalconShmemAllocator *allocator = GetFalconConnectionPoolShmemAllocator();
     if (paramShmemShift > allocator->pageCount * FALCON_SHMEM_ALLOCATOR_PAGE_SIZE)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
@@ -139,7 +138,7 @@ Datum falcon_meta_call_by_serialized_data(PG_FUNCTION_ARGS)
     int32_t count = PG_GETARG_INT32(1);
     bytea *param = PG_GETARG_BYTEA_P(2);
 
-    FalconSupportMetaService metaService = MetaServiceTypeDecode(type);
+    FalconMetaServiceType metaService = (FalconMetaServiceType)type;
     char *paramBuffer = VARDATA_ANY(param);
 
     SerializedData response = MetaProcess(metaService, count, paramBuffer);

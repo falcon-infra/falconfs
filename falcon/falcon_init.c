@@ -13,7 +13,7 @@
 #include "storage/shmem.h"
 #include "tcop/utility.h"
 
-#include "connection_pool/connection_pool.h"
+#include "connection_pool/falcon_connection_pool.h"
 #include "control/control_flag.h"
 #include "control/hook.h"
 #include "dir_path_shmem/dir_path_hash.h"
@@ -270,7 +270,30 @@ static void RegisterFalconConfigVariables(void)
                             PGC_POSTMASTER,
                             0,
                             NULL,
+                            
                             NULL,
                             NULL);
     FalconConnectionPoolShmemSize = (uint64_t)FalconConnectionPoolShmemSizeInMB * 1024 * 1024;
+
+    DefineCustomStringVariable("falcon_communication.plugin_path",
+                              gettext_noop("path of falcon communication plugin."),
+                              NULL,
+                              &FalconCommunicationPluginPath,
+                              NULL,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
+
+    DefineCustomStringVariable("falcon_communication.server_ip",
+                              gettext_noop("server IP address for Falcon communication."),
+                              NULL,
+                              &FalconCommunicationServerIp,
+                              FALCON_NODE_LOCAL_IP_DEFAULT,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
 }

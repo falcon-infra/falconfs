@@ -4,16 +4,18 @@
 
 #include "postgres.h"
 
+#include "connection_pool/falcon_connection_pool.h"
+#include "dir_path_shmem/dir_path_hash.h"
 #include "executor/spi.h"
 #include "fmgr.h"
 #include "nodes/pg_list.h"
 
-#include "connection_pool/brpc_server.h"
 #include "dir_path_shmem/dir_path_hash.h"
 #include "distributed_backend/remote_comm_falcon.h"
 #include "metadb/foreign_server.h"
 #include "metadb/meta_process_info.h"
 #include "metadb/shard_table.h"
+#include "nodes/pg_list.h"
 #include "utils/error_log.h"
 #include "utils/utils.h"
 
@@ -109,7 +111,7 @@ Datum falcon_clear_cached_relation_oid_func(PG_FUNCTION_ARGS)
 
 Datum falcon_run_pooler_server_func(PG_FUNCTION_ARGS)
 {
-    PG_RunConnectionPoolBrpcServer();
+    RunConnectionPoolServer();
     PG_RETURN_INT16(0);
 }
 

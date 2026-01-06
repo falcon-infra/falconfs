@@ -36,7 +36,10 @@ extern uint64_t FalconConnectionPoolShmemSize;
 
 #define FALCON_CONNECTION_POOL_MAX_CONCURRENT_SOCKET 4096
 
-int FalconConnectionPoolGotSigTerm(void);
+#define FALCON_NODE_LOCAL_IP_DEFAULT "127.0.0.1"
+extern char* FalconCommunicationServerIp;
+
+extern char* FalconCommunicationPluginPath;
 
 #ifdef __cplusplus
 }

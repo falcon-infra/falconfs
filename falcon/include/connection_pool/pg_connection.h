@@ -5,43 +5,39 @@
 #ifndef FALCON_POOLER_PG_CONNECTION_H
 #define FALCON_POOLER_PG_CONNECTION_H
 
-#include <flatbuffers/flatbuffers.h>
 #include <condition_variable>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <thread>
 #include <vector>
-#include <memory>
 #include "concurrentqueue/blockingconcurrentqueue.h"
-#include "connection_pool/pg_connection_pool.h"
+#include <flatbuffers/flatbuffers.h>
+#include "falcon_worker_task.h"
 #include "libpq-fe.h"
 #include "remote_connection_utils/serialized_data.h"
 
-class PGConnectionPool;
-
 class PGConnection {
   private:
+    typedef std::function<void(PGConnection *conn)> PGConnectionWorkFinishNotifyFunc;
     bool working;
-
-    PGConnectionPool *parent;
-
+    PGConnectionWorkFinishNotifyFunc m_workerFinishNotifyFunc;
     flatbuffers::FlatBufferBuilder flatBufferBuilder;
     SerializedData replyBuilder;
 
-    std::shared_ptr<WorkerTask> taskToExec;
-    moodycamel::BlockingConcurrentQueue<std::shared_ptr<WorkerTask>> tasksToExec;
+    moodycamel::BlockingConcurrentQueue<std::shared_ptr<BaseWorkerTask>> m_workerTaskQueue;
     std::thread thread;
-
-  public:
     PGconn *conn;
 
-    PGConnection(PGConnectionPool *parent, const char *ip, const int port, const char *userName);
+  public:
+    PGConnection(PGConnectionWorkFinishNotifyFunc func, const char *ip, const int port, const char *userName);
     ~PGConnection();
 
     void BackgroundWorker();
 
-    void Exec(std::shared_ptr<WorkerTask> taskToExec);
+    void Exec(std::shared_ptr<BaseWorkerTask> taskToExec);
 
     void Stop();
 };

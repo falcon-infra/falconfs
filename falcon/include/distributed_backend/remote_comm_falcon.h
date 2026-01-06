@@ -39,7 +39,7 @@ bool IsLocalWrite(void);
 // Caller should make sure command contains only one sql query, otherwise it will be difficult
 // to split result
 int FalconPlainCommandOnWorkerList(const char *command, uint32_t remoteCommandFlag, List *workerIdList);
-int FalconMetaCallOnWorkerList(FalconSupportMetaService metaService,
+int FalconMetaCallOnWorkerList(FalconMetaServiceType metaService,
                                int32_t count,
                                SerializedData param,
                                uint32_t remoteCommandFlag,

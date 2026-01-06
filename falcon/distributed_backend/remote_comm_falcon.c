@@ -22,7 +22,7 @@
 
 typedef struct RemoteCommand
 {
-    FalconSupportMetaService metaService;
+    FalconMetaServiceType metaService;
     int count;
     union
     {
@@ -120,7 +120,7 @@ int FalconPlainCommandOnWorkerList(const char *command, uint32_t remoteCommandFl
     return FalconAppendRemoteCommandToWorkerList(remoteCommand, remoteCommandFlag, workerIdList);
 }
 
-int FalconMetaCallOnWorkerList(FalconSupportMetaService metaService,
+int FalconMetaCallOnWorkerList(FalconMetaServiceType metaService,
                                int32_t count,
                                SerializedData param,
                                uint32_t remoteCommandFlag,
@@ -243,7 +243,7 @@ MultipleServerRemoteCommandResult FalconSendCommandAndWaitForResult()
                                                foreignServerConn->serverId,
                                                PQerrorMessage(foreignServerConn->conn));
             } else {
-                int32_t type = htonl(MetaServiceTypeEncode(remoteCommand->metaService));
+                int32_t type = htonl(remoteCommand->metaService);
                 int32_t count = htonl(remoteCommand->count);
                 const char *const paramValues[3] = {(char *)&type, (char *)&count, remoteCommand->data.param.buffer};
                 const int paramLengths[3] = {sizeof(int32_t), sizeof(int32_t), remoteCommand->data.param.size};

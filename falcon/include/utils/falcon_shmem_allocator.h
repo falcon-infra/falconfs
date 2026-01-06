@@ -70,6 +70,10 @@ uint64_t FalconShmemAllocatorMalloc(FalconShmemAllocator *allocator, uint64_t si
 
 void FalconShmemAllocatorFree(FalconShmemAllocator *allocator, uint64_t shift);
 
+// Get one FalconShmemAllocator, decouple the init and usage of FalconShmemAllocator
+// Using Register & Get to support manager multi FalconShmemAllocator is better, but not now.
+FalconShmemAllocator* GetFalconConnectionPoolShmemAllocator(void);
+
 #ifdef __cplusplus
 }
 #endif

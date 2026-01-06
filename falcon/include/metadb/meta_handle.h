@@ -8,34 +8,11 @@
 #include <stdbool.h>
 #include "metadb/meta_process_info.h"
 #include "remote_connection_utils/serialized_data.h"
+#include "utils/falcon_meta_service_def.h"
 
 #define DEFAULT_SUBPART_NUM 100
 
 extern MemoryManager PgMemoryManager;
-
-typedef enum FalconSupportMetaService {
-    PLAIN_COMMAND,
-    MKDIR,
-    MKDIR_SUB_MKDIR,
-    MKDIR_SUB_CREATE,
-    CREATE,
-    STAT,
-    OPEN,
-    CLOSE,
-    UNLINK,
-    READDIR,
-    OPENDIR,
-    RMDIR,
-    RMDIR_SUB_RMDIR,
-    RMDIR_SUB_UNLINK,
-    RENAME,
-    RENAME_SUB_RENAME_LOCALLY,
-    RENAME_SUB_CREATE,
-    UTIMENS,
-    CHOWN,
-    CHMOD,
-    NOT_SUPPORTED
-} FalconSupportMetaService;
 
 // func whose name ends with internal is not supposed to be called by external user
 void FalconMkdirHandle(MetaProcessInfo *infoArray, int count);

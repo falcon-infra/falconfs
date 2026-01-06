@@ -128,7 +128,9 @@ char *SerializedDataApplyForSegment(SerializedData *data, sd_size_t size)
     if (!SerializedDataEnlarge(data, data->size + SERIALIZED_DATA_ALIGNMENT + size))
         return NULL;
 
+    /* support multi Segment, skip prev Segment */
     char *p = data->buffer + data->size;
+    /* set data length  */
     *(sd_size_t *)p = SystemIsLittleEndian() ? size : ConvertBetweenBigAndLittleEndian(size);
     data->size += SERIALIZED_DATA_ALIGNMENT + size;
     return p + SERIALIZED_DATA_ALIGNMENT;

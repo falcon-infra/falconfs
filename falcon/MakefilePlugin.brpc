@@ -1,0 +1,49 @@
+# contrib/falcon/Makefile
+
+falcon_srcdir = .
+brpc_plugin_srcdir = brpc_comm_adapter
+BRPC_PLUGIN_CXX_OBJS += \
+	$(patsubst $(brpc_plugin_srcdir)/%.cpp,$(brpc_plugin_srcdir)/%.o, $(wildcard $(brpc_plugin_srcdir)/*.cpp))
+BRPC_PLUGIN_C_OBJS += \
+	$(patsubst $(brpc_plugin_srcdir)/%.c,$(brpc_plugin_srcdir)/%.o,$(wildcard $(brpc_plugin_srcdir)/*.c))
+
+REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
+BRPC_COMM_ADAPTER = $(falcon_srcdir)/brpc_comm_adapter
+
+PROTO_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/proto$$')
+PROTO_FILE = $(wildcard $(PROTO_DIR)/*.proto)
+PROTO_SRC = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.proto, $(BRPC_COMM_ADAPTER)/%.pb.cc, $(PROTO_FILE))
+PROTO_HEAD = $(patsubst %.cc, %.h, $(PROTO_SRC))
+PROTO_OBJS = $(patsubst %.cc, %.o, $(PROTO_SRC))
+
+BRPC_LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf 
+BPRC_LDFLAGS_BRPC = -lbrpc
+BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog
+
+BRPC_PLUGIN_CPPFLAGS = -I./include -I./brpc_comm_adapter/proto  \
+			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include
+
+BRPC_PLUGIN_LINK_LIB = $(BPRC_LDFLAGS_BRPC) $(BRPC_LDFLAGS_PROTO) $(BRPC_LDFLAGS_DEPENDENCIES)
+
+BRPC_PLUGIN_LIB_NAME = libbrpcplugin.so
+
+CXXFLAGS=-Wall -Wextra -O2 -fPIC
+
+all: ${BRPC_PLUGIN_LIB_NAME}
+
+${BRPC_PLUGIN_LIB_NAME}:$(BRPC_PLUGIN_CXX_OBJS) $(PROTO_OBJS)
+	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(BRPC_PLUGIN_LINK_LIB)
+
+$(BRPC_PLUGIN_CXX_OBJS):%.o:%.cpp $(PROTO_SRC)
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+
+$(PROTO_OBJS):%o:%cc $(PROTO_SRC)
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+
+$(PROTO_SRC): $(PROTO_FILE)
+	mkdir -p $(BRPC_COMM_ADAPTER)/proto
+	protoc --cpp_out=$(BRPC_COMM_ADAPTER)/proto/ -I $(PROTO_DIR) $(notdir $(PROTO_FILE))
+
+clean:
+	rm -f $(PROTO_OBJS) $(BRPC_PLUGIN_CXX_OBJS) ${BRPC_PLUGIN_LIB_NAME}

@@ -10,10 +10,8 @@
 
 __attribute__((visibility("default")))
 void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg);
-
-extern FalconShmemAllocator FalconConnectionPoolShmemAllocator;
-
 size_t FalconConnectionPoolShmemsize(void);
 void FalconConnectionPoolShmemInit(void);
+void RunConnectionPoolServer(void);
 
 #endif

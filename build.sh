@@ -48,16 +48,16 @@ build_pg() {
 
     echo "Building PostgreSQL (mode: $BLD_OPT) ..."
 
-    # 设置构建选项
+    # set build options
     if [[ "$BLD_OPT" == "debug" ]]; then
         CONFIGURE_OPTS+=(--enable-debug)
         PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
     fi
 
-    # 进入源码目录
+    # enter source directory
     cd "$POSTGRES_SRC_DIR" || exit 1
 
-    # 清理旧配置
+    # clean previous build artifacts if any
     if [[ -f "config.status" ]]; then
         make distclean || true
     fi
@@ -68,6 +68,12 @@ build_pg() {
         make -j$(nproc) &&
         cd "$POSTGRES_SRC_DIR/contrib" && make -j
     echo "PostgreSQL build complete."
+
+    # build brpc communication plugin.
+    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    echo "Building brpc communication plugin..."
+    cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
+    echo "build brpc communication plugin complete."
 }
 
 clean_pg() {
@@ -80,7 +86,7 @@ clean_pg() {
     echo "PostgreSQL clean complete."
 }
 
-# 构建 FalconFS
+# build_falconfs
 build_falconfs() {
     gen_proto
 
@@ -108,7 +114,7 @@ build_falconfs() {
     echo "FalconFS build complete."
 }
 
-# 清理 FalconFS
+# clean_falconfs
 clean_falconfs() {
     echo "Cleaning FalconFS Meta"
     cd $FALCONFS_DIR/falcon
@@ -136,6 +142,12 @@ install_pg() {
         bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $PG_INSTALL_DIR $FALCONFS_INSTALL_DIR
     fi
     echo "PostgreSQL installed to $PG_INSTALL_DIR"
+
+    # install brpc communication plugin.
+    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    echo "copy brpc communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
+    cp "$POSTGRES_SRC_DIR/contrib/falcon/libbrpcplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
+    echo "brpc communication plugin copied."
 }
 
 install_falcon_meta() {
@@ -215,7 +227,7 @@ print_help() {
         echo "  $0 clean dist     # Remove installed PostgreSQL"
         ;;
     *)
-        # 主帮助信息
+        # General help information
         echo "Usage: $0 <command> [subcommand] [options]"
         echo ""
         echo "Commands:"
@@ -229,7 +241,7 @@ print_help() {
     esac
 }
 
-# 命令分发
+# Dispatch commands
 case "$COMMAND" in
 build)
     # Process shared build options (only debug/deploy allowed for combined build)

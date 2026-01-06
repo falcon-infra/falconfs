@@ -28,4 +28,4 @@ tests/regress/falconfs
 tests/falcon_cm/__pycache__
 
 falcon/connection_pool/fbs
-falcon/connection_pool/proto
+falcon/brpc_comm_adapter/proto

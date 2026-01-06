@@ -11,6 +11,7 @@ FalconConnectionPoolWaitMin=1
 FalconConnectionPoolWaitMax=500
 FalconConnectionPoolShmemSize=$((256)) #unit: MB
 username=$USER
+export PG_INSTALL_DIR="${PG_INSTALL_DIR:-$HOME/metadb}"
 
 server_name_list=()
 server_ip_list=()
@@ -44,6 +45,8 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libbrpcplugin.so'
+falcon_communication.server_ip = '$cnIp'
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -90,6 +93,8 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
+falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libbrpcplugin.so'
+falcon_communication.server_ip = '${workerIp}'
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi

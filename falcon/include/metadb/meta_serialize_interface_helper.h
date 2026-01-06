@@ -8,31 +8,29 @@
 #include <stdint.h>
 
 #include "metadb/meta_handle.h"
+#include "utils/falcon_meta_service_def.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-FalconSupportMetaService MetaServiceTypeDecode(int32_t type);
-int32_t MetaServiceTypeEncode(FalconSupportMetaService metaService);
-
-bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
+bool SerializedDataMetaParamDecode(FalconMetaServiceType metaService,
                                    int count,
                                    SerializedData *param,
                                    MetaProcessInfoData *infoArray);
 
-bool SerializedDataMetaParamEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+bool SerializedDataMetaParamEncodeWithPerProcessFlatBufferBuilder(FalconMetaServiceType metaService,
                                                                   MetaProcessInfo *infoArray,
                                                                   int32_t *index,
                                                                   int count,
                                                                   SerializedData *param);
 
-bool SerializedDataMetaResponseDecode(FalconSupportMetaService metaService,
+bool SerializedDataMetaResponseDecode(FalconMetaServiceType metaService,
                                       int count,
                                       SerializedData *response,
                                       MetaProcessInfoData *infoArray);
 
-bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconMetaServiceType metaService,
                                                                      int count,
                                                                      MetaProcessInfoData *infoArray,
                                                                      SerializedData *response);

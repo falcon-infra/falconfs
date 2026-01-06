@@ -3,37 +3,114 @@
  */
 
 #include "connection_pool/pg_connection_pool.h"
-
-#include "connection_pool/pg_connection.h"
+#include <atomic>
+#include <condition_variable>
+#include <iostream>
+#include <memory>
+#include <queue>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include "base_comm_adapter/base_meta_service_job.h"
+#include "concurrentqueue/concurrentqueue.h"
 #include "connection_pool/connection_pool_config.h"
+#include "connection_pool/falcon_batch_service_def.h"
+#include "connection_pool/falcon_worker_task.h"
+#include "connection_pool/pg_connection.h"
+
+class PGConnectionPool {
+  private:
+    std::unordered_set<PGConnection *> currentManagedConn;
+
+    bool working;
+
+    std::queue<PGConnection *> connPool;
+    std::mutex connPoolMutex;
+    std::condition_variable cvPoolNotEmpty;
+
+    std::mutex pendingTaskMutex;
+    std::condition_variable cvPendingTaskNotEmpty;
+    std::condition_variable cvPendingTaskNotFull;
+    uint16_t pendingTaskBufferMaxSize;
+
+    class TaskSupportBatch {
+      public:
+        moodycamel::ConcurrentQueue<BaseMetaServiceJob *> jobList;
+        std::mutex taskMutex;
+        std::condition_variable cvBatchNotFull;
+    };
+    TaskSupportBatch supportBatchTaskList[int(FalconBatchServiceType::END)];
+    uint16_t batchTaskBufferMaxSize;
+
+    std::thread backgroundPoolManager;
+
+    // define private construct function to avoid create single instance
+    PGConnectionPool() = default;
+
+    // get one idle connection to do work
+    PGConnection *GetPGConnection();
+
+    // background function for create work task and dispatch work task to idle connection.
+    void BackgroundPoolManager();
+
+    // create batch job work task and dispatch to connection
+    int BatchDequeueExec(int toDequeue, int queueIndex);
+
+    // create single job work task and dispatch to connection
+    int SingleDequeueExec(int toDequeue);
+
+    // adjust sleep interval while no jobs waiting to work
+    int AdjustWaitTime(int prevTime, size_t reqInLoop);
+
+  public:
+    ~PGConnectionPool() = default;
+
+    // single instance interface
+    static PGConnectionPool &GetInstance()
+    {
+        static PGConnectionPool pgConnectionPool;
+        return pgConnectionPool;
+    }
+
+    // interface for communication server to call, used to dispatch meta service job to connection pool
+    void DispatchMetaServiceJob(BaseMetaServiceJob *job);
+
+    bool Init(const uint16_t port,
+              const char *userName,
+              const int connPoolSize,
+              const uint16_t pendingTaskBufferMaxSize,
+              const uint16_t batchTaskBufferMaxSize);
+    void Destroy();
+};
 
 void PGConnectionPool::BackgroundPoolManager()
 {
-    std::vector<falcon::meta_proto::AsyncMetaServiceJob *> notSupportTasks;
-    notSupportTasks.reserve(FalconConnectionPoolBatchSize);
     int waitTime = 100; // microseconds
     while (working) {
-        if (!working) break;
+        if (!working)
+            break;
 
         int maxCount = 0;
         bool withTasks = true;
         while (withTasks) {
             int emptyCount = 0;
-            for (int i = 0; i <= TaskSupportBatchType::NOT_SUPPORT; ++i) {
-                int queueSizeApprox = supportBatchTaskList[i].task->jobList.size_approx();
+            for (int i = 0; i <= (int)FalconBatchServiceType::NOT_SUPPORT; ++i) {
+                int queueSizeApprox = supportBatchTaskList[i].jobList.size_approx();
                 if (queueSizeApprox == 0) {
                     emptyCount++;
                     continue;
                 }
                 maxCount = std::max(maxCount, queueSizeApprox);
                 int toDequeue = std::min(queueSizeApprox, FalconConnectionPoolBatchSize);
-                if (i < TaskSupportBatchType::NOT_SUPPORT) {
+                if (i < (int)FalconBatchServiceType::NOT_SUPPORT) {
                     BatchDequeueExec(toDequeue, i);
                 } else {
-                    SingleDequeueExec(toDequeue, notSupportTasks);
+                    SingleDequeueExec(toDequeue);
                 }
             }
-            if (emptyCount == TaskSupportBatchType::NOT_SUPPORT + 1) {
+            if (emptyCount == (int)FalconBatchServiceType::NOT_SUPPORT + 1) {
                 withTasks = false;
             }
         }
@@ -57,70 +134,41 @@ int PGConnectionPool::AdjustWaitTime(int prevTime, size_t reqInLoop)
 
 int PGConnectionPool::BatchDequeueExec(int toDequeue, int queueIndex)
 {
-    auto taskVecPtr = std::make_shared<WorkerTask>();
-    taskVecPtr->isBatch = true;
-    taskVecPtr->jobList.reserve(toDequeue);
-    int count = supportBatchTaskList[queueIndex].task->jobList.try_dequeue_bulk(
-        std::back_inserter(taskVecPtr->jobList), 
-        toDequeue
-    );
+    std::vector<BaseMetaServiceJob *> jobList;
+    jobList.reserve(toDequeue);
+    int count = supportBatchTaskList[queueIndex].jobList.try_dequeue_bulk(std::back_inserter(jobList), toDequeue);
     if (count == 0) {
         return 0;
     }
+    auto workerTaskPtr = std::make_shared<BatchWorkerTask>(GetFalconConnectionPoolShmemAllocator(), jobList);
+    if (workerTaskPtr == nullptr) {
+        throw std::runtime_error("BatchDequeueExec make_shared<BatchWorkerTask> failed, out of memory.");
+    }
+
     PGConnection *conn = GetPGConnection(); // get idle connection, may block
-    conn->Exec(taskVecPtr);
+    conn->Exec(workerTaskPtr);
     return count;
 }
 
-int PGConnectionPool::SingleDequeueExec(int toDequeue, std::vector<falcon::meta_proto::AsyncMetaServiceJob *> &tasksContainer)
+int PGConnectionPool::SingleDequeueExec(int toDequeue)
 {
-    tasksContainer.clear();
-    size_t count = supportBatchTaskList[TaskSupportBatchType::NOT_SUPPORT].task->jobList.try_dequeue_bulk(
-        std::back_inserter(tasksContainer), 
-        toDequeue
-    );
+    std::vector<BaseMetaServiceJob *> singleJobList;
+    singleJobList.reserve(toDequeue);
+    size_t count = supportBatchTaskList[(int)FalconBatchServiceType::NOT_SUPPORT].jobList.try_dequeue_bulk(
+        std::back_inserter(singleJobList),
+        toDequeue);
     if (count == 0) {
         return 0;
     }
-    for (auto &e : tasksContainer) {
-        PGConnection *conn = GetPGConnection();
-        auto taskVecPtr = std::make_shared<WorkerTask>();
-        taskVecPtr->jobList.emplace_back(e);
-        conn->Exec(taskVecPtr);
+    for (auto &job : singleJobList) {
+        auto workerTaskPtr = std::make_shared<SingleWorkerTask>(GetFalconConnectionPoolShmemAllocator(), job);
+        if (workerTaskPtr == nullptr) {
+            throw std::runtime_error("BatchDequeueExec make_shared<BatchWorkerTask> failed, out of memory.");
+        }
+        PGConnection *conn = GetPGConnection(); // get idle connection, may block
+        conn->Exec(workerTaskPtr);
     }
     return count;
-}
-
-PGConnectionPool::PGConnectionPool(const uint16_t port,
-                                   const char *userName,
-                                   const int connPoolSize,
-                                   const uint16_t pendingTaskBufferMaxSize,
-                                   const uint16_t batchTaskBufferMaxSize)
-{
-    for (int i = 0; i < connPoolSize; ++i) {
-        PGConnection *conn = new PGConnection(this, "127.0.0.1", port, userName);
-        currentManagedConn.insert(conn);
-        connPool.push(conn);
-    }
-    this->pendingTaskBufferMaxSize = pendingTaskBufferMaxSize;
-    this->batchTaskBufferMaxSize = batchTaskBufferMaxSize;
-
-    for (int i = 0; i <= TaskSupportBatchType::NOT_SUPPORT; ++i) {
-        supportBatchTaskList[i].task = new Task(batchTaskBufferMaxSize);
-        supportBatchTaskList[i].task->isBatch = (i != TaskSupportBatchType::NOT_SUPPORT);
-    }
-
-    working = true;
-    backgroundPoolManager = std::thread(&PGConnectionPool::BackgroundPoolManager, this);
-}
-
-void PGConnectionPool::ReaddWorkingPGConnection(PGConnection *conn)
-{
-    {
-        std::unique_lock<std::mutex> lk(connPoolMutex);
-        connPool.push(conn);
-    }
-    cvPoolNotEmpty.notify_one();
 }
 
 PGConnection *PGConnectionPool::GetPGConnection()
@@ -137,48 +185,67 @@ PGConnection *PGConnectionPool::GetPGConnection()
 }
 
 // lifetime of job must be longer than this function. it will be freed later
-void PGConnectionPool::DispatchAsyncMetaServiceJob(falcon::meta_proto::AsyncMetaServiceJob *job)
+void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
 {
     // we only allow batch with others if:
     // 1. explicit allow batch with others
     // 2. all of the operations have a same type
     // 3. operation type support batch
-    const falcon::meta_proto::MetaRequest *request = job->GetRequest();
-    if (request->type_size() == 0)
+    if (job->IsEmptyRequest()) {
         return;
-    falcon::meta_proto::MetaServiceType type = request->type(0);
-    TaskSupportBatchType taskSupportBatchType = ConvertMetaServiceTypeToTaskSupportBatchType(type);
-    bool allowBatchWithOthers =
-        request->allow_batch_with_others() && taskSupportBatchType != TaskSupportBatchType::NOT_SUPPORT;
-    if (allowBatchWithOthers) {
-        for (int i = 1; i < request->type_size(); ++i)
-            if (request->type(i) != type) {
-                allowBatchWithOthers = false;
-                break;
-            }
     }
 
-    if (allowBatchWithOthers) {
-        while (!supportBatchTaskList[taskSupportBatchType].task->jobList.enqueue(job)) {
-            std::cout << "DispatchAsyncMetaServiceJob: enqueue failed, type = " << taskSupportBatchType << std::endl;
-            std::this_thread::yield();
-        }
-    } else {
-        while (!supportBatchTaskList[TaskSupportBatchType::NOT_SUPPORT].task->jobList.enqueue(job)) {
-            std::cout << "DispatchAsyncMetaServiceJob: enqueue failed, type = " << taskSupportBatchType << std::endl;
-            std::this_thread::yield();
-        }
+    FalconMetaServiceType falconSupportType = job->GetFalconMetaServiceType(0);
+    FalconBatchServiceType FalconBatchServiceType = job->IsAllowBatchProcess()
+                                                        ? FalconMetaServiceTypeToBatchServiceType(falconSupportType)
+                                                        : FalconBatchServiceType::NOT_SUPPORT;
+    while (!supportBatchTaskList[(int)FalconBatchServiceType].jobList.enqueue(job)) {
+        std::cout << "DispatchMetaServiceJob: enqueue failed, type = " << (int)FalconBatchServiceType << std::endl;
+        std::this_thread::yield();
     }
 }
 
-void PGConnectionPool::Stop()
+bool PGConnectionPool::Init(const uint16_t port,
+                            const char *userName,
+                            const int connPoolSize,
+                            const uint16_t pendingTaskBufferMaxSize,
+                            const uint16_t batchTaskBufferMaxSize)
 {
+    auto workerFinishNotifyFunc = [this](PGConnection *conn) {
+        {
+            std::unique_lock<std::mutex> lk(connPoolMutex);
+            connPool.push(conn);
+        }
+        cvPoolNotEmpty.notify_one();
+    };
+
+    for (int i = 0; i < connPoolSize; ++i) {
+        PGConnection *conn = new PGConnection(workerFinishNotifyFunc, "127.0.0.1", port, userName);
+        currentManagedConn.insert(conn);
+        connPool.push(conn);
+    }
+    this->pendingTaskBufferMaxSize = pendingTaskBufferMaxSize;
+    this->batchTaskBufferMaxSize = batchTaskBufferMaxSize;
+
+    working = true;
+    backgroundPoolManager = std::thread(&PGConnectionPool::BackgroundPoolManager, this);
+    return true;
+}
+
+void PGConnectionPool::Destroy()
+{
+    // wait all jobs finished, max wait times is 10 second.
+    int waitIntervalTime = 100;
+    int waitMaxCnt = 100;
+    for (int i = 0; i <= (int)FalconBatchServiceType::NOT_SUPPORT; ++i) {
+        int curWaitCnt = 0;
+        while (supportBatchTaskList[i].jobList.size_approx() > 0 && waitMaxCnt > curWaitCnt) {
+            std::this_thread::sleep_for(std::chrono::microseconds(waitIntervalTime));
+            curWaitCnt++;
+        }
+    }
+
     working = false;
-}
-
-PGConnectionPool::~PGConnectionPool()
-{
-    Stop();
     for (auto it = currentManagedConn.begin(); it != currentManagedConn.end(); ++it) {
         (*it)->Stop();
     }
@@ -187,4 +254,20 @@ PGConnectionPool::~PGConnectionPool()
     }
     backgroundPoolManager.join();
     currentManagedConn.clear();
+}
+
+bool StartPGConnectionPool()
+{
+    // postgres connection pool init for process jobs dispatched by communication Server
+    char *userName = getenv("USER");
+    return PGConnectionPool::GetInstance().Init(FalconPGPort, userName, FalconConnectionPoolSize, 20, 400);
+}
+
+void DestroyPGConnectionPool() { PGConnectionPool::GetInstance().Destroy(); }
+
+// communication server callback function used to dispatch request to PGConnectionPool
+void FalconDispatchMetaJob2PGConnectionPool(void *job)
+{
+    BaseMetaServiceJob *metaJob = static_cast<BaseMetaServiceJob *>(job);
+    PGConnectionPool::GetInstance().DispatchMetaServiceJob(metaJob);
 }
