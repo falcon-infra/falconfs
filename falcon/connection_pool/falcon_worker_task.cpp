@@ -5,6 +5,7 @@
 #include <sstream>
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
+#include "perf_counter/perf_stat.h"
 #include "remote_connection_utils/error_code_def.h"
 #include "remote_connection_utils/serialized_data.h"
 
@@ -17,6 +18,11 @@ void SingleWorkerTask::DoWork(PGconn *conn,
                               flatbuffers::FlatBufferBuilder &flatBufferBuilder,
                               SerializedData &replyBuilder)
 {
+    /* Report workerWaitLatency (final stage, no restart needed) */
+    if (m_job != nullptr) {
+        m_job->stageTimer.End(GetWorkerWaitLatencyData());
+    }
+
     // 1. Reset status and check validity of input
     PGresult *res{nullptr};
     while ((res = PQgetResult(conn)) != NULL)
@@ -186,6 +192,13 @@ void BatchWorkerTask::DoWork(PGconn *conn,
                              flatbuffers::FlatBufferBuilder &flatBufferBuilder,
                              SerializedData &replyBuilder)
 {
+    /* Report workerWaitLatency (final stage, no restart needed) for all jobs in batch */
+    for (auto &job : m_jobList) {
+        if (job != nullptr) {
+            job->stageTimer.End(GetWorkerWaitLatencyData());
+        }
+    }
+
     // 1. Reset status and check validity of input
     PGresult *res{nullptr};
     while ((res = PQgetResult(conn)) != NULL)

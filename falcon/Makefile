@@ -3,7 +3,7 @@
 PG_CFLAGS = -Wno-declaration-after-statement
 
 MODULE_big = falcon
-SUBDIRS = . metadb utils distributed_backend transaction control dir_path_shmem connection_pool plugin
+SUBDIRS = . metadb utils distributed_backend transaction control dir_path_shmem connection_pool plugin perf_counter
 
 falcon_srcdir = .
 CXX_OBJS += \

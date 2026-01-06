@@ -6,11 +6,16 @@
 #define BASE_META_SERVICE_JOB_H
 
 #include <functional>
+#include "perf_counter/perf_stat.h"
 #include "utils/falcon_meta_service_def.h"
 
 class BaseMetaServiceJob {
   public:
-    BaseMetaServiceJob() = default;
+    LatencyTimer stageTimer;
+    LatencyTimer e2eTimer;                        // End-to-end latency timer (from queue entry to Done())
+    FalconMetaServiceType opcodeForE2E;           // Opcode stored for e2e reporting in Done()
+
+    BaseMetaServiceJob() : opcodeForE2E(NOT_SUPPORTED) {}
     virtual ~BaseMetaServiceJob() = default;
 
     // Call this function after Job finished to send response and release resource
