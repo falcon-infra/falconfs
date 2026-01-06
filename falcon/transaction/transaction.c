@@ -137,54 +137,39 @@ extern void FalconExplicitTransactionRollbackPrepared(const char *gid)
     falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
 }
 
-void FalconXEventBeforeCommit()
-{
-    FalconRemoteCommandPrepare();
-}
-
-void FalconXEventAfterCommit()
-{
-    FalconRemoteCommandCommit();
-
-    TransactionLevelPathParseReset();
-    CommitForDirPathHash();
-    RWLockReleaseAll(false);
-    ClearRemoteTransactionGid();
-    ClearRemoteConnectionCommand();
-}
-
-void FalconXEventAfterAbort()
-{
-    FalconEnterAbortProgress();
-
-    TransactionLevelPathParseReset();
-    AbortForDirPathHash();
-    RWLockReleaseAll(true);
-    if (!FalconRemoteCommandAbort())
-        FALCON_ELOG_WARNING(PROGRAM_ERROR, "Abort failed on some servers.");
-    ClearRemoteTransactionGid();
-    ClearRemoteConnectionCommand();
-    if (falconExplicitTransactionState == FALCON_EXPLICIT_TRANSACTION_BEGIN)
-        FalconExplicitTransactionRollback();
-
-    FalconQuitAbortProgress();
-}
-
 void RegisterFalconTransactionCallback(void) { RegisterXactCallback(FalconTransactionCallback, NULL); }
 
 static void FalconTransactionCallback(XactEvent event, void *args)
 {
     switch (event) {
     case XACT_EVENT_PRE_COMMIT: {
-        FalconXEventBeforeCommit();
+        FalconRemoteCommandPrepare();
         break;
     }
     case XACT_EVENT_COMMIT: {
-        FalconXEventAfterCommit();
+        FalconRemoteCommandCommit();
+
+        TransactionLevelPathParseReset();
+        CommitForDirPathHash();
+        RWLockReleaseAll(false);
+        ClearRemoteTransactionGid();
+        ClearRemoteConnectionCommand();
         break;
     }
     case XACT_EVENT_ABORT: {
-        FalconXEventAfterAbort();
+        FalconEnterAbortProgress();
+
+        TransactionLevelPathParseReset();
+        AbortForDirPathHash();
+        RWLockReleaseAll(true);
+        if (!FalconRemoteCommandAbort())
+            FALCON_ELOG_WARNING(PROGRAM_ERROR, "Abort failed on some servers.");
+        ClearRemoteTransactionGid();
+        ClearRemoteConnectionCommand();
+        if (falconExplicitTransactionState == FALCON_EXPLICIT_TRANSACTION_BEGIN)
+            FalconExplicitTransactionRollback();
+
+        FalconQuitAbortProgress();
         break;
     }
     case XACT_EVENT_PRE_PREPARE: {

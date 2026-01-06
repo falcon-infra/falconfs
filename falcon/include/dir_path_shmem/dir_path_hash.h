@@ -34,7 +34,6 @@ typedef struct
 typedef struct
 {
     DirPathHashKey key;
-    int64_t accessTime;
     uint64_t inodeId;
     RWLock lock;
     int32_t usageCount;
@@ -60,12 +59,7 @@ extern void InsertDirectoryByDirectoryHashTable(Relation relation,
                                                 uint32_t numSubparts,
                                                 DirPathLockMode lockMode);
 extern void
-DeleteDirectoryByDirectoryHashTable(Relation relation, 
-                                    uint64_t parentId, 
-                                    const char *name, 
-                                    DirPathLockMode lockMode,
-                                    bool forExpired,
-                                    uint64_t* inodeId);
+DeleteDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const char *name, DirPathLockMode lockMode);
 
 #define DIRECTORY_PATH_HASH_BUCKET_NUM 2048
 #define MAX_DIRECTORY_PATH_HASH_CAPACITY 2048

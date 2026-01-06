@@ -199,7 +199,7 @@ void FalconMkdirHandle(MetaProcessInfo *infoArray, int count)
         int64_t serverId = remoteRes->serverId;
 
         if (list_length(remoteRes->remoteCommandResult) < 1 || list_length(remoteRes->remoteCommandResult) > 2)
-            FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected situation.");
+            FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected. situation");
         PGresult *res = NULL;
 
         // 4.1
@@ -1167,7 +1167,7 @@ void FalconRmdirHandle(MetaProcessInfo info)
                                     &info->inodeId);
     if (errorCode != SUCCESS)
         FALCON_ELOG_ERROR(errorCode, "path parse error.");
-    DeleteDirectoryByDirectoryHashTable(directoryRel, info->parentId, info->name, DIR_LOCK_NONE, false, NULL);
+    DeleteDirectoryByDirectoryHashTable(directoryRel, info->parentId, info->name, DIR_LOCK_NONE);
     table_close(directoryRel, RowExclusiveLock);
 
     // 2.
@@ -1258,7 +1258,7 @@ void FalconRmdirSubRmdirHandle(MetaProcessInfo info)
     uint64_t directoryId = SearchDirectoryByDirectoryHashTable(rel, parentId, name, DIR_LOCK_EXCLUSIVE);
     if (directoryId == DIR_HASH_TABLE_PATH_NOT_EXIST)
         FALCON_ELOG_ERROR(FILE_NOT_EXISTS, "FalconRmdirSubRmdirHandle: unexpected.");
-    DeleteDirectoryByDirectoryHashTable(rel, parentId, name, DIR_LOCK_NONE, false, NULL);
+    DeleteDirectoryByDirectoryHashTable(rel, parentId, name, DIR_LOCK_NONE);
     table_close(rel, RowExclusiveLock);
 
     // 2.
@@ -1405,7 +1405,7 @@ void FalconRenameHandle(MetaProcessInfo info)
 
     // 3.
     if (renameDirectory) {
-        DeleteDirectoryByDirectoryHashTable(directoryRel, parentId[srcIndex], name[srcIndex], DIR_LOCK_NONE, false, NULL);
+        DeleteDirectoryByDirectoryHashTable(directoryRel, parentId[srcIndex], name[srcIndex], DIR_LOCK_NONE);
         CommandCounterIncrement();
 
         CatalogIndexState indexState = CatalogOpenIndexes(directoryRel);
@@ -1564,7 +1564,7 @@ void FalconRenameSubRenameLocallyHandle(MetaProcessInfo info)
         CatalogIndexState indexState = CatalogOpenIndexes(directoryRel);
         for (int i = 0; i < 2; ++i) {
             if (i == info->srcLockOrder)
-                DeleteDirectoryByDirectoryHashTable(directoryRel, info->parentId, info->name, DIR_LOCK_EXCLUSIVE, false, NULL);
+                DeleteDirectoryByDirectoryHashTable(directoryRel, info->parentId, info->name, DIR_LOCK_EXCLUSIVE);
             else
                 InsertDirectoryByDirectoryHashTable(directoryRel,
                                                     indexState,
