@@ -75,11 +75,11 @@ function rebuild_falcon() {
     cd "${FALCON_CODE_PATH}"/third_party/postgres
     git restore .
     cd "${FALCON_CODE_PATH}"
-    git pull --rebase
+    #git pull --rebase
 
     up_flag=$(docker ps -a --filter "name=falcon-dev" --format "{{.Names}}\t{{.Status}}" | awk "/Up/" | wc -l)
     if [ "$up_flag" -eq 0 ]; then
-        docker start falcon-dev-lmy
+        docker start falcon-dev
     fi
     docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
         /root/code/falconfs/cloud_native/docker_build/docker_build.sh
@@ -120,7 +120,7 @@ function rebuild_images() {
 
 function clear_one_image() {
     rep_info=$(docker images --format " {{.Repository}}" "$1")
-    if [ "${rep_info}" -eq "$1" ]; then
+    if [ "${rep_info}" == "$1" ]; then
         docker image rm "$1"
     fi
 }
@@ -136,6 +136,18 @@ function clear_images() {
 function run_regress() {
     # restart containers
     docker-compose -f "${1}" up -d
+
+    # wait for falcon created in zk
+    falcon_flag=$(docker exec falcon-zk-1 zkCli.sh -server localhost:2181 ls / | awk '/falcon/' | wc -l)
+    waited_times=0
+    sleep_interval=5
+    while [ "${falcon_flag}" -ne "1" ]; do
+        echo "falcon cluster not ready, wait ${waited_times} second ... "
+        sleep $sleep_interval
+        falcon_flag=$(docker exec falcon-zk-1 zkCli.sh -server localhost:2181 ls / | awk '/falcon/' | wc -l)
+        ((waited_times += sleep_interval))
+    done
+    echo "falcon exist now, cost ${waited_times} second."
 
     # wait for cluster ready
     ready_flag=$(docker exec falcon-zk-1 zkCli.sh -server localhost:2181 ls /falcon | awk '/ready/' | wc -l)

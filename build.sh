@@ -68,12 +68,6 @@ build_pg() {
         make -j$(nproc) &&
         cd "$POSTGRES_SRC_DIR/contrib" && make -j
     echo "PostgreSQL build complete."
-
-    # build brpc communication plugin.
-    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
-    echo "Building brpc communication plugin..."
-    cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
-    echo "build brpc communication plugin complete."
 }
 
 clean_pg() {
@@ -81,7 +75,6 @@ clean_pg() {
     if [[ -d "$POSTGRES_SRC_DIR/contrib/falcon" ]]; then
         cd "$POSTGRES_SRC_DIR" &&
             [ -f "Makefile" ] && make clean || true
-        rm -rf "$POSTGRES_SRC_DIR/contrib/falcon"
     fi
     echo "PostgreSQL clean complete."
 }
@@ -111,6 +104,13 @@ build_falconfs() {
         -DWITH_PROMETHEUS="$WITH_PROMETHEUS" \
         -DBUILD_TEST=$BUILD_TEST &&
         cd "$BUILD_DIR" && ninja
+
+    # build brpc communication plugin.
+    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    echo "Building brpc communication plugin..."
+    cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
+    echo "build brpc communication plugin complete."
+
     echo "FalconFS build complete."
 }
 
@@ -120,7 +120,8 @@ clean_falconfs() {
     cd $FALCONFS_DIR/falcon
     make USE_PGXS=1 clean
     rm -rf $FALCONFS_DIR/falcon/connection_pool/fbs
-    rm -rf $FALCONFS_DIR/falcon/connection_pool/proto
+    rm -rf $FALCONFS_DIR/falcon/brpc_comm_adapter/proto
+    make -f MakefilePlugin.brpc clean
 
     echo "Cleaning FalconFS Client..."
     rm -rf "$BUILD_DIR"
