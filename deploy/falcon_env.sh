@@ -6,5 +6,6 @@ export FALCONFS_HOME="${SCRIPT_DIR}/.."
 echo "Setting FALCONFS_HOME to ${FALCONFS_HOME}"
 export CONFIG_FILE=$FALCONFS_HOME/config/config.json
 export FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
-export PG_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_metadb"
 export PATH=$FALCONFS_INSTALL_DIR/bin:$PATH
+
+export PG_INSTALL_DIR="$(pg_config --libdir)/.."
