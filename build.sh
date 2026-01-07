@@ -143,18 +143,18 @@ install_pg() {
         bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $PG_INSTALL_DIR $FALCONFS_INSTALL_DIR
     fi
     echo "PostgreSQL installed to $PG_INSTALL_DIR"
-
-    # install brpc communication plugin.
-    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
-    echo "copy brpc communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
-    cp "$POSTGRES_SRC_DIR/contrib/falcon/libbrpcplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
-    echo "brpc communication plugin copied."
 }
 
 install_falcon_meta() {
     echo "Installing FalconFS meta ..."
     cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install
     echo "FalconFS meta installed"
+
+    # install brpc communication plugin.
+    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    echo "copy brpc communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
+    cp "$FALCONFS_DIR/falcon/libbrpcplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
+    echo "brpc communication plugin copied."
 }
 
 install_falcon_client() {
