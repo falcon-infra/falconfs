@@ -11,7 +11,6 @@ FalconConnectionPoolWaitMin=1
 FalconConnectionPoolWaitMax=500
 FalconConnectionPoolShmemSize=$((256)) #unit: MB
 username=$USER
-export PG_INSTALL_DIR="${PG_INSTALL_DIR:-$HOME/metadb}"
 
 server_name_list=()
 server_ip_list=()
