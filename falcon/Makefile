@@ -34,7 +34,6 @@ $(FBS_HEAD): $(FBS_FILE)
 PGFILEDESC = "falcon"
 
 LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf
-LDFLAGS_BRPC = -lbrpc
 LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog
 
 PG_CPPFLAGS = -Wno-deprecated-declarations -I$(libpq_srcdir) -I./include -I./connection_pool/proto -I./connection_pool/fbs \

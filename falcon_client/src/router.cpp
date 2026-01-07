@@ -14,7 +14,9 @@
 Router::Router(const ServerIdentifier &coordinator)
     : coordinatorConn(std::make_shared<Connection>(coordinator))
 {
-    FetchShardTable(coordinatorConn);
+    int succeed = FetchShardTable(coordinatorConn);
+    if (succeed != 0)
+        throw std::runtime_error("FetchShardTable failed. Error code = " + std::to_string(succeed));
 }
 
 int Router::FetchShardTable(std::shared_ptr<Connection> conn)
@@ -96,7 +98,7 @@ std::shared_ptr<Connection> Router::GetWorkerConnByPath(std::string_view path)
     uint16_t partId = HashPartId(filename.data());
     auto shardIt = shardTable.lower_bound(HashInt8(partId));
     if (shardIt == shardTable.end()) {
-        throw std::runtime_error("shard table is corrupt.");
+        throw std::runtime_error("shard table is corrupt. cannot find target.");
     }
 
     // Return connection
