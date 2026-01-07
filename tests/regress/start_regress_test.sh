@@ -79,7 +79,7 @@ function rebuild_falcon() {
 
     up_flag=$(docker ps -a --filter "name=falcon-dev" --format "{{.Names}}\t{{.Status}}" | awk "/Up/" | wc -l)
     if [ "$up_flag" -eq 0 ]; then
-        docker start falcon-dev 
+        docker start falcon-dev
     fi
     docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
         /root/code/falconfs/cloud_native/docker_build/docker_build.sh
