@@ -7,7 +7,7 @@ yum install -y rpmdevtools
 # Build falconfs
 
 Build falconfs as well as corresponding dependencies. Notice: the path of third-party libraries should be the same
-to FALCON_INSTALL_DIR, otherwise they cann't be found after users installing rpm package.
+to FALCONFS_INSTALL_DIR, otherwise they cann't be found after users installing rpm package.
 
 For example, on OpenEuler 22.03,
 
@@ -20,7 +20,6 @@ bash build.sh build falcon
 bash build.sh install falcon
 tar -czvf falconfs.tar.gz $FALCONFS_INSTALL_DIR
 ```
-
 
 # Create RPM package
 
