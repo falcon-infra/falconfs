@@ -4,7 +4,7 @@
 
 #include "util/utils.h"
 
-#include <format>
+#include <string>
 #include <random>
 
 std::string rootPath;
@@ -19,7 +19,7 @@ void SetTotalDirectory(int num) { totalDirectory = num; }
 std::string GetFilePath(uint64_t inodeId)
 {
     int directoryId = inodeId % totalDirectory;
-    return std::format("{}/{}/{}-large", rootPath, directoryId, inodeId);
+    return std::string(rootPath) + "/" + std::to_string(directoryId) + "/" + std::to_string(inodeId) + "-large";
 }
 
 int GenerateRandom(int minValue, int maxValue)
@@ -45,7 +45,7 @@ std::expected<std::string, std::string> GetPodIPPort()
 {
     if (const char *podIP = std::getenv("POD_IP")) {
         const char *brpcPort = std::getenv("BRPC_PORT");
-        return std::format("{}:{}", podIP, brpcPort ? brpcPort : "56039");
+        return std::string(podIP) + ":" + (brpcPort ? brpcPort : "56039");
     }
     return std::unexpected("POD_IP environment variable not set");
 }

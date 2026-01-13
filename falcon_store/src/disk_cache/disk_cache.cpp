@@ -9,7 +9,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <algorithm>
-#include <format>
 
 #include <sys/statfs.h>
 #include <sys/time.h>
@@ -67,7 +66,7 @@ int DiskCache::ScanCache()
     std::vector<std::thread> initCacheThreads;
 
     for (int i = 0; i < totalDirNum; ++i) {
-        std::string dirPath = std::format("{}/{}", rootDir, i);
+        std::string dirPath = std::string(rootDir) + "/" + std::to_string(i);
 
         initCacheThreads.emplace_back(Walk, dirPath);
     }

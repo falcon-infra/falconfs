@@ -1,0 +1,161 @@
+FROM openeuler/openeuler:24.03-lts-sp2
+
+ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+
+RUN rm -f /etc/yum.repos.d/*.repo
+
+RUN dnf clean all && \
+    dnf makecache && \
+    dnf groupinstall "Development Tools" -y && \
+    dnf reinstall -y glibc-common && \
+    dnf install -y \
+    readline-devel gflags-devel glog-devel leveldb-devel \
+    openssl-devel postgresql-devel fuse-devel \
+    fmt-devel fio libcurl-devel jq \
+    snappy-devel gperftools-devel libunwind-devel gtest-devel gmock-devel \
+    rdma-core-devel ninja-build cmake python3-devel \
+    libzstd-devel xz-devel libxml2-devel expat-devel jansson-devel \
+    systemd-devel libffi-devel \
+    autoconf automake libtool cppunit-devel \
+    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks && \
+    dnf clean all
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && \
+    echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local.conf && \
+    echo "/usr/local/obs/lib" > /etc/ld.so.conf.d/obs.conf
+
+ARG THRIFT_VERSION=0.19.0
+ARG THRIFT_URL=https://archive.apache.org/dist/thrift/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${THRIFT_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/thrift-${THRIFT_VERSION}" && \
+    ./configure --with-cpp \
+                --without-python \
+                --without-java \
+                --without-go \
+                --without-lua \
+                --without-nodejs \
+                --without-erlang && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/thrift-${THRIFT_VERSION}"
+
+ARG PROTOBUF_VERSION=3.12.4
+ARG PROTOBUF_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${PROTOBUF_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
+    ./autogen.sh && \
+    CXXFLAGS="-fPIC" ./configure && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/protobuf-${PROTOBUF_VERSION}"
+
+ARG BRPC_VERSION=1.12.1
+ARG BRPC_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${BRPC_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja \
+          -DWITH_GLOG=ON \
+          -DWITH_RDMA=ON \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DCMAKE_PREFIX_PATH=/usr/local \
+          .. && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+ARG PROMETHEUS_VERSION=1.3.0
+ARG PROMETHEUS_URL=https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_VERSION}/prometheus-cpp-with-submodules.tar.gz
+RUN wget --no-check-certificate -O- "${PROMETHEUS_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/prometheus-cpp-with-submodules" && \
+    mkdir build && cd build && \
+    cmake .. \
+          -DBUILD_SHARED_LIBS=ON \
+          -DENABLE_PULL=ON \
+          -DENABLE_COMPRESSION=OFF \
+          -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/prometheus-cpp-with-submodules"
+
+ARG FLATBUFFERS_VERSION=25.2.10
+ARG FLATBUFFERS_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
+RUN wget --no-check-certificate -O- "${FLATBUFFERS_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
+
+ARG JSONCPP_VERSION=1.9.6
+ARG JSONCPP_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${JSONCPP_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
+    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
+    mkdir build && cd build && \
+    cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
+
+ARG ZK_VERSION=3.9.1
+ARG ZK_URL=https://archive.apache.org/dist/zookeeper/zookeeper-${ZK_VERSION}/apache-zookeeper-${ZK_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${ZK_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/apache-zookeeper-${ZK_VERSION}" && \
+    mvn compile -DskipTests -pl zookeeper-jute -T 1C && \
+    cd zookeeper-client/zookeeper-client-c && \
+    autoreconf -if && \
+    ./configure --prefix=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/apache-zookeeper-${ZK_VERSION}"
+
+ARG OBS_VERSION=3.24.12
+ARG SPDLOG_VERSION=1.12.0
+ARG SPDLOG_DOWNLOAD_URL=https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz
+ARG OBS_DOWNLOAD_URL=https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/v${OBS_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${SPDLOG_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/spdlog-${SPDLOG_VERSION}" && mkdir build && cd build && \
+    cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && make install && ldconfig && \
+    rm -rf "/tmp/spdlog-${SPDLOG_VERSION}"
+
+RUN wget --no-check-certificate -O- "${OBS_DOWNLOAD_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION}/source/eSDK_OBS_API/eSDK_OBS_API_C++" && \
+    if [ "$(uname -m)" = "aarch64" ]; then PLAT="arm"; bash build_aarch.sh sdk; else PLAT="linux"; bash build.sh sdk; fi && \
+    mkdir -p /usr/local/obs && \
+    tar -zxf sdk.tgz -C /usr/local/obs && \
+    INTERNAL_SPDLOG="/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION}/build/script/Provider/build/${PLAT}/spdlog-${SPDLOG_VERSION}/lib" && \
+    cp -d ${INTERNAL_SPDLOG}/libspdlog.so* /usr/local/obs/lib/ && \
+    ln -sf /usr/local/obs/lib/libiconv.so /usr/local/obs/lib/libiconv.so.0 2>/dev/null || true && \
+    rm -f /usr/local/obs/lib/libcurl.so* && \
+    ldconfig && \
+    rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION}"
+    
+ENV OBS_INSTALL_PREFIX=/usr/local/obs
+ENV CPLUS_INCLUDE_PATH=${OBS_INSTALL_PREFIX}/include:/usr/local/include:${CPLUS_INCLUDE_PATH}
+ENV C_INCLUDE_PATH=${OBS_INSTALL_PREFIX}/include:/usr/local/include:${C_INCLUDE_PATH}
+ENV LD_LIBRARY_PATH=${OBS_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
+ENV PATH=/usr/local/bin:/usr/local/sbin:${PATH}
+ENV USER=root
