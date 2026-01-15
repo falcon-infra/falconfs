@@ -25,5 +25,6 @@ cd /root/falconfs/
 bash local-run.sh
 
 # run falcon_cm test
+echo "----------------------------------------------Running CM IT----------------------------------------------"
 export CONFIG_FILE=/opt/conf/config.json
 ./bin/FalconCMIT

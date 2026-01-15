@@ -2,7 +2,7 @@ FROM ghcr.io/falcon-infra/dev:ubuntu24.04
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
-RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev jq moreutils
+RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev jq moreutils libboost-system-dev libboost-thread-dev
 # brpc
 RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool libibverbs-dev
 

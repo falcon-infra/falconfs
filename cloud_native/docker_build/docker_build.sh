@@ -55,6 +55,7 @@ cp -f $FALCONFS_DIR/tests/regress/stop.sh  $FALCONFS_DIR/tests/regress/falconfs
 cp -f $FALCONFS_DIR/tests/regress/docker-entrypoint.sh $FALCONFS_DIR/tests/regress/falconfs
 
 # prepare image data for cn/dn
+./ldd_copy.sh -b ~/metadb/lib/postgresql/libbrpcplugin.so -t ~/metadb/lib/
 rm -rf ./cn/metadb
 cp -rf ~/metadb ./cn/
 rm -rf ./dn/metadb
