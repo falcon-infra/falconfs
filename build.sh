@@ -9,6 +9,7 @@ WITH_ZK_INIT=false
 WITH_RDMA=false
 WITH_PROMETHEUS=false
 CREATE_SOFT_LINK=true
+COMM_PLUGIN="brpc"
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
 export FALCONFS_INSTALL_DIR=$FALCONFS_INSTALL_DIR
@@ -31,6 +32,41 @@ PG_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_metadb"
 FALCON_CLIENT_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_client"
 PYTHON_SDK_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_python_interface"
 
+set_comm_plugin() {
+    local plugin="${1,,}"
+    case "$plugin" in
+    brpc | hcom)
+        COMM_PLUGIN="$plugin"
+        ;;
+    *)
+        echo "Error: Unknown communication plugin '$1' (choose brpc|hcom)" >&2
+        exit 1
+        ;;
+    esac
+}
+
+parse_comm_plugin_option() {
+    local args=("$@")
+    local count=${#args[@]}
+    for ((i = 0; i < count; i++)); do
+        case "${args[i]}" in
+        --comm-plugin=*)
+            set_comm_plugin "${args[i]#*=}"
+            ;;
+        --comm-plugin)
+            if ((i + 1 < count)); then
+                set_comm_plugin "${args[i + 1]}"
+            else
+                echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
+                exit 1
+            fi
+            ;;
+        esac
+    done
+}
+
+parse_comm_plugin_option "$@"
+
 gen_proto() {
     mkdir -p "$BUILD_DIR"
     echo "Generating Protobuf files..."
@@ -38,6 +74,31 @@ gen_proto() {
         --proto_path="$FALCONFS_DIR/remote_connection_def/proto" \
         falcon_meta_rpc.proto brpc_io.proto
     echo "Protobuf files generated."
+}
+
+build_comm_plugin() {
+    case "$COMM_PLUGIN" in
+    brpc)
+        echo "Building brpc communication plugin..."
+        cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
+        echo "brpc communication plugin build complete."
+        ;;
+    hcom)
+        echo "Building hcom communication plugin..."
+        cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom
+        echo "hcom communication plugin build complete."
+        
+        # Copy test plugins to plugins directory for hcom
+        local test_plugin_src="$BUILD_DIR/test_plugins"
+        local plugins_dest="$FALCONFS_DIR/plugins"
+        if [[ -d "$test_plugin_src" ]]; then
+            echo "Copying test plugins to $plugins_dest..."
+            mkdir -p "$plugins_dest"
+            cp -f "$test_plugin_src"/*.so "$plugins_dest/" 2>/dev/null || true
+            echo "Test plugins copied."
+        fi
+	;;
+    esac
 }
 
 build_pg() {
@@ -109,11 +170,7 @@ build_falconfs() {
         -DBUILD_TEST=$BUILD_TEST &&
         cd "$BUILD_DIR" && ninja
 
-    # build brpc communication plugin.
-    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
-    echo "Building brpc communication plugin..."
-    cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
-    echo "build brpc communication plugin complete."
+    build_comm_plugin
 
     echo "FalconFS build complete."
 }
@@ -125,7 +182,8 @@ clean_falconfs() {
     make USE_PGXS=1 clean
     rm -rf $FALCONFS_DIR/falcon/connection_pool/fbs
     rm -rf $FALCONFS_DIR/falcon/brpc_comm_adapter/proto
-    make -f MakefilePlugin.brpc clean
+    make -f MakefilePlugin.brpc clean || true
+    make -f MakefilePlugin.hcom clean || true
 
     echo "Cleaning FalconFS Client..."
     rm -rf "$BUILD_DIR"
@@ -154,11 +212,23 @@ install_falcon_meta() {
     cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install
     echo "FalconFS meta installed"
 
-    # install brpc communication plugin.
-    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
-    echo "copy brpc communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
-    cp "$FALCONFS_DIR/falcon/libbrpcplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
-    echo "brpc communication plugin copied."
+    local plugin_src=""
+    case "$COMM_PLUGIN" in
+    brpc)
+        plugin_src="$FALCONFS_DIR/falcon/libbrpcplugin.so"
+        ;;
+    hcom)
+        plugin_src="$FALCONFS_DIR/falcon/libhcomplugin.so"
+        ;;
+    esac
+
+    if [[ ! -f "$plugin_src" ]]; then
+        echo "Error: communication plugin ($COMM_PLUGIN) not built at $plugin_src" >&2
+        exit 1
+    fi
+    echo "copy ${COMM_PLUGIN} communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
+    cp "$plugin_src" "$PG_INSTALL_DIR/lib/postgresql/"
+    echo "${COMM_PLUGIN} communication plugin copied."
 }
 
 install_falcon_client() {
@@ -205,12 +275,14 @@ print_help() {
         echo "  falcon           Build only FalconFS"
         echo ""
         echo "Options:"
-        echo "  --debug          Build debug versions"
-        echo "  --release        Build release versions (default)"
-        echo "  -h, --help       Show this help message"
+        echo "  --debug              Build debug versions"
+        echo "  --release            Build release versions (default)"
+        echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
+        echo "  -h, --help           Show this help message"
         echo ""
         echo "Examples:"
-        echo "  $0 build --debug     # Build everything in debug mode"
+        echo "  $0 build --debug                 # Build everything in debug mode"
+        echo "  $0 build --comm-plugin=hcom      # Build with hcom communication plugin"
         ;;
     clean)
         echo "Usage: $0 clean [target] [options]"
@@ -264,10 +336,22 @@ build)
             print_help "build"
             exit 0
             ;;
+        --comm-plugin)
+            if [[ -z "${3:-}" ]]; then
+                echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
+                exit 1
+            fi
+            set_comm_plugin "$3"
+            shift 2
+            ;;
+        --comm-plugin=*)
+            set_comm_plugin "${2#*=}"
+            shift
+            ;;
         *)
             # Only break if this isn't the combined build case
             [[ -z "${2:-}" || "$2" == "pg" || "$2" == "falcon" ]] && break
-            echo "Error: Combined build only supports --debug or --deploy" >&2
+            echo "Error: Combined build only supports --debug, --deploy or --comm-plugin" >&2
             exit 1
             ;;
         esac
@@ -314,19 +398,31 @@ build)
             --with-prometheus)
                 WITH_PROMETHEUS=true
                 ;;
+            --comm-plugin)
+                if [[ -z "${2:-}" ]]; then
+                    echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
+                    exit 1
+                fi
+                set_comm_plugin "$2"
+                shift
+                ;;
+            --comm-plugin=*)
+                set_comm_plugin "${1#*=}"
+                ;;
             --help | -h)
                 echo "Usage: $0 build falcon [options]"
                 echo ""
                 echo "Build FalconFS Components"
                 echo ""
                 echo "Options:"
-                echo "  --debug         Build in debug mode"
-                echo "  --release       Build in release mode"
-                echo "  --relwithdebinfo Build with debug symbols"
-                echo "  --with-fuse-opt Enable FUSE optimizations"
-                echo "  --with-zk-init Enable Zookeeper initialization for containerized deployment"
-                echo "  --with-rdma     Enable RDMA support"
-                echo "  --with-prometheus Enable Prometheus metrics"
+                echo "  --debug              Build in debug mode"
+                echo "  --release            Build in release mode"
+                echo "  --relwithdebinfo     Build with debug symbols"
+                echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
+                echo "  --with-fuse-opt      Enable FUSE optimizations"
+                echo "  --with-zk-init       Enable Zookeeper initialization for containerized deployment"
+                echo "  --with-rdma          Enable RDMA support"
+                echo "  --with-prometheus    Enable Prometheus metrics"
                 exit 0
                 ;;
             *)
@@ -405,13 +501,19 @@ clean)
     esac
     ;;
 test)
-    TARGET_DIR="$FALCONFS_DIR/build/tests/falcon_store/"
-    # Find executable files directly in the test directory (not in subdirectories)
-    # Exclude .cmake files and anything in CMakeFiles/
-    find "$TARGET_DIR" -maxdepth 1 -type f -executable -not -name "*.cmake" -not -path "*/CMakeFiles/*" | while read -r executable_file; do
-        echo "Executing: $executable_file"
-        "$executable_file"
-        echo "---------------------------------------------------------------------------------------"
+    TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
+
+    for TARGET_DIR in "${TARGET_DIRS[@]}"; do
+        if [ -d "$TARGET_DIR" ]; then
+            echo "Running tests in: $TARGET_DIR"
+            find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
+                echo "Executing: $executable_file"
+                "$executable_file"
+                echo "---------------------------------------------------------------------------------------"
+            done
+        else
+            echo "Test directory not found: $TARGET_DIR"
+        fi
     done
     echo "All unit tests passed."
     ;;

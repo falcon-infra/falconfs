@@ -328,7 +328,7 @@ void FalconMkdirSubCreateHandle(MetaProcessInfo *infoArray, int count)
                                  info->name,
                                  0,
                                  info->st_mode,
-                                 1,
+                                 2,
                                  0,
                                  0,
                                  0,
@@ -395,8 +395,10 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->parentId_partId = CombineParentIdWithPartId(info->parentId, partId);
         info->st_mode = S_IFREG | 0644;
         info->st_mtim = GetCurrentTimestamp();
+        info->st_atim = info->st_mtim;
+        info->st_ctim = info->st_mtim;
         info->st_size = 0;
-        info->node_id = -1;
+        info->node_id = GetLocalServerId();
         info->st_nlink = 1;
         info->etag = (char *)"";
         info->st_dev = 0;
@@ -405,8 +407,6 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->st_rdev = 0;
         info->st_blksize = 0;
         info->st_blocks = 0;
-        info->st_atim = 0;
-        info->st_ctim = 0;
 
         int shardId, workerId;
         SearchShardInfoByShardValue(info->parentId_partId, &shardId, &workerId);
@@ -497,12 +497,12 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                                          info->st_size,
                                          0,
                                          0,
+                                         info->st_atim,
                                          info->st_mtim,
-                                         info->st_mtim,
-                                         info->st_mtim,
+                                         info->st_ctim,
                                          info->etag,
                                          0,
-                                         -1,
+                                         info->node_id,
                                          -1);
                     --currentGroupHandled;
                 }
@@ -559,7 +559,7 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
         //
         info->errorCode = SUCCESS;
         info->errorMsg = NULL;
-
+        
         int32_t property;
         //
         FalconErrorCode errorCode = VerifyPathValidity(info->path, 0, &property);
@@ -616,6 +616,9 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
         for (int i = 0; i < list_length(entry->info); ++i) {
             MetaProcessInfo info = list_nth(entry->info, i);
 
+            elog(LOG, "[DEBUG] FalconStatHandle query: shardId=%d, parentId_partId=%lu, name=%s, name_len=%zu",
+                 entry->shardId, info->parentId_partId, info->name, strlen(info->name));
+
             ScanKeyData scanKey[2];
             int scanKeyCount = 2;
             SysScanDesc scanDescriptor = NULL;
@@ -636,6 +639,7 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
             TupleDesc tupleDesc = RelationGetDescr(workerInodeRel);
             if (!HeapTupleIsValid(heapTuple)) {
                 info->errorCode = FILE_NOT_EXISTS;
+                elog(LOG, "[DEBUG] FalconStatHandle result: NOT FOUND for name=%s", info->name);
             } else {
                 Datum datumArray[Natts_pg_dfs_inode_table];
                 bool isNullArray[Natts_pg_dfs_inode_table];
@@ -654,6 +658,9 @@ void FalconStatHandle(MetaProcessInfo *infoArray, int count)
                 info->st_mtim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_mtim - 1]);
                 info->st_ctim = DatumGetInt64(datumArray[Anum_pg_dfs_file_st_ctim - 1]);
                 info->etag = TextDatumGetCString(datumArray[Anum_pg_dfs_file_etag - 1]);
+                if (!isNullArray[Anum_pg_dfs_file_primary_nodeid - 1]) {
+                    info->node_id = DatumGetInt32(datumArray[Anum_pg_dfs_file_primary_nodeid - 1]);
+                }
             }
             systable_endscan(scanDescriptor);
         }
@@ -1246,6 +1253,8 @@ void FalconRmdirHandle(MetaProcessInfo info)
                               "RmdirSubUnlink is supposed to be successful, "
                               "but it failed.");
     }
+
+    info->errorCode = SUCCESS;
 }
 
 void FalconRmdirSubRmdirHandle(MetaProcessInfo info)
@@ -1328,7 +1337,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                                    NULL,
                                                    NULL,
                                                    &nlink,
-                                                   -1,
+                                                   -2,
                                                    NULL,
                                                    NULL,
                                                    MODE_CHECK_NONE,
@@ -1345,7 +1354,7 @@ void FalconRmdirSubUnlinkHandle(MetaProcessInfo info)
                                    UINT64_PRINT_SYMBOL ":%s is not existed in inode_table.",
                                    parentId_partId,
                                    name);
-    if (nlink != 1)
+    if (nlink != 2)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "unexpected.");
 
     info->errorCode = SUCCESS;
@@ -1947,4 +1956,437 @@ static bool InsertIntoInodeTable(Relation relation,
     heap_freetuple(heapTuple);
     CommandCounterIncrement();
     return true;
+}
+
+void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count)
+{
+    for (int i = 0; i < count; ++i) {
+        SliceProcessInfo info = infoArray[i];
+        info->errorCode = SUCCESS;
+
+        int shardId, workerId;
+        uint16_t partId = HashPartId(info->name);
+        SearchShardInfoByShardValue(partId, &shardId, &workerId);
+        if (workerId != GetLocalServerId())
+            CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+        StringInfo sliceShardName = GetSliceShardName(shardId);
+        Relation sliceRel = table_open(GetRelationOidByName_FALCON(sliceShardName->data), RowExclusiveLock);
+        CatalogIndexState indexState = CatalogOpenIndexes(sliceRel);
+        TupleDesc tupleDesc = RelationGetDescr(sliceRel);
+        for (int j = 0; j < info->count; ++j) {
+            Datum values[Natts_falcon_slice_table];
+            bool isNulls[Natts_falcon_slice_table];
+            memset(values, 0, sizeof(values));
+            memset(isNulls, false, sizeof(isNulls));
+
+            values[Anum_falcon_slice_table_inodeid - 1] = UInt64GetDatum(info->inodeIds[j]);
+            values[Anum_falcon_slice_table_chunkid - 1] = UInt32GetDatum(info->chunkIds[j]);
+            values[Anum_falcon_slice_table_sliceid - 1] = UInt64GetDatum(info->sliceIds[j]);
+            values[Anum_falcon_slice_table_slicesize - 1] = UInt32GetDatum(info->sliceSizes[j]);
+            values[Anum_falcon_slice_table_sliceoffset - 1] = UInt32GetDatum(info->sliceOffsets[j]);
+            values[Anum_falcon_slice_table_slicelen - 1] = UInt32GetDatum(info->sliceLens[j]);
+            values[Anum_falcon_slice_table_sliceloc1 - 1] = UInt32GetDatum(info->sliceLoc1s[j]);
+            values[Anum_falcon_slice_table_sliceloc2 - 1] = UInt32GetDatum(info->sliceloc2s[j]);
+
+            HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
+            CatalogTupleInsertWithInfo(sliceRel, heapTuple, indexState);
+            heap_freetuple(heapTuple);
+        }
+
+        CatalogCloseIndexes(indexState);
+        table_close(sliceRel, RowExclusiveLock);
+    }
+}
+
+void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count)
+{
+    SetUpScanCaches();
+
+    for (int i = 0; i < count; ++i) {
+        SliceProcessInfo info = infoArray[i];
+
+        int shardId, workerId;
+        uint16_t partId = HashPartId(info->name);
+        SearchShardInfoByShardValue(partId, &shardId, &workerId);
+        if (workerId != GetLocalServerId())
+            CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+        ScanKeyData scanKey[LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE];
+        scanKey[SLICE_TABLE_INODEID_EQ] = SliceTableScanKey[SLICE_TABLE_INODEID_EQ];
+        scanKey[SLICE_TABLE_INODEID_EQ].sk_argument = UInt64GetDatum(info->inputInodeid);
+        scanKey[SLICE_TABLE_CHUNKID_EQ] = SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ];
+        scanKey[SLICE_TABLE_CHUNKID_EQ].sk_argument = UInt32GetDatum(info->inputChunkid);
+
+        StringInfo sliceShardName = GetSliceShardName(shardId);
+        StringInfo sliceIndexShardName = GetSliceIndexShardName(shardId);
+
+        Relation sliceRel = table_open(GetRelationOidByName_FALCON(sliceShardName->data), RowExclusiveLock);
+        SysScanDesc scanDesc = systable_beginscan(sliceRel,
+                                                GetRelationOidByName_FALCON(sliceIndexShardName->data),
+                                                true,
+                                                GetTransactionSnapshot(),
+                                                LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE,
+                                                scanKey);
+        TupleDesc tupleDesc = RelationGetDescr(sliceRel);
+
+        bool isNull;
+        List *getResult = NIL;
+        HeapTuple heapTuple;
+        while (HeapTupleIsValid(heapTuple = systable_getnext(scanDesc))) {
+            SliceInfo *result = palloc(sizeof(SliceInfo));
+            result->inodeId = DatumGetUInt64(heap_getattr(heapTuple, Anum_falcon_slice_table_inodeid, tupleDesc, &isNull));
+            result->chunkId = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_chunkid, tupleDesc, &isNull));
+            result->sliceId = DatumGetUInt64(heap_getattr(heapTuple, Anum_falcon_slice_table_sliceid, tupleDesc, &isNull));
+            result->sliceSize = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_slicesize, tupleDesc, &isNull));
+            result->sliceOffset = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_sliceoffset, tupleDesc, &isNull));
+            result->sliceLen = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_slicelen, tupleDesc, &isNull));
+            result->sliceLoc1 = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_sliceloc1, tupleDesc, &isNull));
+            result->sliceLoc2 = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_slice_table_sliceloc2, tupleDesc, &isNull));
+            getResult = lappend(getResult, result);
+        }
+
+        systable_endscan(scanDesc);
+        table_close(sliceRel, RowExclusiveLock);
+
+        /* if result is NIL */
+        if (getResult == NIL) {
+            info->errorCode = FILE_NOT_EXISTS;
+            info->count = 0;
+            continue;
+        }
+
+        SliceInfo **infos = (SliceInfo **)getResult->elements;
+        info->count = list_length(getResult);
+        info->inodeIds = (uint64_t *)palloc(sizeof(uint64_t) * info->count);
+        info->chunkIds = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+        info->sliceIds = (uint64_t *)palloc(sizeof(uint64_t) * info->count);
+        info->sliceSizes = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+        info->sliceOffsets = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+        info->sliceLens = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+        info->sliceLoc1s = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+        info->sliceloc2s = (uint32_t *)palloc(sizeof(uint32_t) * info->count);
+
+        for (uint32_t i = 0; i < info->count; ++i) {
+            info->inodeIds[i] = infos[i]->inodeId;
+            info->chunkIds[i] = infos[i]->chunkId;
+            info->sliceIds[i] = infos[i]->sliceId;
+            info->sliceSizes[i] = infos[i]->sliceSize;
+            info->sliceOffsets[i] = infos[i]->sliceOffset;
+            info->sliceLens[i] = infos[i]->sliceLen;
+            info->sliceLoc1s[i] = infos[i]->sliceLoc1;
+            info->sliceloc2s[i] = infos[i]->sliceLoc2;
+        }
+
+        info->errorCode = SUCCESS;
+    }
+}
+
+void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count)
+{
+    SetUpScanCaches();
+
+    for (int i = 0; i < count; ++i) {
+        SliceProcessInfo info = infoArray[i];
+        info->errorCode = SUCCESS;
+
+        int shardId, workerId;
+        uint16_t partId = HashPartId(info->name);
+        SearchShardInfoByShardValue(partId, &shardId, &workerId);
+        if (workerId != GetLocalServerId())
+            CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+        ScanKeyData scanKey[LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE];
+        scanKey[SLICE_TABLE_INODEID_EQ] = SliceTableScanKey[SLICE_TABLE_INODEID_EQ];
+        scanKey[SLICE_TABLE_INODEID_EQ].sk_argument = UInt64GetDatum(info->inputInodeid);
+        scanKey[SLICE_TABLE_CHUNKID_EQ] = SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ];
+        scanKey[SLICE_TABLE_CHUNKID_EQ].sk_argument = UInt32GetDatum(info->inputChunkid);
+
+        StringInfo sliceShardName = GetSliceShardName(shardId);
+        StringInfo sliceIndexShardName = GetSliceIndexShardName(shardId);
+
+        Relation sliceRel = table_open(GetRelationOidByName_FALCON(sliceShardName->data), RowExclusiveLock);
+        SysScanDesc scanDesc = systable_beginscan(sliceRel,
+                                                GetRelationOidByName_FALCON(sliceIndexShardName->data),
+                                                true,
+                                                GetTransactionSnapshot(),
+                                                LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE,
+                                                scanKey);
+        HeapTuple heapTuple;
+        while (HeapTupleIsValid(heapTuple = systable_getnext(scanDesc))) {
+            CatalogTupleDelete(sliceRel, &heapTuple->t_self);
+        }
+
+        systable_endscan(scanDesc);
+        table_close(sliceRel, RowExclusiveLock);
+    }
+}
+
+void FalconKvmetaPutHandle(KvMetaProcessInfo info)
+{
+    MemoryContext oldcontext = CurrentMemoryContext;
+
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    Relation kvmetaRel = NULL;
+    TupleDesc tupleDesc = NULL;
+    Datum *dkeys = NULL;
+
+    kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+    CatalogIndexState indexState = CatalogOpenIndexes(kvmetaRel);
+
+    PG_TRY();
+    {
+        tupleDesc = RelationGetDescr(kvmetaRel);
+
+        Datum values[Natts_falcon_kvmeta_table];
+        bool isNulls[Natts_falcon_kvmeta_table];
+        memset(values, 0, sizeof(values));
+        memset(isNulls, false, sizeof(isNulls));
+
+        values[Anum_falcon_kvmeta_table_userkey - 1] = CStringGetTextDatum(info->userkey);
+        values[Anum_falcon_kvmeta_table_valuelen - 1] = UInt32GetDatum(info->valuelen);
+        values[Anum_falcon_kvmeta_table_slicenum - 1] = UInt16GetDatum(info->slicenum);
+
+        ArrayType *arr = NULL;
+        int size = info->slicenum;
+        dkeys = palloc(size * sizeof(Datum));
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt64GetDatum(info->valuekey[i]);
+        }
+        arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+        values[Anum_falcon_kvmeta_table_valuekey - 1] = PointerGetDatum(arr);
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt64GetDatum(info->location[i]);
+        }
+        arr = construct_array(dkeys, size, INT8OID, sizeof(uint64_t), true, 'd');
+        values[Anum_falcon_kvmeta_table_location - 1] = PointerGetDatum(arr);
+
+        for (int i = 0; i < size; i ++) {
+            dkeys[i] = UInt32GetDatum(info->slicelen[i]);
+        }
+        arr = construct_array(dkeys, size, INT4OID, sizeof(uint32_t), true, 'i');
+        values[Anum_falcon_kvmeta_table_slicelen - 1] = PointerGetDatum(arr);
+
+        pfree(dkeys);
+        dkeys = NULL;
+
+        HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
+        CatalogTupleInsertWithInfo(kvmetaRel, heapTuple, indexState);
+        heap_freetuple(heapTuple);
+
+        CatalogCloseIndexes(indexState);
+        table_close(kvmetaRel, RowExclusiveLock);
+    }
+    PG_CATCH();
+    {
+        MemoryContextSwitchTo(oldcontext);
+        ErrorData *errorData = CopyErrorData();
+        FlushErrorState();
+
+        if (dkeys != NULL) {
+            pfree(dkeys);
+            dkeys = NULL;
+        }
+
+        CatalogCloseIndexes(indexState);
+        if (kvmetaRel != NULL) {
+            table_close(kvmetaRel, RowExclusiveLock);
+        }
+
+        info->errorCode = errorData->sqlerrcode == ERRCODE_UNIQUE_VIOLATION ? SUCCESS : UNKNOWN;
+        FreeErrorData(errorData);
+    }
+    PG_END_TRY();
+}
+
+void FalconKvmetaGetHandle(KvMetaProcessInfo info)
+{
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    SetUpScanCaches();
+
+    ScanKeyData scanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+    scanKey[KVMETA_TABLE_USERKEY_EQ] = KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ];
+    scanKey[KVMETA_TABLE_USERKEY_EQ].sk_argument = CStringGetTextDatum(info->userkey);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    StringInfo kvmetaIndexShardName = GetKvmetaIndexShardName(shardId);
+
+    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), AccessShareLock);
+    SysScanDesc scanDesc = systable_beginscan(kvmetaRel,
+                                              GetRelationOidByName_FALCON(kvmetaIndexShardName->data),
+                                              true,
+                                              GetTransactionSnapshot(),
+                                              LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE,
+                                              scanKey);
+    TupleDesc tupleDesc = RelationGetDescr(kvmetaRel);
+    HeapTuple heapTuple = systable_getnext(scanDesc);
+    if (!HeapTupleIsValid(heapTuple)) {
+        systable_endscan(scanDesc);
+        table_close(kvmetaRel, AccessShareLock);
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "FalconKvmetaGetHandle has received invalid input.");
+    }
+
+    bool isNull;
+    ArrayType *arr = NULL;
+    info->valuelen = DatumGetUInt32(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_valuelen, tupleDesc, &isNull));
+    info->slicenum = DatumGetUInt16(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_slicenum, tupleDesc, &isNull));
+
+    int ndim;
+    int nitems;
+    int16 typlen;
+    bool typbyval;
+    char typalign;
+    int* dims = NULL;
+    Datum *array = NULL;
+
+    info->valuekey = palloc(info->slicenum * sizeof(uint64_t));
+    info->location = palloc(info->slicenum * sizeof(uint64_t));
+    info->slicelen = palloc(info->slicenum * sizeof(uint32_t));
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_valuekey, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT8OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->valuekey[i] = DatumGetUInt64(array[i]);
+    }
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_location, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT8OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->location[i] = DatumGetUInt64(array[i]);
+    }
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
+
+    arr = DatumGetArrayTypeP(heap_getattr(heapTuple, Anum_falcon_kvmeta_table_slicelen, tupleDesc, &isNull));
+    get_typlenbyvalalign(ARR_ELEMTYPE(arr), &typlen, &typbyval, &typalign);
+    ndim = ARR_NDIM(arr);
+    dims = ARR_DIMS(arr);
+    nitems = ArrayGetNItems(ndim, dims);
+    deconstruct_array(arr, INT4OID, typlen, typbyval, typalign, &array, NULL, &nitems);
+    for (int i = 0; i < nitems; i++) {
+        info->slicelen[i] = DatumGetUInt32(array[i]);
+    }
+    if (array != NULL) {
+        pfree(array);
+        array = NULL;
+    }
+
+    systable_endscan(scanDesc);
+    table_close(kvmetaRel, AccessShareLock);
+}
+
+void FalconKvmetaDelHandle(KvMetaProcessInfo info)
+{
+    int shardId, workerId;
+    uint16_t partId = HashPartId(info->userkey);
+    SearchShardInfoByShardValue(partId, &shardId, &workerId);
+    if (workerId != GetLocalServerId())
+        CHECK_ERROR_CODE_WITH_RETURN(WRONG_WORKER);
+
+    SetUpScanCaches();
+
+    ScanKeyData scanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+    scanKey[KVMETA_TABLE_USERKEY_EQ] = KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ];
+    scanKey[KVMETA_TABLE_USERKEY_EQ].sk_argument = CStringGetTextDatum(info->userkey);
+
+    StringInfo kvmetaShardName = GetKvmetaShardName(shardId);
+    StringInfo kvmetaIndexShardName = GetKvmetaIndexShardName(shardId);
+
+    Relation kvmetaRel = table_open(GetRelationOidByName_FALCON(kvmetaShardName->data), RowExclusiveLock);
+    SysScanDesc scanDesc = systable_beginscan(kvmetaRel,
+                                              GetRelationOidByName_FALCON(kvmetaIndexShardName->data),
+                                              true,
+                                              GetTransactionSnapshot(),
+                                              LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE,
+                                              scanKey);
+    HeapTuple heapTuple = systable_getnext(scanDesc);
+    if (!HeapTupleIsValid(heapTuple)) {
+        systable_endscan(scanDesc);
+        table_close(kvmetaRel, RowExclusiveLock);
+        FALCON_ELOG_ERROR(ARGUMENT_ERROR, "FalconKvmetaDelHandle has received invalid input.");
+    }
+
+    CatalogTupleDelete(kvmetaRel, &heapTuple->t_self);
+
+    systable_endscan(scanDesc);
+    table_close(kvmetaRel, RowExclusiveLock);
+}
+
+void FalconFetchSliceIdHandle(SliceIdProcessInfo info)
+{
+    SetUpScanCaches();
+
+    ScanKeyData scanKey[LAST_FALCON_SLICEID_TABLE_SCANKEY_TYPE];
+    scanKey[SLICEID_TABLE_SLICEID_EQ] = SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ];
+    scanKey[SLICEID_TABLE_SLICEID_EQ].sk_argument = CStringGetTextDatum("slice_id");
+
+    Oid relationId = info->type == 0 ? KvSliceIdRelationId() : FileSliceIdRelationId();
+    Relation sliceIdRel = table_open(relationId, RowExclusiveLock);
+    SysScanDesc scanDesc = systable_beginscan(sliceIdRel, InvalidOid, true, GetTransactionSnapshot(),
+                                              LAST_FALCON_SLICEID_TABLE_SCANKEY_TYPE, scanKey);
+    TupleDesc tupleDesc = RelationGetDescr(sliceIdRel);
+    HeapTuple heapTuple = systable_getnext(scanDesc);
+
+    Datum values[Natts_falcon_sliceid_table];
+    bool isNulls[Natts_falcon_sliceid_table];
+    bool updates[Natts_falcon_sliceid_table];
+    memset(values, 0, sizeof(values));
+    memset(isNulls, false, sizeof(isNulls));
+    memset(updates, 0, sizeof(updates));
+
+    if (HeapTupleIsValid(heapTuple)) {
+        bool isNull;
+        info->start = DatumGetUInt64(heap_getattr(heapTuple, Anum_falcon_sliceid_table_sliceid, tupleDesc, &isNull));
+        info->end = info->start + info->count;
+
+        values[Anum_falcon_sliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
+        updates[Anum_falcon_sliceid_table_sliceid - 1] = true;
+
+        HeapTuple updatedTuple = heap_modify_tuple(heapTuple, tupleDesc, values, isNulls, updates);
+        CatalogTupleUpdate(sliceIdRel, &updatedTuple->t_self, updatedTuple);
+        heap_freetuple(updatedTuple);
+        systable_endscan(scanDesc);
+    } else {
+        systable_endscan(scanDesc);
+
+        info->start = 0;
+        info->end = info->count;
+        values[Anum_falcon_sliceid_table_keystr - 1] = CStringGetTextDatum("slice_id");
+        values[Anum_falcon_sliceid_table_sliceid - 1] = UInt64GetDatum(info->end);
+
+        HeapTuple heapTuple = heap_form_tuple(tupleDesc, values, isNulls);
+        CatalogTupleInsert(sliceIdRel, heapTuple);
+        heap_freetuple(heapTuple);
+    }
+
+    table_close(sliceIdRel, RowExclusiveLock);
+
+    info->errorCode = SUCCESS;
 }

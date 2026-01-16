@@ -2,7 +2,7 @@
 localIp='127.0.0.1'
 cnIp='127.0.0.1'
 workerIpList=('127.0.0.1')
-workerNumList=(2)
+workerNumList=(1)
 
 uniquePortPrefix=555
 cnPortPrefix=${uniquePortPrefix}0

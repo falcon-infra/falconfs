@@ -38,6 +38,8 @@ char *FalconCommunicationPluginPath;
 // communication server IP, using global variable for shared to worker process
 char *FalconCommunicationServerIp;
 
+char *FalconNodeLocalIp = NULL;
+
 // variable used for falcon communication plugin
 static falcon_plugin_start_comm_func_t comm_work_func = NULL;
 static falcon_plugin_stop_comm_func_t comm_cleanup_func = NULL;
@@ -134,8 +136,9 @@ static void StartCommunicationSever()
         return;
     }
     elog(LOG, "Using plugin %s start CommunicationSever.", FalconCommunicationPluginPath);
-
-    falcon_comm_dl_handle = dlopen(FalconCommunicationPluginPath, RTLD_LAZY);
+// MARK:Use RTLD_GLOBAL so symbols from the comm plugin are visible
+// to secodary plugins loaded later by the comm plugin
+    falcon_comm_dl_handle = dlopen(FalconCommunicationPluginPath, RTLD_LAZY | RTLD_GLOBAL);
     if (!falcon_comm_dl_handle) {
         elog(ERROR,
              "Failed to load plugin in background worker: %s, error: %s",

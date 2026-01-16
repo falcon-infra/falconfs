@@ -14,6 +14,9 @@ else
     echo "max_wal_senders=10" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "hot_standby=on" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "synchronous_commit=on" >>/home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_connection_pool.port = ${NODE_PORT:-5442}" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_plugin.directory = '/FalconFS/plugins'" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon.local_ip = '${NODE_IP:-127.0.0.1}'" >> /home/falconMeta/data/metadata/postgresql.conf
 
     # default replica_server_num set to 2, compatible to ADS.
     replica_server_num=${replica_server_num:-2}

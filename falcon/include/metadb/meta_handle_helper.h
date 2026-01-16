@@ -47,4 +47,9 @@ StringInfo GetInodeIndexShardName(int shardId);
 StringInfo GetXattrShardName(int shardId);
 StringInfo GetXattrIndexShardName(int shardId);
 
+StringInfo GetSliceShardName(int shardId);
+StringInfo GetSliceIndexShardName(int shardId);
+StringInfo GetKvmetaShardName(int shardId);
+StringInfo GetKvmetaIndexShardName(int shardId);
+
 #endif

@@ -54,7 +54,7 @@ def init_filesystem(leader_infos, user, replica_server_num):
     shard_count = 100 * (server_num - 1)
     for i in range(server_num):
         ip, port = split_ip_port(leader_infos[cluster_names[i]])
-        build_shard_map_sql = "SELECT falcon_build_shard_table({});SELECT falcon_create_distributed_data_table();SELECT falcon_start_background_service();".format(
+        build_shard_map_sql = "SELECT falcon_build_shard_table({});SELECT falcon_create_distributed_data_table();SELECT falcon_create_slice_table();SELECT falcon_create_kvmeta_table();SELECT falcon_start_background_service();".format(
             shard_count
         )
         conn = psycopg2.connect(host=ip, port=port, user=user, database="postgres")

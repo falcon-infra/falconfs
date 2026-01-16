@@ -35,6 +35,28 @@ bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconMetaS
                                                                      MetaProcessInfoData *infoArray,
                                                                      SerializedData *response);
 
+bool SerializedKvMetaParamDecode(FalconSupportMetaService metaService,
+                                 SerializedData *param,
+                                 KvMetaProcessInfo infoData);
+
+bool SerializedKvMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+                                                                   KvMetaProcessInfo infoData,
+                                                                   SerializedData *response);
+
+bool SerializedSliceParamDecode(FalconSupportMetaService metaService,
+                                int count,
+                                SerializedData *param,
+                                SliceProcessInfoData *infoArray);
+
+bool SerializedSliceResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
+                                                                  int count,
+                                                                  SliceProcessInfoData *infoArray,
+                                                                  SerializedData *response);
+
+bool SerializedSliceIdParamDecode(SerializedData *param, SliceIdProcessInfo infoData);
+
+bool SerializedSliceIdResponseEncodeWithPerProcessFlatBufferBuilder(SliceIdProcessInfo infoData, SerializedData *response);
+
 #ifdef __cplusplus
 }
 #endif

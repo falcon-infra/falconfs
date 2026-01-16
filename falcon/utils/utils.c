@@ -67,7 +67,6 @@ Oid CachedRelationOid[LAST_CACHED_RELATION_TYPE] = {0};
 
 void GetRelationOid(const char *relationName, Oid *relOid)
 {
-    InitializeInvalidationCallbacks();
     if (*relOid == InvalidOid) {
         *relOid = get_relname_relid(relationName, PG_CATALOG_NAMESPACE);
 
@@ -94,6 +93,9 @@ static void InitializeDirectoryTableScanCache(void);
 static void InitializeInodeTableScanCache(void);
 static void InitializeInodeTableIndexParentIdPartIdNameScanCache(void);
 static void InitializeXattrTableScanCache(void);
+static void InitializeSliceTableScanCache(void);
+static void InitializeKvmetaTableScanCache(void);
+static void InitializeSliceIdTableScanCache(void);
 
 static MemoryContext ScanCacheMemoryContext = NULL;
 
@@ -249,6 +251,48 @@ static void InitializeXattrTableScanCache(void)
     XattrTableScanKey[XATTR_TABLE_XKEY_EQ].sk_attno = Anum_falcon_xattr_table_xkey;
 }
 
+ScanKeyData SliceTableScanKey[LAST_FALCON_SLICE_TABLE_SCANKEY_TYPE];
+static void InitializeSliceTableScanCache(void)
+{
+    memset(SliceTableScanKey, 0, sizeof(SliceTableScanKey));
+
+    fmgr_info_cxt(F_INT8EQ, &SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_func, ScanCacheMemoryContext);
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_strategy = BTEqualStrategyNumber;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_subtype = INT8OID;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    SliceTableScanKey[SLICE_TABLE_INODEID_EQ].sk_attno = Anum_falcon_slice_table_inodeid;
+
+    fmgr_info_cxt(F_INT4EQ, &SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_func, ScanCacheMemoryContext);
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_strategy = BTEqualStrategyNumber;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_subtype = INT4OID;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    SliceTableScanKey[SLICE_TABLE_CHUNKID_EQ].sk_attno = Anum_falcon_slice_table_chunkid;
+}
+
+ScanKeyData KvmetaTableScanKey[LAST_FALCON_KVMETA_TABLE_SCANKEY_TYPE];
+static void InitializeKvmetaTableScanCache(void)
+{
+    memset(KvmetaTableScanKey, 0, sizeof(KvmetaTableScanKey));
+
+    fmgr_info_cxt(F_TEXTEQ, &KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_func, ScanCacheMemoryContext);
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_strategy = BTEqualStrategyNumber;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_subtype = TEXTOID;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    KvmetaTableScanKey[KVMETA_TABLE_USERKEY_EQ].sk_attno = Anum_falcon_kvmeta_table_userkey;
+}
+
+ScanKeyData SliceIdTableScanKey[LAST_FALCON_SLICEID_TABLE_SCANKEY_TYPE];
+static void InitializeSliceIdTableScanCache(void)
+{
+    memset(SliceIdTableScanKey, 0, sizeof(SliceIdTableScanKey));
+
+    fmgr_info_cxt(F_TEXTEQ, &SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ].sk_func, ScanCacheMemoryContext);
+    SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ].sk_strategy = BTEqualStrategyNumber;
+    SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ].sk_subtype = TEXTOID;
+    SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ].sk_collation = DEFAULT_COLLATION_OID;
+    SliceIdTableScanKey[SLICEID_TABLE_SLICEID_EQ].sk_attno = Anum_falcon_sliceid_table_keystr;
+}
+
 /*
  * InitializeInvalidationCallbacks() registers invalidation handlers
  */
@@ -280,6 +324,9 @@ void SetUpScanCaches(void)
             InitializeInodeTableScanCache();
             InitializeInodeTableIndexParentIdPartIdNameScanCache();
             InitializeXattrTableScanCache();
+            InitializeSliceTableScanCache();
+            InitializeKvmetaTableScanCache();
+            InitializeSliceIdTableScanCache();
         }
         PG_CATCH();
         {
