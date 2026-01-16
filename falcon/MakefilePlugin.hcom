@@ -1,0 +1,38 @@
+# contrib/falcon/Makefile
+
+falcon_srcdir = .
+hcom_plugin_srcdir = hcom_comm_adapter
+HCOM_PLUGIN_CXX_OBJS += \
+	$(patsubst $(hcom_plugin_srcdir)/%.cpp,$(hcom_plugin_srcdir)/%.o, $(wildcard $(hcom_plugin_srcdir)/*.cpp))
+
+REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../../../../remote_connection_def
+CONNECTION_POOL_DIR = $(falcon_srcdir)/connection_pool
+
+FBS_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/fbs$$')
+FBS_FILE = $(wildcard $(FBS_DIR)/*.fbs)
+FBS_HEAD = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.fbs, $(CONNECTION_POOL_DIR)/%_generated.h, $(FBS_FILE))
+
+HCOM_PLUGIN_CPPFLAGS = -I./include -I./connection_pool/fbs \
+			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I/usr/local/include
+
+HCOM_PLUGIN_LINK_LIB = -lpthread -ldl
+
+HCOM_PLUGIN_LIB_NAME = libhcomplugin.so
+
+CXXFLAGS=-Wall -Wextra -O2 -fPIC
+
+all: $(FBS_HEAD) ${HCOM_PLUGIN_LIB_NAME}
+
+${HCOM_PLUGIN_LIB_NAME}:$(HCOM_PLUGIN_CXX_OBJS)
+	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(HCOM_PLUGIN_LINK_LIB)
+
+$(HCOM_PLUGIN_CXX_OBJS):%.o:%.cpp $(FBS_HEAD)
+	$(CXX) -c $(HCOM_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+
+$(FBS_HEAD): $(FBS_FILE)
+	mkdir -p $(CONNECTION_POOL_DIR)/fbs
+	flatc --cpp -o $(CONNECTION_POOL_DIR)/fbs/ $(FBS_FILE)
+
+clean:
+	rm -f $(HCOM_PLUGIN_CXX_OBJS) ${HCOM_PLUGIN_LIB_NAME}

@@ -39,6 +39,27 @@ if(BUILD_TEST)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNIT_TEST")
 endif()
 
+option(FALCON_ENABLE_PLUGINS "Enable plugin support" ON)
+
+if(FALCON_ENABLE_PLUGINS)
+    find_library(DL_LIBRARY dl)
+    if(NOT DL_LIBRARY)
+        message(FATAL_ERROR "dlopen library not found, required for plugin support")
+    endif()
+
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("
+        #include <filesystem>
+        int main() { std::filesystem::exists(\"/tmp\"); return 0; }
+    " HAS_FILESYSTEM)
+
+    if(NOT HAS_FILESYSTEM)
+        message(FATAL_ERROR "C++17 filesystem support required for plugin system")
+    endif()
+
+    add_definitions(-DFALCON_ENABLE_PLUGINS)
+endif()
+
 # ==================== Dependencies =================
 if(DEFINED ENV{FALCONFS_INSTALL_DIR})
     set(CMAKE_INSTALL_RPATH "$ENV{FALCONFS_INSTALL_DIR}/lib64:$ENV{FALCONFS_INSTALL_DIR}/lib")

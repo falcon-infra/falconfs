@@ -26,8 +26,13 @@
 #include "utils/path_parse.h"
 #include "utils/rwlock.h"
 #include "utils/shmem_control.h"
+#include "utils/falcon_plugin_guc.h"
+#include "plugin/falcon_plugin_loader.h"
 
 PG_MODULE_MAGIC;
+
+/* Plugin system GUC variables */
+char *falcon_plugin_directory = NULL;
 
 void _PG_init(void);
 static void FalconStart2PCCleanupWorker(void);
@@ -151,6 +156,7 @@ static void FalconShmemRequest(void)
     RequestAddinShmemSpace(ShardTableShmemsize());
     RequestAddinShmemSpace(DirPathShmemsize());
     RequestAddinShmemSpace(FalconConnectionPoolShmemsize());
+    RequestAddinShmemSpace(FalconPluginShmemSize());
 }
 static void FalconShmemInit(void)
 {
@@ -166,8 +172,12 @@ static void FalconShmemInit(void)
     ShardTableShmemInit();
     DirPathShmemInit();
     FalconConnectionPoolShmemInit();
+    FalconPluginShmemInit();
 
     LWLockRelease(AddinShmemInitLock);
+
+
+    FalconPluginInitBackgroundPlugins();
 }
 static void InitializeFalconShmemStruct(void)
 {
@@ -290,6 +300,28 @@ static void RegisterFalconConfigVariables(void)
                               gettext_noop("server IP address for Falcon communication."),
                               NULL,
                               &FalconCommunicationServerIp,
+                              FALCON_NODE_LOCAL_IP_DEFAULT,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
+    
+    DefineCustomStringVariable("falcon_plugin.directory",
+                              gettext_noop("Directory containing Falcon plugins."),
+                              NULL,
+                              &falcon_plugin_directory,
+                              NULL,
+                              PGC_POSTMASTER,
+                              0,
+                              NULL,
+                              NULL,
+                              NULL);
+
+    DefineCustomStringVariable("falcon.local_ip",
+                              gettext_noop("Local IP address for Falcon node."),
+                              NULL,
+                              &FalconNodeLocalIp,
                               FALCON_NODE_LOCAL_IP_DEFAULT,
                               PGC_POSTMASTER,
                               0,

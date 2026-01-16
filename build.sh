@@ -70,6 +70,14 @@ build_pg() {
         make -j$(nproc) &&
         cd "$POSTGRES_SRC_DIR/contrib" && make -j
     echo "PostgreSQL build complete."
+
+    # build brpc communication plugin.
+    # HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    echo "Building brpc communication plugin..."
+    # echo "Building hcom communication plugin..."
+    cd "$POSTGRES_SRC_DIR/contrib/falcon" && make -f MakefilePlugin.hcom
+    echo "build brpc communication plugin complete."
+    # echo "build hcom communication plugin complete."
 }
 
 clean_pg() {
@@ -155,10 +163,13 @@ install_falcon_meta() {
     echo "FalconFS meta installed"
 
     # install brpc communication plugin.
-    # later when HCom plugin is provided, need to modify here to choose different communication plugins through configuration
+    # HCom plugin is provided, need to modify here to choose different communication plugins through configuration
     echo "copy brpc communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
     cp "$FALCONFS_DIR/falcon/libbrpcplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
     echo "brpc communication plugin copied."
+    # echo "copy hcom communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
+    # cp "$POSTGRES_SRC_DIR/contrib/falcon/libhcomplugin.so" "$PG_INSTALL_DIR/lib/postgresql/"
+    # echo "hcom communication plugin copied."
 }
 
 install_falcon_client() {
@@ -405,13 +416,19 @@ clean)
     esac
     ;;
 test)
-    TARGET_DIR="$FALCONFS_DIR/build/tests/falcon_store/"
-    # Find executable files directly in the test directory (not in subdirectories)
-    # Exclude .cmake files and anything in CMakeFiles/
-    find "$TARGET_DIR" -maxdepth 1 -type f -executable -not -name "*.cmake" -not -path "*/CMakeFiles/*" | while read -r executable_file; do
-        echo "Executing: $executable_file"
-        "$executable_file"
-        echo "---------------------------------------------------------------------------------------"
+    TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
+
+    for TARGET_DIR in "${TARGET_DIRS[@]}"; do
+        if [ -d "$TARGET_DIR" ]; then
+            echo "Running tests in: $TARGET_DIR"
+            find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
+                echo "Executing: $executable_file"
+                "$executable_file"
+                echo "---------------------------------------------------------------------------------------"
+            done
+        else
+            echo "Test directory not found: $TARGET_DIR"
+        fi
     done
     echo "All unit tests passed."
     ;;

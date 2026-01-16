@@ -304,3 +304,50 @@ CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count i
     LANGUAGE C STRICT
     AS 'MODULE_PATHNAME', $$falcon_meta_call_by_serialized_data$$;
 COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count int, param bytea) IS 'falcon meta call by serialized data';
+
+
+----------------------------------------------------------------
+-- falcon_create_slice_table
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_slice_table()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_slice_table$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_slice_table()
+    IS 'falcon build slice table';
+
+
+----------------------------------------------------------------
+-- falcon_create_kvmeta_table
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_kvmeta_table()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_kvmeta_table$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_kvmeta_table()
+    IS 'falcon build kvmeta shard table';
+
+
+----------------------------------------------------------------
+-- falcon_kvsliceid_table
+----------------------------------------------------------------]
+CREATE TABLE falcon.falcon_kvsliceid_table(
+    keystr text,
+    slice_id bigint
+);
+CREATE UNIQUE INDEX falcon_kvsliceid_table_index ON falcon.falcon_kvsliceid_table using btree(keystr);
+ALTER TABLE falcon.falcon_kvsliceid_table SET SCHEMA pg_catalog;
+GRANT SELECT ON pg_catalog.falcon_kvsliceid_table TO public;
+
+
+----------------------------------------------------------------
+-- falcon_filesliceid_table
+----------------------------------------------------------------]
+CREATE TABLE falcon.falcon_filesliceid_table(
+    keystr text,
+    slice_id bigint
+);
+CREATE UNIQUE INDEX falcon_filesliceid_table_index ON falcon.falcon_filesliceid_table using btree(keystr);
+ALTER TABLE falcon.falcon_filesliceid_table SET SCHEMA pg_catalog;
+GRANT SELECT ON pg_catalog.falcon_filesliceid_table TO public;
+
