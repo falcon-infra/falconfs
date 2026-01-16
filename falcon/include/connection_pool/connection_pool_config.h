@@ -16,6 +16,9 @@ extern int FalconPGPort;
 #define FALCON_CONNECTION_POOL_PORT_DEFAULT 56999
 extern int FalconConnectionPoolPort;
 
+#define FALCON_NODE_LOCAL_IP_DEFAULT "127.0.0.1"
+extern char *FalconNodeLocalIp;
+
 #define FALCON_CONNECTION_POOL_SIZE_DEFAULT 32
 extern int FalconConnectionPoolSize;
 

@@ -26,6 +26,7 @@ COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_nati
 COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/stop.sh /home/falconMeta/
 COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/check_liveness.sh /home/falconMeta/
 COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/rm_logs.sh /home/falconMeta/
+COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/dn/postgresql_falcon.conf /home/falconMeta/
 
 # 创建必要的目录
 RUN mkdir -p /home/falconMeta/readiness/ /home/falconMeta/data/
