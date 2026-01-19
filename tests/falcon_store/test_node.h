@@ -9,12 +9,13 @@
 #include "brpc/brpc_server.h"
 #include "conf/falcon_property_key.h"
 #include "init/falcon_init.h"
+#include "log/logging.h"
 
 class NodeUT : public testing::Test {
   public:
     static void SetUpTestSuite()
     {
-        std::cout << "Calling SetUpTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling SetUpTestSuite!";
         int ret = GetInit().Init();
         if (ret != 0) {
             exit(1);
@@ -33,7 +34,7 @@ class NodeUT : public testing::Test {
             int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
             localEndpoint = views[nodeId];
             server.endPoint = localEndpoint;
-            std::cout << "brpc endpoint = " << server.endPoint << std::endl;
+            FALCON_LOG(LOG_INFO) << "brpc endpoint = " << server.endPoint;
             std::thread brpcServerThread(&falcon::brpc_io::RemoteIOServer::Run, &server);
             {
                 std::unique_lock<std::mutex> lk(server.mutexStart);
@@ -42,7 +43,7 @@ class NodeUT : public testing::Test {
             brpcServerThread.detach();
             server.SetReadyFlag();
         } catch (const std::exception &e) {
-            std::cerr << "发生错误: " << e.what() << std::endl;
+            FALCON_LOG(LOG_ERROR) << "发生错误: " << e.what();
             exit(1);
         }
     }

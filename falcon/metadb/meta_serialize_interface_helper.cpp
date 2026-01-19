@@ -8,6 +8,7 @@ extern "C" {
 
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
+#include "utils/error_log.h"
 
 static flatbuffers::FlatBufferBuilder FlatBufferBuilderPerProcess;
 
@@ -29,7 +30,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         uint8_t *buffer = (uint8_t *)param->buffer + p;
         sd_size_t size = SerializedDataNextSeveralItemSize(param, p, 1);
         if (size == (sd_size_t)-1) {
-            printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+            FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
             return false;
         }
 
@@ -37,7 +38,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         size_t itemSize = size - SERIALIZED_DATA_ALIGNMENT;
         flatbuffers::Verifier verifier(itemBuffer, itemSize);
         if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaParam>(NULL)) {
-            printf("[debug] itemSize = %lu, serialized param is corrupt: %s:%d\n", itemSize, __FILE__, __LINE__);
+            FALCON_ELOG_LOG_EXTENDED("[debug] itemSize = %lu, serialized param is corrupt.", itemSize);
             return false;
         }
         auto metaParam = falcon::meta_fbs::GetMetaParam(itemBuffer);
@@ -53,7 +54,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         case FalconMetaServiceType::RMDIR: {
             // path only param
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_PathOnlyParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             info->path = metaParam->param_as_PathOnlyParam()->path()->c_str();
@@ -61,7 +62,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::MKDIR_SUB_MKDIR: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_MkdirSubMkdirParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto mkdirSubMkdirParam = metaParam->param_as_MkdirSubMkdirParam();
@@ -72,7 +73,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::MKDIR_SUB_CREATE: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_MkdirSubCreateParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto mkdirSubCreateParam = metaParam->param_as_MkdirSubCreateParam();
@@ -86,7 +87,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::CLOSE: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_CloseParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto closeParam = metaParam->param_as_CloseParam();
@@ -98,7 +99,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::READDIR: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_ReadDirParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto readDirParam = metaParam->param_as_ReadDirParam();
@@ -110,7 +111,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::RMDIR_SUB_RMDIR: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_RmdirSubRmdirParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto rmdirSubRmdirParam = metaParam->param_as_RmdirSubRmdirParam();
@@ -120,7 +121,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::RMDIR_SUB_UNLINK: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_RmdirSubUnlinkParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto rmdirSubUnlinkParam = metaParam->param_as_RmdirSubUnlinkParam();
@@ -130,7 +131,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::RENAME: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_RenameParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto renameParam = metaParam->param_as_RenameParam();
@@ -140,7 +141,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::RENAME_SUB_RENAME_LOCALLY: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_RenameSubRenameLocallyParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto renameSubRenameLocallyParam = metaParam->param_as_RenameSubRenameLocallyParam();
@@ -158,7 +159,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::RENAME_SUB_CREATE: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_RenameSubCreateParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto renameSubCreateParam = metaParam->param_as_RenameSubCreateParam();
@@ -182,7 +183,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::UTIMENS: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_UtimeNsParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto utimeNsParam = metaParam->param_as_UtimeNsParam();
@@ -193,7 +194,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::CHOWN: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_ChownParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto chownParam = metaParam->param_as_ChownParam();
@@ -204,7 +205,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
         }
         case FalconMetaServiceType::CHMOD: {
             if (metaParam->param_type() != falcon::meta_fbs::AnyMetaParam::AnyMetaParam_ChmodParam) {
-                printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+                FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
                 return false;
             }
             auto chmodParam = metaParam->param_as_ChmodParam();
@@ -213,7 +214,7 @@ bool SerializedDataMetaParamDecode(FalconSupportMetaService metaService,
             break;
         }
         default:
-            printf("[debug] serialized param is corrupt: %s:%d\n", __FILE__, __LINE__);
+            FALCON_ELOG_LOG_EXTENDED("[debug] serialized param is corrupt.");
             return false;
         }
 

@@ -8,6 +8,7 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_plugins)
 # Include plugin framework headers
 include_directories(
     ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PROJECT_SOURCE_DIR}/common/src/include
 )
 
 # Test plugins
@@ -29,10 +30,12 @@ set_target_properties(test_plugin_invalid PROPERTIES
 # ==================== PluginFrameworkUT =================
 add_executable(PluginFrameworkUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_plugin/test_plugin_framework.cpp
+    ${PROJECT_SOURCE_DIR}/common/src/log/logging.cpp
 )
 target_link_libraries(PluginFrameworkUT
     gtest
     dl
+    ${DYNAMIC_LIB}
 )
 
 gtest_discover_tests(PluginFrameworkUT)
@@ -40,10 +43,12 @@ gtest_discover_tests(PluginFrameworkUT)
 # ==================== PluginLoaderUT =================
 add_executable(PluginLoaderUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_plugin/test_plugin_loader.cpp
+    ${PROJECT_SOURCE_DIR}/common/src/log/logging.cpp
 )
 target_link_libraries(PluginLoaderUT
     gtest
     dl
+    ${DYNAMIC_LIB}
 )
 
 gtest_discover_tests(PluginLoaderUT)

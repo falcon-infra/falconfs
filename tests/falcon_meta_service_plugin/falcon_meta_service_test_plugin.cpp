@@ -16,6 +16,7 @@
 #include "hcom_comm_adapter/hcom_meta_service.h"
 #include "plugin/falcon_plugin_framework.h"
 #include "plugin/falcon_plugin_loader.h"
+#include "log/logging.h"
 
 using namespace falcon::meta_service;
 
@@ -182,13 +183,13 @@ static int WaitForResponse(SyncContext &ctx, const std::string &key = "")
 // ==================== 测试辅助宏 ====================
 
 #define TEST_BEGIN(name)                                \
-    printf("\n========== TEST: %s ==========\n", name); \
+    FALCON_LOG_PRINTF(LOG_INFO, "\n========== TEST: %s ==========\n", name); \
     fflush(stdout);
 
 #define TEST_ASSERT(cond, msg)          \
     do {                                \
         if (!(cond)) {                  \
-            printf("[FAIL] %s\n", msg); \
+            FALCON_LOG_PRINTF(LOG_INFO, "[FAIL] %s\n", msg); \
             fflush(stdout);             \
             g_test_failed++;            \
             return false;               \
@@ -198,7 +199,7 @@ static int WaitForResponse(SyncContext &ctx, const std::string &key = "")
 #define TEST_ASSERT_MSG(cond, fmt, ...)                \
     do {                                               \
         if (!(cond)) {                                 \
-            printf("[FAIL] " fmt "\n", ##__VA_ARGS__); \
+            FALCON_LOG_PRINTF(LOG_INFO, "[FAIL] " fmt "\n", ##__VA_ARGS__); \
             fflush(stdout);                            \
             g_test_failed++;                           \
             return false;                              \
@@ -207,7 +208,7 @@ static int WaitForResponse(SyncContext &ctx, const std::string &key = "")
 
 #define TEST_PASS(name)              \
     do {                             \
-        printf("[PASS] %s\n", name); \
+        FALCON_LOG_PRINTF(LOG_INFO, "[PASS] %s\n", name); \
         fflush(stdout);              \
         g_test_passed++;             \
         return true;                 \
@@ -228,7 +229,7 @@ static int DoMkdir(const std::string &path)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  MKDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  MKDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -250,7 +251,7 @@ static int DoCreate(const std::string &path, CreateResponse *out_resp = nullptr)
         *out_resp = *r;
     }
 
-    printf("  CREATE %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CREATE %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -272,7 +273,7 @@ static int DoStat(const std::string &path, StatResponse *out_resp = nullptr)
         *out_resp = *r;
     }
 
-    printf("  STAT %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  STAT %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -294,7 +295,7 @@ static int DoOpen(const std::string &path, OpenResponse *out_resp = nullptr)
         *out_resp = *r;
     }
 
-    printf("  OPEN %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  OPEN %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -316,7 +317,7 @@ static int DoClose(const std::string &path, int64_t st_size, uint64_t st_mtim, i
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  CLOSE %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CLOSE %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -333,7 +334,7 @@ static int DoUnlink(const std::string &path)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  UNLINK %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  UNLINK %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -350,7 +351,7 @@ static int DoRmdir(const std::string &path)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  RMDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  RMDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -367,7 +368,7 @@ static int DoRename(const std::string &src, const std::string &dst)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  RENAME %s -> %s: status=%d\n", src.c_str(), dst.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  RENAME %s -> %s: status=%d\n", src.c_str(), dst.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -389,7 +390,7 @@ static int DoOpendir(const std::string &path, OpenDirResponse *out_resp = nullpt
         *out_resp = *r;
     }
 
-    printf("  OPENDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  OPENDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -417,7 +418,7 @@ static int DoReaddir(const std::string &path, std::vector<std::string> *out_name
         }
     }
 
-    printf("  READDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  READDIR %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -438,7 +439,7 @@ static int DoUtimens(const std::string &path, uint64_t atime, uint64_t mtime)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  UTIMENS %s -> status=%d\n", path.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  UTIMENS %s -> status=%d\n", path.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -458,7 +459,7 @@ static int DoChmod(const std::string &path, uint64_t mode)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  CHMOD %s 0%lo -> status=%d\n", path.c_str(), mode, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CHMOD %s 0%lo -> status=%d\n", path.c_str(), mode, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -479,7 +480,7 @@ static int DoChown(const std::string &path, uint32_t uid, uint32_t gid)
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  CHOWN %s uid=%u gid=%u -> status=%d\n", path.c_str(), uid, gid, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CHOWN %s uid=%u gid=%u -> status=%d\n", path.c_str(), uid, gid, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -513,7 +514,7 @@ static int DoSlicePut(const std::string &filename,
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  SLICE_PUT %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_PUT %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -536,7 +537,7 @@ DoSliceGet(const std::string &filename, uint64_t inode, uint32_t chunk, SliceInf
         *out_resp = *r;
     }
 
-    printf("  SLICE_GET %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_GET %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -553,7 +554,7 @@ static int DoSliceDel(const std::string &filename, uint64_t inode, uint32_t chun
     if (WaitForResponse(ctx) != 0)
         return -1;
 
-    printf("  SLICE_DEL %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_DEL %s inode=%lu chunk=%u -> status=%d\n", filename.c_str(), inode, chunk, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -576,7 +577,7 @@ static int DoFetchSliceId(uint32_t count, uint8_t type, SliceIdResponse *out_res
         *out_resp = *r;
     }
 
-    printf("  FETCH_SLICE_ID count=%u type=%u -> status=%d\n", count, type, ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  FETCH_SLICE_ID count=%u type=%u -> status=%d\n", count, type, ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -598,7 +599,7 @@ static int DoPlainCommand(const std::string &sql, PlainCommandResponse *out_resp
         *out_resp = *r;
     }
 
-    printf("  PLAIN_COMMAND '%s' -> status=%d\n", sql.c_str(), ctx.resp.status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  PLAIN_COMMAND '%s' -> status=%d\n", sql.c_str(), ctx.resp.status);
     return ctx.resp.status;
 }
 
@@ -672,8 +673,8 @@ static int DoKvDelete(const std::string &key)
 #define SKIP_IF_NOT_CN(test_name)                                                          \
     do {                                                                                   \
         if (!g_is_cn_node) {                                                               \
-            printf("\n========== TEST: %s ==========\n", test_name);                       \
-            printf("[SKIP] This test requires CN node (MKDIR/RMDIR/RENAME operations)\n"); \
+            FALCON_LOG_PRINTF(LOG_INFO, "\n========== TEST: %s ==========\n", test_name);                       \
+            FALCON_LOG_PRINTF(LOG_INFO, "[SKIP] This test requires CN node (MKDIR/RMDIR/RENAME operations)\n"); \
             fflush(stdout);                                                                \
             g_test_skipped++;                                                              \
             return true;                                                                   \
@@ -684,8 +685,8 @@ static int DoKvDelete(const std::string &key)
 #define SKIP_IF_NOT_WORKER(test_name)                                            \
     do {                                                                         \
         if (g_is_cn_node) {                                                      \
-            printf("\n========== TEST: %s ==========\n", test_name);             \
-            printf("[SKIP] This test requires Worker node (file operations)\n"); \
+            FALCON_LOG_PRINTF(LOG_INFO, "\n========== TEST: %s ==========\n", test_name);             \
+            FALCON_LOG_PRINTF(LOG_INFO, "[SKIP] This test requires Worker node (file operations)\n"); \
             fflush(stdout);                                                      \
             g_test_skipped++;                                                    \
             return true;                                                         \
@@ -710,25 +711,25 @@ static bool TestDirectoryOperations()
     // 2. 测试重复创建目录 - 应该失败
     status = DoMkdir(dir_path);
     TEST_ASSERT(status != 0, "MKDIR duplicate directory should fail");
-    printf("  MKDIR duplicate correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  MKDIR duplicate correctly failed with status=%d\n", status);
 
     // 3. OPENDIR - 验证目录存在
     OpenDirResponse opendir_resp;
     status = DoOpendir(dir_path, &opendir_resp);
     TEST_ASSERT(status == 0, "OPENDIR failed");
-    printf("  OPENDIR succeeded, inode=%lu\n", opendir_resp.st_ino);
+    FALCON_LOG_PRINTF(LOG_INFO, "  OPENDIR succeeded, inode=%lu\n", opendir_resp.st_ino);
 
     // 4. READDIR (空目录)
     std::vector<std::string> entries;
     status = DoReaddir(dir_path, &entries);
     TEST_ASSERT(status == 0, "READDIR failed");
     TEST_ASSERT(entries.size() == 0, "READDIR: empty directory should have 0 entries");
-    printf("  READDIR returned %zu entries (expected 0)\n", entries.size());
+    FALCON_LOG_PRINTF(LOG_INFO, "  READDIR returned %zu entries (expected 0)\n", entries.size());
 
     // 5. 测试 OPENDIR 不存在的目录
     status = DoOpendir(dir_path + "/nonexistent", nullptr);
     TEST_ASSERT(status != 0, "OPENDIR non-existent directory should fail");
-    printf("  OPENDIR non-existent correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  OPENDIR non-existent correctly failed with status=%d\n", status);
 
     // 6. 删除目录
     status = DoRmdir(dir_path);
@@ -737,12 +738,12 @@ static bool TestDirectoryOperations()
     // 7. 验证目录已删除 - OPENDIR 应该失败
     status = DoOpendir(dir_path, nullptr);
     TEST_ASSERT(status != 0, "Directory should not exist after RMDIR");
-    printf("  OPENDIR after RMDIR correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  OPENDIR after RMDIR correctly failed with status=%d\n", status);
 
     // 8. 测试删除不存在的目录
     status = DoRmdir(dir_path);
     TEST_ASSERT(status != 0, "RMDIR non-existent directory should fail");
-    printf("  RMDIR non-existent correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  RMDIR non-existent correctly failed with status=%d\n", status);
 
     TEST_PASS("Directory Operations");
 }
@@ -764,7 +765,7 @@ static bool TestFileOperations()
     int status = DoCreate(file_path, &create_resp);
     TEST_ASSERT(status == 0, "CREATE failed");
     TEST_ASSERT(create_resp.st_ino != 0, "CREATE: inode should not be 0");
-    printf("  Created file with inode=%lu, node_id=%ld\n", create_resp.st_ino, create_resp.node_id);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created file with inode=%lu, node_id=%ld\n", create_resp.st_ino, create_resp.node_id);
 
     // 2. STAT 文件 - 验证文件属性
     StatResponse stat_resp;
@@ -772,7 +773,7 @@ static bool TestFileOperations()
     TEST_ASSERT(status == 0, "STAT failed");
     TEST_ASSERT_MSG(stat_resp.st_ino == create_resp.st_ino,
                     "STAT: inode mismatch (expected %lu, got %lu)", create_resp.st_ino, stat_resp.st_ino);
-    printf("  STAT succeeded: inode=%lu, mode=0%o, size=%ld\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  STAT succeeded: inode=%lu, mode=0%o, size=%ld\n",
            stat_resp.st_ino, stat_resp.st_mode, stat_resp.st_size);
 
     // 3. OPEN 文件
@@ -786,14 +787,14 @@ static bool TestFileOperations()
     int64_t new_size = 1024;
     status = DoClose(file_path, new_size, new_mtime, open_resp.node_id);
     TEST_ASSERT(status == 0, "CLOSE failed");
-    printf("  CLOSE succeeded with new_size=%ld\n", new_size);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CLOSE succeeded with new_size=%ld\n", new_size);
 
     // 5. STAT 后验证更新后的大小
     status = DoStat(file_path, &stat_resp);
     TEST_ASSERT(status == 0, "STAT after CLOSE failed");
     TEST_ASSERT_MSG(stat_resp.st_size == new_size,
                     "STAT after CLOSE: size mismatch (expected %ld, got %ld)", new_size, stat_resp.st_size);
-    printf("  STAT after CLOSE: size=%ld (verified)\n", stat_resp.st_size);
+    FALCON_LOG_PRINTF(LOG_INFO, "  STAT after CLOSE: size=%ld (verified)\n", stat_resp.st_size);
 
     // 6. UNLINK 文件
     status = DoUnlink(file_path);
@@ -802,7 +803,7 @@ static bool TestFileOperations()
     // 7. STAT 不存在的文件 - 应该失败
     status = DoStat(file_path, nullptr);
     TEST_ASSERT(status != 0, "STAT on deleted file should fail");
-    printf("  STAT on deleted file correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  STAT on deleted file correctly failed with status=%d\n", status);
 
     TEST_PASS("File Operations");
 }
@@ -823,28 +824,28 @@ static bool TestRenameOperations()
     // 1. 创建源目录
     int status = DoMkdir(src_dir);
     TEST_ASSERT(status == 0, "MKDIR source dir failed");
-    printf("  Created source directory: %s\n", src_dir.c_str());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created source directory: %s\n", src_dir.c_str());
 
     // 2. RENAME 目录
     status = DoRename(src_dir, dst_dir);
     TEST_ASSERT(status == 0, "RENAME directory failed");
-    printf("  RENAME directory succeeded: %s -> %s\n", src_dir.c_str(), dst_dir.c_str());
+    FALCON_LOG_PRINTF(LOG_INFO, "  RENAME directory succeeded: %s -> %s\n", src_dir.c_str(), dst_dir.c_str());
 
     // 3. 验证源目录不存在
     status = DoOpendir(src_dir, nullptr);
     TEST_ASSERT(status != 0, "Source directory should not exist after RENAME");
-    printf("  Source directory correctly does not exist after RENAME\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Source directory correctly does not exist after RENAME\n");
 
     // 4. 验证目标目录存在
     OpenDirResponse opendir_resp;
     status = DoOpendir(dst_dir, &opendir_resp);
     TEST_ASSERT(status == 0, "Destination directory should exist after RENAME");
-    printf("  Destination directory exists with inode=%lu\n", opendir_resp.st_ino);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Destination directory exists with inode=%lu\n", opendir_resp.st_ino);
 
     // 5. 测试 RENAME 不存在的目录
     status = DoRename(src_dir, std::string(TEST_BASE_PATH) + "/nonexistent_dst");
     TEST_ASSERT(status != 0, "RENAME non-existent directory should fail");
-    printf("  RENAME non-existent correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  RENAME non-existent correctly failed with status=%d\n", status);
 
     // 6. 清理
     status = DoRmdir(dst_dir);
@@ -868,27 +869,27 @@ static bool TestAttributeOperations()
     // 1. 创建文件
     int status = DoCreate(file_path, nullptr);
     TEST_ASSERT(status == 0, "CREATE failed");
-    printf("  Created test file: %s\n", file_path.c_str());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created test file: %s\n", file_path.c_str());
 
     // 2. UTIMENS - 修改时间
     uint64_t new_atime = 1609459200000000000ULL; // 2021-01-01 00:00:00 UTC in nanoseconds
     uint64_t new_mtime = 1640995200000000000ULL; // 2022-01-01 00:00:00 UTC in nanoseconds
     status = DoUtimens(file_path, new_atime, new_mtime);
     TEST_ASSERT(status == 0, "UTIMENS failed");
-    printf("  UTIMENS succeeded\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  UTIMENS succeeded\n");
 
     // 3. CHMOD - 修改权限
     uint64_t new_mode = 0755;
     status = DoChmod(file_path, new_mode);
     TEST_ASSERT(status == 0, "CHMOD failed");
-    printf("  CHMOD to 0755 succeeded\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  CHMOD to 0755 succeeded\n");
 
     // 4. CHOWN - 修改所有者
     uint32_t new_uid = 1000;
     uint32_t new_gid = 1000;
     status = DoChown(file_path, new_uid, new_gid);
     TEST_ASSERT(status == 0, "CHOWN failed");
-    printf("  CHOWN to uid=%u, gid=%u succeeded\n", new_uid, new_gid);
+    FALCON_LOG_PRINTF(LOG_INFO, "  CHOWN to uid=%u, gid=%u succeeded\n", new_uid, new_gid);
 
     // 5. 测试对不存在文件的属性操作
     std::string nonexistent = "/nonexistent_attr_test.txt";
@@ -900,7 +901,7 @@ static bool TestAttributeOperations()
 
     status = DoChown(nonexistent, 1000, 1000);
     TEST_ASSERT(status != 0, "CHOWN on non-existent file should fail");
-    printf("  Attribute operations on non-existent file correctly failed\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Attribute operations on non-existent file correctly failed\n");
 
     // 6. 清理
     status = DoUnlink(file_path);
@@ -927,7 +928,7 @@ static bool TestSliceOperations()
     TEST_ASSERT(status == 0, "CREATE failed");
 
     uint64_t inode = create_resp.st_ino;
-    printf("  Created file with inode=%lu\n", inode);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created file with inode=%lu\n", inode);
 
     // 2. FETCH_SLICE_ID - 分配多个 slice ID
     SliceIdResponse slice_id_resp;
@@ -939,7 +940,7 @@ static bool TestSliceOperations()
                     "FETCH_SLICE_ID: expected %u IDs, got %lu",
                     slice_count,
                     slice_id_resp.end - slice_id_resp.start);
-    printf("  Allocated slice IDs: [%lu, %lu), count=%lu\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Allocated slice IDs: [%lu, %lu), count=%lu\n",
            slice_id_resp.start,
            slice_id_resp.end,
            slice_id_resp.end - slice_id_resp.start);
@@ -958,7 +959,7 @@ static bool TestSliceOperations()
     status = DoSliceGet(file_path, inode, 0, &slice_info);
     TEST_ASSERT(status == 0, "SLICE_GET chunk 0 failed");
     TEST_ASSERT(slice_info.slicenum >= 1, "SLICE_GET: no slices returned");
-    printf("  SLICE_GET chunk 0: slicenum=%u\n", slice_info.slicenum);
+    FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_GET chunk 0: slicenum=%u\n", slice_info.slicenum);
 
     // 验证返回的 slice 数据一致性
     if (slice_info.slicenum > 0 && slice_info.sliceid.size() > 0) {
@@ -987,7 +988,7 @@ static bool TestSliceOperations()
                         "SLICE_GET: inodeid mismatch (expected %lu, got %lu)",
                         inode,
                         slice_info.inodeid.size() > 0 ? slice_info.inodeid[0] : 0);
-        printf("  SLICE_GET chunk 0 verified: slice_id=%lu, size=%u, offset=%u, len=%u\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_GET chunk 0 verified: slice_id=%lu, size=%u, offset=%u, len=%u\n",
                slice_info.sliceid[0],
                slice_info.slicesize[0],
                slice_info.sliceoffset[0],
@@ -1012,7 +1013,7 @@ static bool TestSliceOperations()
                         "SLICE_GET chunk 1: slicesize mismatch");
         TEST_ASSERT_MSG(slice_info.inodeid.size() > 0 && slice_info.inodeid[0] == inode,
                         "SLICE_GET chunk 1: inodeid mismatch");
-        printf("  SLICE_GET chunk 1 verified: slice_id=%lu, size=%u\n", slice_info.sliceid[0], slice_info.slicesize[0]);
+        FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_GET chunk 1 verified: slice_id=%lu, size=%u\n", slice_info.sliceid[0], slice_info.slicesize[0]);
     }
 
     // 7. SLICE_DEL - 删除 chunk 0
@@ -1022,14 +1023,14 @@ static bool TestSliceOperations()
     // 8. 验证 chunk 0 删除成功
     status = DoSliceGet(file_path, inode, 0, &slice_info);
     // 删除后 GET 可能返回 0 个 slice 或错误
-    printf("  After SLICE_DEL chunk 0: status=%d, slicenum=%u\n", status, slice_info.slicenum);
+    FALCON_LOG_PRINTF(LOG_INFO, "  After SLICE_DEL chunk 0: status=%d, slicenum=%u\n", status, slice_info.slicenum);
     TEST_ASSERT(status != 0 || slice_info.slicenum == 0, "SLICE_DEL: chunk 0 should be empty after delete");
 
     // 9. 验证 chunk 1 仍然存在
     status = DoSliceGet(file_path, inode, 1, &slice_info);
     TEST_ASSERT(status == 0, "SLICE_GET chunk 1 after deleting chunk 0 failed");
     TEST_ASSERT(slice_info.slicenum >= 1, "Chunk 1 should still exist after deleting chunk 0");
-    printf("  Chunk 1 still exists after deleting chunk 0\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Chunk 1 still exists after deleting chunk 0\n");
 
     // 10. 清理 chunk 1
     status = DoSliceDel(file_path, inode, 1);
@@ -1056,7 +1057,7 @@ static bool TestPlainCommand()
     TEST_ASSERT(resp.row == 1, "Expected 1 row");
     TEST_ASSERT(resp.col == 1, "Expected 1 column");
     TEST_ASSERT(resp.data.size() > 0 && resp.data[0] == "1", "Expected data[0] == '1'");
-    printf("  Single value query: row=%u, col=%u, data='%s'\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Single value query: row=%u, col=%u, data='%s'\n",
            resp.row,
            resp.col,
            resp.data.size() > 0 ? resp.data[0].c_str() : "");
@@ -1066,9 +1067,9 @@ static bool TestPlainCommand()
     TEST_ASSERT(status == 0, "PLAIN_COMMAND multi-row failed");
     TEST_ASSERT(resp.row == 2, "Expected 2 rows");
     TEST_ASSERT(resp.col == 2, "Expected 2 columns");
-    printf("  Multi-row query: row=%u, col=%u, data_count=%zu\n", resp.row, resp.col, resp.data.size());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Multi-row query: row=%u, col=%u, data_count=%zu\n", resp.row, resp.col, resp.data.size());
     for (size_t i = 0; i < resp.data.size() && i < 4; i++) {
-        printf("    data[%zu]='%s'\n", i, resp.data[i].c_str());
+        FALCON_LOG_PRINTF(LOG_INFO, "    data[%zu]='%s'\n", i, resp.data[i].c_str());
     }
 
     // 3. 查询版本
@@ -1076,19 +1077,19 @@ static bool TestPlainCommand()
     TEST_ASSERT(status == 0, "PLAIN_COMMAND version() failed");
     TEST_ASSERT(resp.row == 1, "version() should return 1 row");
     if (resp.data.size() > 0) {
-        printf("  PostgreSQL version: %s\n", resp.data[0].c_str());
+        FALCON_LOG_PRINTF(LOG_INFO, "  PostgreSQL version: %s\n", resp.data[0].c_str());
     }
 
     // 4. 空结果查询
     status = DoPlainCommand("SELECT 1 WHERE false;", &resp);
     TEST_ASSERT(status == 0, "PLAIN_COMMAND empty result failed");
     TEST_ASSERT(resp.row == 0, "Empty query should return 0 rows");
-    printf("  Empty result query: row=%u\n", resp.row);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Empty result query: row=%u\n", resp.row);
 
     // 5. 测试错误 SQL
     status = DoPlainCommand("SELECT * FROM nonexistent_table_xyz;", &resp);
     TEST_ASSERT(status != 0, "Invalid SQL should fail");
-    printf("  Invalid SQL correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Invalid SQL correctly failed with status=%d\n", status);
 
     TEST_PASS("Plain Command");
 }
@@ -1140,21 +1141,21 @@ static bool TestKvOperations()
                         i,
                         slices[i].size,
                         get_resp.kv_data.dataSlices[i].size);
-        printf("    Slice[%zu]: value_key=%lu, location=%lu, size=%u\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "    Slice[%zu]: value_key=%lu, location=%lu, size=%u\n",
                i,
                get_resp.kv_data.dataSlices[i].value_key,
                get_resp.kv_data.dataSlices[i].location,
                get_resp.kv_data.dataSlices[i].size);
     }
 
-    printf("  KV_GET verified: valueLen=%u, sliceNum=%d\n", get_resp.kv_data.valueLen, get_resp.kv_data.sliceNum);
+    FALCON_LOG_PRINTF(LOG_INFO, "  KV_GET verified: valueLen=%u, sliceNum=%d\n", get_resp.kv_data.valueLen, get_resp.kv_data.sliceNum);
 
     // 4. 测试重复 PUT 同一 key (应该返回 SUCCESS，不覆盖)
     std::vector<FormDataSlice> new_slices;
     new_slices.push_back(FormDataSlice(2001, 0, 1024));
     status = DoKvPut(test_key, 1024, new_slices);
     TEST_ASSERT(status == 0, "KV_PUT duplicate key should succeed (return SUCCESS without overwrite)");
-    printf("  KV_PUT duplicate key: status=%d (expected 0)\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  KV_PUT duplicate key: status=%d (expected 0)\n", status);
 
     // 验证数据没有被覆盖
     status = DoKvGet(test_key, &get_resp);
@@ -1163,7 +1164,7 @@ static bool TestKvOperations()
                     "KV_GET after duplicate PUT: valueLen should not change (expected %u, got %u)",
                     total_value_len,
                     get_resp.kv_data.valueLen);
-    printf("  After duplicate PUT, data unchanged: valueLen=%u\n", get_resp.kv_data.valueLen);
+    FALCON_LOG_PRINTF(LOG_INFO, "  After duplicate PUT, data unchanged: valueLen=%u\n", get_resp.kv_data.valueLen);
 
     // 5. KV DELETE
     status = DoKvDelete(test_key);
@@ -1172,18 +1173,18 @@ static bool TestKvOperations()
     // 6. 验证删除 - GET 应该失败
     status = DoKvGet(test_key, nullptr);
     TEST_ASSERT(status != 0, "KV_GET should fail after DELETE");
-    printf("  KV_GET after DELETE correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  KV_GET after DELETE correctly failed with status=%d\n", status);
 
     // 7. 测试 DELETE 不存在的 key
     status = DoKvDelete(test_key);
-    printf("  KV_DELETE non-existent key: status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  KV_DELETE non-existent key: status=%d\n", status);
     // 不同实现可能有不同行为，这里只记录
 
     // 8. 测试 GET 不存在的 key
     status = DoKvGet("nonexistent_key_xyz_" + std::to_string(time(nullptr)) +
                      "_" + std::to_string(g_loop_iteration.load()), nullptr);
     TEST_ASSERT(status != 0, "KV_GET non-existent key should fail");
-    printf("  KV_GET non-existent key correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  KV_GET non-existent key correctly failed with status=%d\n", status);
 
     TEST_PASS("KV Operations");
 }
@@ -1196,9 +1197,9 @@ static bool TestKvPerformance()
     TEST_BEGIN("KV Multi-threaded Throughput");
 
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║          KV Multi-threaded Throughput Benchmark             ║\n");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║          KV Multi-threaded Throughput Benchmark             ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
 
     // ========== 测试配置 ==========
@@ -1215,7 +1216,7 @@ static bool TestKvPerformance()
     uint32_t total_value_len = 4096;
 
     // ========== 1. Warmup（预热缓存）==========
-    printf("[Warmup] Running %d iterations to warm up cache...\n", WARMUP_ITERATIONS);
+    FALCON_LOG_PRINTF(LOG_INFO, "[Warmup] Running %d iterations to warm up cache...\n", WARMUP_ITERATIONS);
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
         std::string key = key_prefix + "warmup_" + std::to_string(i);
         DoKvPut(key, total_value_len, test_slices);
@@ -1223,12 +1224,12 @@ static bool TestKvPerformance()
         DoKvGet(key, &get_resp);
         DoKvDelete(key);
     }
-    printf("[Warmup] Completed. Starting throughput tests...\n\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[Warmup] Completed. Starting throughput tests...\n\n");
 
     // ========== 2. 多线程吞吐量测试（KV_PUT）==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Test 1: Multi-threaded KV_PUT Throughput\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Test 1: Multi-threaded KV_PUT Throughput\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     std::vector<std::thread> mt_put_threads;
     std::atomic<int> mt_put_success(0);
@@ -1257,11 +1258,11 @@ static bool TestKvPerformance()
         auto thread_end = std::chrono::high_resolution_clock::now();
         double thread_time_sec = std::chrono::duration<double>(thread_end - thread_start).count();
         double thread_throughput = local_success / thread_time_sec;
-        printf("  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
                thread_id, local_success, thread_time_sec, thread_throughput);
     };
 
-    printf("  Starting %d threads, each performing %d KV_PUT operations...\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each performing %d KV_PUT operations...\n",
            MT_THREAD_COUNT, MT_OPS_PER_THREAD);
 
     auto mt_put_start = std::chrono::high_resolution_clock::now();
@@ -1281,20 +1282,20 @@ static bool TestKvPerformance()
     int mt_put_total_ops = MT_THREAD_COUNT * MT_OPS_PER_THREAD;
     double mt_put_throughput = mt_put_success.load() / mt_put_time_sec;
 
-    printf("  Total operations: %d\n", mt_put_total_ops);
-    printf("  Successful:       %d\n", mt_put_success.load());
-    printf("  Failed:           %d\n", mt_put_failure.load());
-    printf("  Total time:       %.2f sec\n", mt_put_time_sec);
-    printf("  Throughput:       %.0f ops/sec\n", mt_put_throughput);
-    printf("  Per-thread avg:   %.0f ops/sec\n", mt_put_throughput / MT_THREAD_COUNT);
-    printf("  Avg latency:      %.3f ms/op\n", (mt_put_time_sec * 1000) / mt_put_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total operations: %d\n", mt_put_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Successful:       %d\n", mt_put_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Failed:           %d\n", mt_put_failure.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total time:       %.2f sec\n", mt_put_time_sec);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Throughput:       %.0f ops/sec\n", mt_put_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Per-thread avg:   %.0f ops/sec\n", mt_put_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Avg latency:      %.3f ms/op\n", (mt_put_time_sec * 1000) / mt_put_success.load());
     printf("\n");
     fflush(stdout);
 
     // ========== 3. 多线程吞吐量测试（KV_GET）==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Test 2: Multi-threaded KV_GET Throughput\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Test 2: Multi-threaded KV_GET Throughput\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     std::vector<std::thread> mt_get_threads;
     std::atomic<int> mt_get_success(0);
@@ -1324,11 +1325,11 @@ static bool TestKvPerformance()
         auto thread_end = std::chrono::high_resolution_clock::now();
         double thread_time_sec = std::chrono::duration<double>(thread_end - thread_start).count();
         double thread_throughput = local_success / thread_time_sec;
-        printf("  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
                thread_id, local_success, thread_time_sec, thread_throughput);
     };
 
-    printf("  Starting %d threads, each performing %d KV_GET operations...\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each performing %d KV_GET operations...\n",
            MT_THREAD_COUNT, MT_OPS_PER_THREAD);
 
     auto mt_get_start = std::chrono::high_resolution_clock::now();
@@ -1348,20 +1349,20 @@ static bool TestKvPerformance()
     int mt_get_total_ops = MT_THREAD_COUNT * MT_OPS_PER_THREAD;
     double mt_get_throughput = mt_get_success.load() / mt_get_time_sec;
 
-    printf("  Total operations: %d\n", mt_get_total_ops);
-    printf("  Successful:       %d\n", mt_get_success.load());
-    printf("  Failed:           %d\n", mt_get_failure.load());
-    printf("  Total time:       %.2f sec\n", mt_get_time_sec);
-    printf("  Throughput:       %.0f ops/sec\n", mt_get_throughput);
-    printf("  Per-thread avg:   %.0f ops/sec\n", mt_get_throughput / MT_THREAD_COUNT);
-    printf("  Avg latency:      %.3f ms/op\n", (mt_get_time_sec * 1000) / mt_get_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total operations: %d\n", mt_get_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Successful:       %d\n", mt_get_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Failed:           %d\n", mt_get_failure.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total time:       %.2f sec\n", mt_get_time_sec);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Throughput:       %.0f ops/sec\n", mt_get_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Per-thread avg:   %.0f ops/sec\n", mt_get_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Avg latency:      %.3f ms/op\n", (mt_get_time_sec * 1000) / mt_get_success.load());
     printf("\n");
     fflush(stdout);
 
     // ========== 4. 清理测试数据 ==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Cleanup: Deleting test keys...\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Cleanup: Deleting test keys...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     int deleted_count = 0;
 
@@ -1376,23 +1377,23 @@ static bool TestKvPerformance()
         }
     }
 
-    printf("  Deleted %d keys\n", deleted_count);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Deleted %d keys\n", deleted_count);
     printf("\n");
 
     // ========== 5. 性能总结 ==========
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║                   Performance Summary                       ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║  KV_PUT (Multi-threaded, %2d threads):                       ║\n", MT_THREAD_COUNT);
-    printf("║    Total ops:    %6d                                       ║\n", mt_put_total_ops);
-    printf("║    Throughput:   %6.0f ops/sec                             ║\n", mt_put_throughput);
-    printf("║    Per-thread:   %6.0f ops/sec                             ║\n", mt_put_throughput / MT_THREAD_COUNT);
-    printf("║                                                              ║\n");
-    printf("║  KV_GET (Multi-threaded, %2d threads):                       ║\n", MT_THREAD_COUNT);
-    printf("║    Total ops:    %6d                                       ║\n", mt_get_total_ops);
-    printf("║    Throughput:   %6.0f ops/sec                             ║\n", mt_get_throughput);
-    printf("║    Per-thread:   %6.0f ops/sec                             ║\n", mt_get_throughput / MT_THREAD_COUNT);
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║                   Performance Summary                       ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╠══════════════════════════════════════════════════════════════╣\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║  KV_PUT (Multi-threaded, %2d threads):                       ║\n", MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Total ops:    %6d                                       ║\n", mt_put_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Throughput:   %6.0f ops/sec                             ║\n", mt_put_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Per-thread:   %6.0f ops/sec                             ║\n", mt_put_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║                                                              ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║  KV_GET (Multi-threaded, %2d threads):                       ║\n", MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Total ops:    %6d                                       ║\n", mt_get_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Throughput:   %6.0f ops/sec                             ║\n", mt_get_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Per-thread:   %6.0f ops/sec                             ║\n", mt_get_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
     fflush(stdout);
 
@@ -1407,9 +1408,9 @@ static bool TestSlicePerformance()
     TEST_BEGIN("Slice Multi-threaded Throughput");
 
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║        Slice Multi-threaded Throughput Benchmark            ║\n");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║        Slice Multi-threaded Throughput Benchmark            ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
 
     // ========== 测试配置 ==========
@@ -1418,7 +1419,7 @@ static bool TestSlicePerformance()
     std::string file_prefix = "/test_slice_perf_" + std::to_string(time(nullptr)) + "_";
 
     // ========== 1. Warmup ==========
-    printf("[Warmup] Running %d iterations...\n", WARMUP_ITERATIONS);
+    FALCON_LOG_PRINTF(LOG_INFO, "[Warmup] Running %d iterations...\n", WARMUP_ITERATIONS);
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
         std::string filename = file_prefix + "warmup_" + std::to_string(i) + ".dat";
         CreateResponse create_resp;
@@ -1430,16 +1431,16 @@ static bool TestSlicePerformance()
         DoSlicePut(filename, create_resp.st_ino, 0, slice_resp.start, 4096, 0, 4096);
         DoUnlink(filename);
     }
-    printf("[Warmup] Completed.\n\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[Warmup] Completed.\n\n");
 
     // ========== 测试配置 ==========
     const int MT_THREAD_COUNT = 20;
     const int MT_OPS_PER_THREAD = 5000;
 
     // ========== 2. 多线程吞吐量测试（SLICE_PUT）==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Test 1: Multi-threaded SLICE_PUT Throughput\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Test 1: Multi-threaded SLICE_PUT Throughput\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     std::vector<std::thread> mt_slice_put_threads;
     std::atomic<int> mt_slice_put_success(0);
@@ -1477,13 +1478,13 @@ static bool TestSlicePerformance()
         auto thread_end = std::chrono::high_resolution_clock::now();
         double thread_time_sec = std::chrono::duration<double>(thread_end - thread_start).count();
         double thread_throughput = local_success / thread_time_sec;
-        printf("  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
                thread_id, local_success, thread_time_sec, thread_throughput);
     };
 
-    printf("  Starting %d threads, each performing %d SLICE_PUT operations...\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each performing %d SLICE_PUT operations...\n",
            MT_THREAD_COUNT, MT_OPS_PER_THREAD);
-    printf("  Note: Each operation includes CREATE + FETCH_SLICE_ID + SLICE_PUT\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Note: Each operation includes CREATE + FETCH_SLICE_ID + SLICE_PUT\n");
 
     auto mt_slice_put_start = std::chrono::high_resolution_clock::now();
 
@@ -1502,19 +1503,19 @@ static bool TestSlicePerformance()
     int mt_slice_put_total_ops = MT_THREAD_COUNT * MT_OPS_PER_THREAD;
     double mt_slice_put_throughput = mt_slice_put_success.load() / mt_slice_put_time_sec;
 
-    printf("  Total operations: %d\n", mt_slice_put_total_ops);
-    printf("  Successful:       %d\n", mt_slice_put_success.load());
-    printf("  Failed:           %d\n", mt_slice_put_failure.load());
-    printf("  Total time:       %.2f sec\n", mt_slice_put_time_sec);
-    printf("  Throughput:       %.0f ops/sec\n", mt_slice_put_throughput);
-    printf("  Per-thread avg:   %.0f ops/sec\n", mt_slice_put_throughput / MT_THREAD_COUNT);
-    printf("  Avg latency:      %.3f ms/op\n", (mt_slice_put_time_sec * 1000) / mt_slice_put_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total operations: %d\n", mt_slice_put_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Successful:       %d\n", mt_slice_put_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Failed:           %d\n", mt_slice_put_failure.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total time:       %.2f sec\n", mt_slice_put_time_sec);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Throughput:       %.0f ops/sec\n", mt_slice_put_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Per-thread avg:   %.0f ops/sec\n", mt_slice_put_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Avg latency:      %.3f ms/op\n", (mt_slice_put_time_sec * 1000) / mt_slice_put_success.load());
     printf("\n");
 
     // ========== 3. 多线程吞吐量测试（SLICE_GET）==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Test 2: Multi-threaded SLICE_GET Throughput\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Test 2: Multi-threaded SLICE_GET Throughput\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     std::vector<std::thread> mt_slice_get_threads;
     std::atomic<int> mt_slice_get_success(0);
@@ -1561,11 +1562,11 @@ static bool TestSlicePerformance()
         auto thread_end = std::chrono::high_resolution_clock::now();
         double thread_time_sec = std::chrono::duration<double>(thread_end - thread_start).count();
         double thread_throughput = local_success / thread_time_sec;
-        printf("  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
+        FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %2d] Completed %d ops in %.2f sec (%.0f ops/sec)\n",
                thread_id, local_success, thread_time_sec, thread_throughput);
     };
 
-    printf("  Starting %d threads, each performing %d SLICE_GET operations...\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each performing %d SLICE_GET operations...\n",
            MT_THREAD_COUNT, MT_OPS_PER_THREAD);
 
     auto mt_slice_get_start = std::chrono::high_resolution_clock::now();
@@ -1585,19 +1586,19 @@ static bool TestSlicePerformance()
     int mt_slice_get_total_ops = MT_THREAD_COUNT * MT_OPS_PER_THREAD;
     double mt_slice_get_throughput = mt_slice_get_success.load() / mt_slice_get_time_sec;
 
-    printf("  Total operations: %d\n", mt_slice_get_total_ops);
-    printf("  Successful:       %d\n", mt_slice_get_success.load());
-    printf("  Failed:           %d\n", mt_slice_get_failure.load());
-    printf("  Total time:       %.2f sec\n", mt_slice_get_time_sec);
-    printf("  Throughput:       %.0f ops/sec\n", mt_slice_get_throughput);
-    printf("  Per-thread avg:   %.0f ops/sec\n", mt_slice_get_throughput / MT_THREAD_COUNT);
-    printf("  Avg latency:      %.3f ms/op\n", (mt_slice_get_time_sec * 1000) / mt_slice_get_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total operations: %d\n", mt_slice_get_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Successful:       %d\n", mt_slice_get_success.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Failed:           %d\n", mt_slice_get_failure.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total time:       %.2f sec\n", mt_slice_get_time_sec);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Throughput:       %.0f ops/sec\n", mt_slice_get_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Per-thread avg:   %.0f ops/sec\n", mt_slice_get_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Avg latency:      %.3f ms/op\n", (mt_slice_get_time_sec * 1000) / mt_slice_get_success.load());
     printf("\n");
 
     // ========== 4. 清理多线程测试文件 ==========
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf(" Cleanup: Deleting multi-threaded test files...\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
+    FALCON_LOG_PRINTF(LOG_INFO, " Cleanup: Deleting multi-threaded test files...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "─────────────────────────────────────────────────────────────\n");
 
     int mt_deleted_count = 0;
     for (int thread_id = 0; thread_id < MT_THREAD_COUNT; thread_id++) {
@@ -1610,24 +1611,24 @@ static bool TestSlicePerformance()
         }
     }
 
-    printf("  Deleted %d files\n", mt_deleted_count);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Deleted %d files\n", mt_deleted_count);
     printf("\n");
 
     // ========== 5. 性能总结 ==========
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║                   Performance Summary                       ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║  SLICE_PUT (Multi-threaded, %2d threads):                    ║\n", MT_THREAD_COUNT);
-    printf("║    Total ops:    %6d                                       ║\n", mt_slice_put_total_ops);
-    printf("║    Throughput:   %6.0f ops/sec                             ║\n", mt_slice_put_throughput);
-    printf("║    Per-thread:   %6.0f ops/sec                             ║\n", mt_slice_put_throughput / MT_THREAD_COUNT);
-    printf("║    Note: Each op = CREATE + FETCH_SLICE_ID + SLICE_PUT      ║\n");
-    printf("║                                                              ║\n");
-    printf("║  SLICE_GET (Multi-threaded, %2d threads):                    ║\n", MT_THREAD_COUNT);
-    printf("║    Total ops:    %6d                                       ║\n", mt_slice_get_total_ops);
-    printf("║    Throughput:   %6.0f ops/sec                             ║\n", mt_slice_get_throughput);
-    printf("║    Per-thread:   %6.0f ops/sec                             ║\n", mt_slice_get_throughput / MT_THREAD_COUNT);
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║                   Performance Summary                       ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╠══════════════════════════════════════════════════════════════╣\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║  SLICE_PUT (Multi-threaded, %2d threads):                    ║\n", MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Total ops:    %6d                                       ║\n", mt_slice_put_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Throughput:   %6.0f ops/sec                             ║\n", mt_slice_put_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Per-thread:   %6.0f ops/sec                             ║\n", mt_slice_put_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Note: Each op = CREATE + FETCH_SLICE_ID + SLICE_PUT      ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║                                                              ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║  SLICE_GET (Multi-threaded, %2d threads):                    ║\n", MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Total ops:    %6d                                       ║\n", mt_slice_get_total_ops);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Throughput:   %6.0f ops/sec                             ║\n", mt_slice_get_throughput);
+    FALCON_LOG_PRINTF(LOG_INFO, "║    Per-thread:   %6.0f ops/sec                             ║\n", mt_slice_get_throughput / MT_THREAD_COUNT);
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
 
     TEST_PASS("Slice Performance and Throughput");
@@ -1659,26 +1660,26 @@ static bool TestReaddirWithSubdirs()
         TEST_ASSERT(status == 0, "MKDIR subdir failed");
         expected_subdirs.insert(subdir_name);
     }
-    printf("  Created %d subdirectories\n", subdir_count);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created %d subdirectories\n", subdir_count);
 
     // 3. READDIR
     std::vector<std::string> entries;
     status = DoReaddir(dir_path, &entries);
     TEST_ASSERT(status == 0, "READDIR failed");
 
-    printf("  READDIR found %zu entries (created %d subdirs)\n", entries.size(), subdir_count);
+    FALCON_LOG_PRINTF(LOG_INFO, "  READDIR found %zu entries (created %d subdirs)\n", entries.size(), subdir_count);
 
     // 子目录可能被路由到不同Worker节点
     // READDIR可能只返回本地节点上的条目
     // 这里只验证READDIR操作成功，不强制要求返回特定数量
     if (entries.size() >= (size_t)subdir_count) {
-        printf("  All %d subdirectories visible locally\n", subdir_count);
+        FALCON_LOG_PRINTF(LOG_INFO, "  All %d subdirectories visible locally\n", subdir_count);
         // 打印条目
         for (size_t i = 0; i < entries.size(); i++) {
-            printf("    - %s\n", entries[i].c_str());
+            FALCON_LOG_PRINTF(LOG_INFO, "    - %s\n", entries[i].c_str());
         }
     } else {
-        printf("  [INFO] Only %zu of %d subdirs visible (distributed routing)\n", entries.size(), subdir_count);
+        FALCON_LOG_PRINTF(LOG_INFO, "  [INFO] Only %zu of %d subdirs visible (distributed routing)\n", entries.size(), subdir_count);
     }
 
     // 5. 清理子目录
@@ -1714,7 +1715,7 @@ static bool TestKvPutDuplicateKey()
 
     // 2. 第一次 KV PUT
     int status = DoKvPut(test_key, value_len1, slices1);
-    printf("  First KV_PUT: status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  First KV_PUT: status=%d\n", status);
     TEST_ASSERT(status == 0, "First KV_PUT failed");
 
     // 3. 准备第二组不同的 slice 数据
@@ -1724,16 +1725,17 @@ static bool TestKvPutDuplicateKey()
 
     // 4. 第二次 KV PUT 同一 key - 观察行为
     status = DoKvPut(test_key, value_len2, slices2);
-    printf("  Second KV_PUT (duplicate key): status=%d\n", status);
-    printf("    -> Expected: SUCCESS (idempotent, no overwrite)\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Second KV_PUT (duplicate key): status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "    -> Expected: SUCCESS (idempotent, no overwrite)\n");
 
     // 5. 验证数据 - 应该还是第一次的数据
     KvDataResponse get_resp;
     status = DoKvGet(test_key, &get_resp);
     TEST_ASSERT(status == 0, "KV_GET after duplicate PUT failed");
-    printf("    -> After duplicate PUT: valueLen=%u (first=%u, second=%u)\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "    -> After duplicate PUT: valueLen=%u (first=%u, second=%u)\n",
            get_resp.kv_data.valueLen, value_len1, value_len2);
-    printf("    -> Data unchanged? %s\n", get_resp.kv_data.valueLen == value_len1 ? "YES" : "NO");
+    FALCON_LOG_PRINTF(LOG_INFO, "    -> Data unchanged? %s\n",
+                      get_resp.kv_data.valueLen == value_len1 ? "YES" : "NO");
 
     // 6. 清理
     status = DoKvDelete(test_key);
@@ -1758,7 +1760,7 @@ static bool TestSlicePutDuplicate()
     int status = DoCreate(file_path, &create_resp);
     TEST_ASSERT(status == 0, "CREATE failed");
     uint64_t inode = create_resp.st_ino;
-    printf("  Created file with inode=%lu\n", inode);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created file with inode=%lu\n", inode);
 
     // 2. 分配 slice ID
     SliceIdResponse slice_id_resp;
@@ -1766,31 +1768,31 @@ static bool TestSlicePutDuplicate()
     TEST_ASSERT(status == 0, "FETCH_SLICE_ID failed");
     uint64_t slice_id1 = slice_id_resp.start;
     uint64_t slice_id2 = slice_id_resp.start + 1;
-    printf("  Allocated slice IDs: %lu, %lu\n", slice_id1, slice_id2);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Allocated slice IDs: %lu, %lu\n", slice_id1, slice_id2);
 
     // 3. 第一次 SLICE_PUT (chunk=0)
     status = DoSlicePut(file_path, inode, 0, slice_id1, 4096, 0, 4096);
-    printf("  First SLICE_PUT (inode=%lu, chunk=0, slice_id=%lu): status=%d\n", inode, slice_id1, status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  First SLICE_PUT (inode=%lu, chunk=0, slice_id=%lu): status=%d\n", inode, slice_id1, status);
     TEST_ASSERT(status == 0, "First SLICE_PUT failed");
 
     // 4. 第二次 SLICE_PUT 同一 (inode, chunk) 但不同 slice_id - 观察行为
-    printf("  Second SLICE_PUT (same inode=%lu, chunk=0, different slice_id=%lu)...\n", inode, slice_id2);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Second SLICE_PUT (same inode=%lu, chunk=0, different slice_id=%lu)...\n", inode, slice_id2);
     status = DoSlicePut(file_path, inode, 0, slice_id2, 2048, 0, 2048);
-    printf("    -> status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "    -> status=%d\n", status);
     if (status == 0) {
-        printf("    -> SLICE_PUT duplicate succeeded (might append or ignore)\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "    -> SLICE_PUT duplicate succeeded (might append or ignore)\n");
     } else {
-        printf("    -> SLICE_PUT duplicate failed with errorCode=%d\n", status);
-        printf("    -> This might indicate unique constraint violation\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "    -> SLICE_PUT duplicate failed with errorCode=%d\n", status);
+        FALCON_LOG_PRINTF(LOG_INFO, "    -> This might indicate unique constraint violation\n");
     }
 
     // 5. 验证 SLICE_GET - 看看实际存储了什么
     SliceInfoResponse slice_info;
     status = DoSliceGet(file_path, inode, 0, &slice_info);
-    printf("  SLICE_GET (inode=%lu, chunk=0): status=%d, slicenum=%u\n", inode, status, slice_info.slicenum);
+    FALCON_LOG_PRINTF(LOG_INFO, "  SLICE_GET (inode=%lu, chunk=0): status=%d, slicenum=%u\n", inode, status, slice_info.slicenum);
     if (status == 0 && slice_info.slicenum > 0) {
         for (uint32_t i = 0; i < slice_info.slicenum && i < slice_info.sliceid.size(); i++) {
-            printf("    -> slice[%u]: id=%lu, size=%u\n",
+            FALCON_LOG_PRINTF(LOG_INFO, "    -> slice[%u]: id=%lu, size=%u\n",
                    i, slice_info.sliceid[i],
                    i < slice_info.slicesize.size() ? slice_info.slicesize[i] : 0);
         }
@@ -1838,7 +1840,7 @@ static bool TestConcurrentFileCreation()
                 status = DoStat(file_path, &stat_resp);
                 if (status != 0 || stat_resp.st_ino != create_resp.st_ino) {
                     std::lock_guard<std::mutex> lock(cout_mutex);
-                    printf("  [Thread %d] Warning: File %s created but STAT failed or inode mismatch\n",
+                    FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %d] Warning: File %s created but STAT failed or inode mismatch\n",
                            thread_id, file_path.c_str());
                     failure_count++;
                 }
@@ -1848,13 +1850,13 @@ static bool TestConcurrentFileCreation()
             } else {
                 failure_count++;
                 std::lock_guard<std::mutex> lock(cout_mutex);
-                printf("  [Thread %d] Failed to create %s, status=%d\n", thread_id, file_path.c_str(), status);
+                FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %d] Failed to create %s, status=%d\n", thread_id, file_path.c_str(), status);
             }
         }
     };
 
     // 启动所有线程
-    printf("  Starting %d threads, each creating %d files...\n", THREAD_COUNT, FILES_PER_THREAD);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each creating %d files...\n", THREAD_COUNT, FILES_PER_THREAD);
     auto start_time = std::chrono::steady_clock::now();
 
     for (int i = 0; i < THREAD_COUNT; i++) {
@@ -1871,8 +1873,8 @@ static bool TestConcurrentFileCreation()
 
     // 验证结果
     int expected_files = THREAD_COUNT * FILES_PER_THREAD;
-    printf("  Concurrent creation completed in %ld ms\n", duration.count());
-    printf("  Success: %d/%d, Failures: %d\n", success_count.load(), expected_files, failure_count.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Concurrent creation completed in %ld ms\n", duration.count());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Success: %d/%d, Failures: %d\n", success_count.load(), expected_files, failure_count.load());
 
     TEST_ASSERT_MSG(success_count.load() == expected_files,
                     "Expected %d successful creations, got %d (failures: %d)",
@@ -1881,7 +1883,7 @@ static bool TestConcurrentFileCreation()
     TEST_ASSERT_MSG(failure_count.load() == 0,
                     "Expected 0 failures, got %d", failure_count.load());
 
-    printf("  All %d files created and verified successfully in parallel\n", expected_files);
+    FALCON_LOG_PRINTF(LOG_INFO, "  All %d files created and verified successfully in parallel\n", expected_files);
 
     TEST_PASS("Concurrent File Creation");
 }
@@ -1923,7 +1925,7 @@ static bool TestConcurrentFetchSliceId()
                 // 验证返回的ID范围
                 if (resp.end <= resp.start) {
                     failure_count++;
-                    printf("  [Thread %d] Request %d: Invalid range [%lu, %lu)\n",
+                    FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %d] Request %d: Invalid range [%lu, %lu)\n",
                            thread_id, i, resp.start, resp.end);
                     continue;
                 }
@@ -1931,7 +1933,7 @@ static bool TestConcurrentFetchSliceId()
                 uint64_t count = resp.end - resp.start;
                 if (count != SLICE_COUNT_PER_REQUEST) {
                     failure_count++;
-                    printf("  [Thread %d] Request %d: Expected %u IDs, got %lu\n",
+                    FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %d] Request %d: Expected %u IDs, got %lu\n",
                            thread_id, i, SLICE_COUNT_PER_REQUEST, count);
                     continue;
                 }
@@ -1944,13 +1946,13 @@ static bool TestConcurrentFetchSliceId()
                 success_count++;
             } else {
                 failure_count++;
-                printf("  [Thread %d] Request %d failed with status=%d\n", thread_id, i, status);
+                FALCON_LOG_PRINTF(LOG_INFO, "  [Thread %d] Request %d failed with status=%d\n", thread_id, i, status);
             }
         }
     };
 
     // 启动所有线程
-    printf("  Starting %d threads, each fetching %d slice ID ranges (%u IDs per request)...\n",
+    FALCON_LOG_PRINTF(LOG_INFO, "  Starting %d threads, each fetching %d slice ID ranges (%u IDs per request)...\n",
            THREAD_COUNT, REQUESTS_PER_THREAD, SLICE_COUNT_PER_REQUEST);
     auto start_time = std::chrono::steady_clock::now();
 
@@ -1968,15 +1970,15 @@ static bool TestConcurrentFetchSliceId()
 
     // 验证结果
     int expected_requests = THREAD_COUNT * REQUESTS_PER_THREAD;
-    printf("  Concurrent fetch completed in %ld ms\n", duration.count());
-    printf("  Success: %d/%d, Failures: %d\n", success_count.load(), expected_requests, failure_count.load());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Concurrent fetch completed in %ld ms\n", duration.count());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Success: %d/%d, Failures: %d\n", success_count.load(), expected_requests, failure_count.load());
 
     TEST_ASSERT_MSG(success_count.load() == expected_requests,
                     "Expected %d successful requests, got %d (failures: %d)",
                     expected_requests, success_count.load(), failure_count.load());
 
     // 验证所有ID范围不重叠
-    printf("  Checking for ID range overlaps...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Checking for ID range overlaps...\n");
     std::sort(all_ranges.begin(), all_ranges.end(),
               [](const SliceIdRange &a, const SliceIdRange &b) {
                   return a.start < b.start;
@@ -1986,16 +1988,16 @@ static bool TestConcurrentFetchSliceId()
     for (size_t i = 1; i < all_ranges.size(); i++) {
         if (all_ranges[i].start < all_ranges[i-1].end) {
             overlap_count++;
-            printf("  [ERROR] Range overlap detected:\n");
-            printf("    Thread %d Request %d: [%lu, %lu)\n",
+            FALCON_LOG_PRINTF(LOG_INFO, "  [ERROR] Range overlap detected:\n");
+            FALCON_LOG_PRINTF(LOG_INFO, "    Thread %d Request %d: [%lu, %lu)\n",
                    all_ranges[i-1].thread_id, all_ranges[i-1].request_id,
                    all_ranges[i-1].start, all_ranges[i-1].end);
-            printf("    Thread %d Request %d: [%lu, %lu)\n",
+            FALCON_LOG_PRINTF(LOG_INFO, "    Thread %d Request %d: [%lu, %lu)\n",
                    all_ranges[i].thread_id, all_ranges[i].request_id,
                    all_ranges[i].start, all_ranges[i].end);
             // 只显示前几个重叠，避免输出太多
             if (overlap_count >= 5) {
-                printf("  ... (showing first 5 overlaps only)\n");
+                FALCON_LOG_PRINTF(LOG_INFO, "  ... (showing first 5 overlaps only)\n");
                 break;
             }
         }
@@ -2014,10 +2016,10 @@ static bool TestConcurrentFetchSliceId()
         total_ids += (range.end - range.start);
     }
 
-    printf("  All %d ID ranges verified - no overlaps detected\n", (int)all_ranges.size());
-    printf("  Total IDs allocated: %lu\n", total_ids);
-    printf("  ID range: [%lu, %lu)\n", min_id, max_id);
-    printf("  Expected total IDs: %d\n", expected_requests * SLICE_COUNT_PER_REQUEST);
+    FALCON_LOG_PRINTF(LOG_INFO, "  All %d ID ranges verified - no overlaps detected\n", (int)all_ranges.size());
+    FALCON_LOG_PRINTF(LOG_INFO, "  Total IDs allocated: %lu\n", total_ids);
+    FALCON_LOG_PRINTF(LOG_INFO, "  ID range: [%lu, %lu)\n", min_id, max_id);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Expected total IDs: %d\n", expected_requests * SLICE_COUNT_PER_REQUEST);
 
     TEST_ASSERT_MSG(total_ids == (uint64_t)(expected_requests * SLICE_COUNT_PER_REQUEST),
                     "Total allocated IDs (%lu) doesn't match expected (%d)",
@@ -2050,18 +2052,18 @@ static bool TestNestedDirectories()
     status = DoMkdir(base + "/level1/level2/level3");
     TEST_ASSERT(status == 0, "MKDIR level3 failed");
 
-    printf("  Created nested directories: /nested/level1/level2/level3\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Created nested directories: /nested/level1/level2/level3\n");
 
     // 2. 验证嵌套目录可以访问
     OpenDirResponse opendir_resp;
     status = DoOpendir(base + "/level1/level2/level3", &opendir_resp);
     TEST_ASSERT(status == 0, "OPENDIR deepest level failed");
-    printf("  Deepest directory accessible, inode=%lu\n", opendir_resp.st_ino);
+    FALCON_LOG_PRINTF(LOG_INFO, "  Deepest directory accessible, inode=%lu\n", opendir_resp.st_ino);
 
     // 3. 测试删除非空目录 - 应该失败
     status = DoRmdir(base + "/level1/level2");
     TEST_ASSERT(status != 0, "RMDIR non-empty directory should fail");
-    printf("  RMDIR non-empty directory correctly failed with status=%d\n", status);
+    FALCON_LOG_PRINTF(LOG_INFO, "  RMDIR non-empty directory correctly failed with status=%d\n", status);
 
     // 4. 清理目录：从深到浅删除
     status = DoRmdir(base + "/level1/level2/level3");
@@ -2076,7 +2078,7 @@ static bool TestNestedDirectories()
     status = DoRmdir(base);
     TEST_ASSERT(status == 0, "RMDIR base failed");
 
-    printf("  Cleaned up all nested directories\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Cleaned up all nested directories\n");
 
     TEST_PASS("Nested Directories");
 }
@@ -2090,19 +2092,19 @@ static bool TestDoubleRenewShardTable()
     TEST_BEGIN("Double Renew Shard Table (Cache Optimization)");
 
     // 1. 第一次调用 falcon_renew_shard_table
-    printf("  [Call #1] Executing falcon_renew_shard_table()...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #1] Executing falcon_renew_shard_table()...\n");
     PlainCommandResponse resp1;
     int status1 = DoPlainCommand("select * from falcon_renew_shard_table();", &resp1);
     TEST_ASSERT(status1 == 0, "First falcon_renew_shard_table() failed");
 
-    printf("  [Call #1] Result: status=%d, row=%u, col=%u\n", status1, resp1.row, resp1.col);
-    printf("  [Call #1] Expected: reload shard table cache (first time)\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #1] Result: status=%d, row=%u, col=%u\n", status1, resp1.row, resp1.col);
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #1] Expected: reload shard table cache (first time)\n");
 
     if (resp1.row > 0) {
-        printf("  [Call #1] Retrieved %u shard entries\n", resp1.row);
+        FALCON_LOG_PRINTF(LOG_INFO, "  [Call #1] Retrieved %u shard entries\n", resp1.row);
         // 打印前几条分片信息
         for (uint32_t i = 0; i < std::min(3u, resp1.row) && i * resp1.col + 4 < resp1.data.size(); i++) {
-            printf("    Shard %u: range[%s, %s], server=%s:%s, id=%s\n",
+            FALCON_LOG_PRINTF(LOG_INFO, "    Shard %u: range[%s, %s], server=%s:%s, id=%s\n",
                    i,
                    resp1.data[i * resp1.col + 0].c_str(),
                    resp1.data[i * resp1.col + 1].c_str(),
@@ -2111,23 +2113,23 @@ static bool TestDoubleRenewShardTable()
                    resp1.data[i * resp1.col + 4].c_str());
         }
         if (resp1.row > 3) {
-            printf("    ... (and %u more entries)\n", resp1.row - 3);
+            FALCON_LOG_PRINTF(LOG_INFO, "    ... (and %u more entries)\n", resp1.row - 3);
         }
     }
 
     // 添加短暂延迟，确保第一次调用完全完成
-    printf("  Waiting 100ms before second call...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  Waiting 100ms before second call...\n");
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // 2. 第二次调用 falcon_renew_shard_table
-    printf("  [Call #2] Executing falcon_renew_shard_table() again...\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #2] Executing falcon_renew_shard_table() again...\n");
     PlainCommandResponse resp2;
     int status2 = DoPlainCommand("select * from falcon_renew_shard_table();", &resp2);
     TEST_ASSERT(status2 == 0, "Second falcon_renew_shard_table() failed");
 
-    printf("  [Call #2] Result: status=%d, row=%u, col=%u\n", status2, resp2.row, resp2.col);
-    printf("  [Call #2] Expected: skip reload (cache already loaded)\n");
-    printf("  [Call #2] Check PostgreSQL log for: '[DEBUG] falcon_renew_shard_table: shard table cache already loaded'\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #2] Result: status=%d, row=%u, col=%u\n", status2, resp2.row, resp2.col);
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #2] Expected: skip reload (cache already loaded)\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Call #2] Check PostgreSQL log for: '[DEBUG] falcon_renew_shard_table: shard table cache already loaded'\n");
 
     // 3. 验证两次返回的数据一致
     TEST_ASSERT_MSG(resp2.row == resp1.row,
@@ -2137,7 +2139,7 @@ static bool TestDoubleRenewShardTable()
                     "Second call returned different col count (expected %u, got %u)",
                     resp1.col, resp2.col);
 
-    printf("  [Verified] Both calls returned same data: %u rows x %u cols\n", resp2.row, resp2.col);
+    FALCON_LOG_PRINTF(LOG_INFO, "  [Verified] Both calls returned same data: %u rows x %u cols\n", resp2.row, resp2.col);
 
     // 4. 验证数据内容一致（抽样检查前几行）
     if (resp1.row > 0 && resp2.row > 0) {
@@ -2147,27 +2149,27 @@ static bool TestDoubleRenewShardTable()
             for (uint32_t j = 0; j < resp1.col && i * resp1.col + j < resp1.data.size() && i * resp2.col + j < resp2.data.size(); j++) {
                 if (resp1.data[i * resp1.col + j] != resp2.data[i * resp2.col + j]) {
                     data_match = false;
-                    printf("  [WARNING] Data mismatch at row %zu, col %u\n", i, j);
+                    FALCON_LOG_PRINTF(LOG_INFO, "  [WARNING] Data mismatch at row %zu, col %u\n", i, j);
                 }
             }
         }
         if (data_match) {
-            printf("  [Verified] Data content matches between two calls (sampled %zu rows)\n", check_rows);
+            FALCON_LOG_PRINTF(LOG_INFO, "  [Verified] Data content matches between two calls (sampled %zu rows)\n", check_rows);
         }
     }
 
     // 5. 性能对比提示
     printf("\n");
-    printf("  ┌─────────────────────────────────────────────────────────────┐\n");
-    printf("  │ Performance Analysis:                                       │\n");
-    printf("  │ - Call #1: Should reload cache (access system catalogs)    │\n");
-    printf("  │ - Call #2: Should skip reload (use cached data)            │\n");
-    printf("  │                                                             │\n");
-    printf("  │ Check PostgreSQL log for:                                  │\n");
-    printf("  │   [DEBUG] falcon_renew_shard_table: reloading ...          │\n");
-    printf("  │   [DEBUG] falcon_renew_shard_table: already loaded ...     │\n");
-    printf("  │   [DEBUG] GetForeignServerConnectionInfo: ...              │\n");
-    printf("  └─────────────────────────────────────────────────────────────┘\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  ┌─────────────────────────────────────────────────────────────┐\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │ Performance Analysis:                                       │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │ - Call #1: Should reload cache (access system catalogs)    │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │ - Call #2: Should skip reload (use cached data)            │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │                                                             │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │ Check PostgreSQL log for:                                  │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │   [DEBUG] falcon_renew_shard_table: reloading ...          │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │   [DEBUG] falcon_renew_shard_table: already loaded ...     │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  │   [DEBUG] GetForeignServerConnectionInfo: ...              │\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "  └─────────────────────────────────────────────────────────────┘\n");
 
     TEST_PASS("Double Renew Shard Table");
 }
@@ -2180,12 +2182,12 @@ static bool IsCnNode()
     PlainCommandResponse resp;
     int status = DoPlainCommand("select server_name from falcon_foreign_server where is_local=true;", &resp);
     if (status != 0) {
-        printf("  PostgreSQL get node info failed.\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "  PostgreSQL get node info failed.\n");
         return false;
     }
 
     if (resp.data.size() > 0 && resp.data[0].find("cn") != std::string::npos) {
-        printf("  PostgreSQL get node info: %s\n", resp.data[0].c_str());
+        FALCON_LOG_PRINTF(LOG_INFO, "  PostgreSQL get node info: %s\n", resp.data[0].c_str());
         return true;
     }
     return false;
@@ -2199,12 +2201,12 @@ static bool IsRootDirExist()
     PlainCommandResponse resp;
     int status = DoPlainCommand("select count(*) from falcon_directory_table where name='/';", &resp);
     if (status != 0) {
-        printf("  PostgreSQL get root dir failed.\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "  PostgreSQL get root dir failed.\n");
         return false;
     }
 
     if (resp.data.size() > 0 && resp.data[0].find("1") != std::string::npos) {
-        printf("  PostgreSQL get root dir info: %s\n", resp.data[0].c_str());
+        FALCON_LOG_PRINTF(LOG_INFO, "  PostgreSQL get root dir info: %s\n", resp.data[0].c_str());
         return true;
     }
     return false;
@@ -2218,10 +2220,10 @@ static void RunAllTests()
     int current_iteration = g_loop_iteration.fetch_add(1);
 
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║           FalconMetaService End-to-End Test Suite            ║\n");
-    printf("║                     Iteration #%-4d                          ║\n", current_iteration);
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║           FalconMetaService End-to-End Test Suite            ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║                     Iteration #%-4d                          ║\n", current_iteration);
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
 
     // 只在第一次循环时等待初始化
@@ -2231,22 +2233,23 @@ static void RunAllTests()
         while (!initFinished) {
             initFinished = IsRootDirExist();
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            printf("Waiting for root path create finished.\n");
+            FALCON_LOG_PRINTF(LOG_INFO, "Waiting for root path create finished.\n");
         }
 
         // 检测是否在 CN 节点
-        printf("Detecting node type by data of falcon_foreign_server...\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "Detecting node type by data of falcon_foreign_server...\n");
         g_is_cn_node = IsCnNode();
         if (g_is_cn_node) {
-            printf("  -> Running on CN node.\n");
+            FALCON_LOG_PRINTF(LOG_INFO, "  -> Running on CN node.\n");
         } else {
-            printf("  -> Running on Worker node.\n");
-            printf("  -> CN-only tests (MKDIR/RMDIR/RENAME) will be skipped\n");
+            FALCON_LOG_PRINTF(LOG_INFO, "  -> Running on Worker node.\n");
+            FALCON_LOG_PRINTF(LOG_INFO, "  -> CN-only tests (MKDIR/RMDIR/RENAME) will be skipped\n");
         }
         printf("\n");
     } else {
         // 后续循环只打印节点类型
-        printf("Running on %s node (Iteration #%d)\n", g_is_cn_node ? "CN" : "Worker", current_iteration);
+        FALCON_LOG_PRINTF(LOG_INFO, "Running on %s node (Iteration #%d)\n",
+                          g_is_cn_node ? "CN" : "Worker", current_iteration);
         printf("\n");
     }
 
@@ -2255,10 +2258,10 @@ static void RunAllTests()
     if (g_is_cn_node) {
         // 只在第一次循环创建测试基础目录
         if (current_iteration == 0) {
-            printf("Creating test base directory: %s\n", TEST_BASE_PATH);
+            FALCON_LOG_PRINTF(LOG_INFO, "Creating test base directory: %s\n", TEST_BASE_PATH);
             status = DoMkdir(TEST_BASE_PATH);
             if (status != 0) {
-                printf("WARNING: Failed to create test base directory (may already exist)\n");
+                FALCON_LOG_PRINTF(LOG_INFO, "WARNING: Failed to create test base directory (may already exist)\n");
                 // 尝试清理后重建
                 DoRmdir(TEST_BASE_PATH);
                 DoMkdir(TEST_BASE_PATH);
@@ -2299,19 +2302,19 @@ static void RunAllTests()
 
     // 打印结果
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║                       TEST RESULTS                           ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║  PASSED:  %-4d                                               ║\n", g_test_passed);
-    printf("║  FAILED:  %-4d                                               ║\n", g_test_failed);
-    printf("║  SKIPPED: %-4d                                               ║\n", g_test_skipped);
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╔══════════════════════════════════════════════════════════════╗\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║                       TEST RESULTS                           ║\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "╠══════════════════════════════════════════════════════════════╣\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "║  PASSED:  %-4d                                               ║\n", g_test_passed);
+    FALCON_LOG_PRINTF(LOG_INFO, "║  FAILED:  %-4d                                               ║\n", g_test_failed);
+    FALCON_LOG_PRINTF(LOG_INFO, "║  SKIPPED: %-4d                                               ║\n", g_test_skipped);
+    FALCON_LOG_PRINTF(LOG_INFO, "╚══════════════════════════════════════════════════════════════╝\n");
     printf("\n");
 
     if (g_test_failed == 0) {
-        printf("*** ALL TESTS PASSED ***\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "*** ALL TESTS PASSED ***\n");
     } else {
-        printf("*** SOME TESTS FAILED ***\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "*** SOME TESTS FAILED ***\n");
     }
 }
 
@@ -2321,15 +2324,15 @@ extern "C" {
 
 int plugin_init(FalconPluginData *data)
 {
-    printf("\n[FalconMetaServiceTestPlugin] plugin_init() called\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "\n[FalconMetaServiceTestPlugin] plugin_init() called\n");
     fflush(stdout);
 
     if (!data) {
-        printf("[FalconMetaServiceTestPlugin] ERROR: plugin data is NULL\n");
+        FALCON_LOG_PRINTF(LOG_INFO, "[FalconMetaServiceTestPlugin] ERROR: plugin data is NULL\n");
         return -1;
     }
 
-    printf("[FalconMetaServiceTestPlugin] plugin_init() completed\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[FalconMetaServiceTestPlugin] plugin_init() completed\n");
     fflush(stdout);
 
     return 0;
@@ -2339,11 +2342,11 @@ FalconPluginWorkType plugin_get_type(void) { return FALCON_PLUGIN_TYPE_BACKGROUN
 
 int plugin_work(FalconPluginData *data)
 {
-    printf("\n[FalconMetaServiceTestPlugin] plugin_work() called\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "\n[FalconMetaServiceTestPlugin] plugin_work() called\n");
     fflush(stdout);
 
     g_meta_service = HcomMetaService::Instance();
-    printf("[FalconMetaServiceTestPlugin] HcomMetaService instance ready\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[FalconMetaServiceTestPlugin] HcomMetaService instance ready\n");
     fflush(stdout);
 
     // 运行所有测试
@@ -2354,7 +2357,7 @@ int plugin_work(FalconPluginData *data)
         std::this_thread::sleep_for(std::chrono::seconds(15));
     }
 
-    printf("[FalconMetaServiceTestPlugin] plugin_work() completed\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[FalconMetaServiceTestPlugin] plugin_work() completed\n");
     fflush(stdout);
 
     return 0;
@@ -2362,7 +2365,7 @@ int plugin_work(FalconPluginData *data)
 
 void plugin_cleanup(FalconPluginData *data)
 {
-    printf("[FalconMetaServiceTestPlugin] plugin_cleanup() called\n");
+    FALCON_LOG_PRINTF(LOG_INFO, "[FalconMetaServiceTestPlugin] plugin_cleanup() called\n");
     fflush(stdout);
 }
 

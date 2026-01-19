@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 #include "brpc_comm_adapter/brpc_meta_service_job.h"
+#include "utils/error_log.h"
 
 FalconMetaServiceType BrpcMetaServiceJob::MetaServiceTypeDecode(falcon::meta_proto::MetaServiceType type)
 {
@@ -54,8 +55,9 @@ FalconMetaServiceType BrpcMetaServiceJob::MetaServiceTypeDecode(falcon::meta_pro
 FalconMetaServiceType BrpcMetaServiceJob::GetFalconMetaServiceType(int index)
 {
     if (m_request->type_size() <= index) {
-        printf("try to get value from idx:%d which is out of type_size:%d", index, m_request->type_size());
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("try to get value from idx:%d which is out of type_size:%d",
+                                         index,
+                                         m_request->type_size());
         throw std::runtime_error("input index out of range.");
     }
 
@@ -63,8 +65,7 @@ FalconMetaServiceType BrpcMetaServiceJob::GetFalconMetaServiceType(int index)
 
     FalconMetaServiceType supportType = MetaServiceTypeDecode(type);
     if (supportType == FalconMetaServiceType::NOT_SUPPORTED) {
-        printf("Got unsupport serviceType:%d", type);
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("Got unsupport serviceType:%d", type);
         throw std::runtime_error("got unsupport serviceType.");
     }
 

@@ -6,6 +6,8 @@
 #include <vector>
 #include <atomic>
 
+#include "log/logging.h"
+
 using namespace std;
 
 #define SERVER_IP "10.0.3.1"
@@ -21,7 +23,7 @@ static std::atomic<uint64_t> routerIndex = 0;
 int dfs_init(int client_number)
 {
     if (getenv("SERVER_IP") == nullptr || getenv("SERVER_PORT") == nullptr) {
-        cout << "env SERVER_IP or SERVER_PORT is empty" << endl;
+        FALCON_LOG(LOG_ERROR) << "env SERVER_IP or SERVER_PORT is empty";
         return -1;
     }
     std::string serverIp = getenv("SERVER_IP");
@@ -40,7 +42,7 @@ int dfs_open(const char *path, int flags, mode_t mode)
     std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
     if (!conn)
     {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     uint64_t inodeId;
@@ -68,7 +70,7 @@ int dfs_close(int fd, const char* path)
     std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
     if (!conn)
     {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     int64_t size = 0;
@@ -86,7 +88,7 @@ int dfs_mkdir(const char *path, mode_t mode)
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
     std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
     if (!conn) {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     int errorCode = conn->Mkdir(dirPath.c_str());
@@ -97,7 +99,7 @@ int dfs_rmdir(const char *path)
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
     std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
     if (!conn) {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     int errorCode = conn->Rmdir(path);
@@ -110,7 +112,7 @@ int dfs_create(const char *path, mode_t mode)
     std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
     if (!conn)
     {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     uint64_t inodeId;
@@ -125,7 +127,7 @@ int dfs_unlink(const char *path)
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
     std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
     if (!conn) {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
 
@@ -140,7 +142,7 @@ int dfs_stat(const char *path, struct stat *stbuf)
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
     std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
     if (!conn) {
-        std::cout << "route error.\n";
+        FALCON_LOG(LOG_ERROR) << "route error.";
         return PROGRAM_ERROR;
     }
     int errorCode = conn->Stat(path, stbuf);
