@@ -44,8 +44,10 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
-falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libbrpcplugin.so'
+falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libhcomplugin.so'
 falcon_communication.server_ip = '$cnIp'
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
+falcon.local_ip = '$localIp'
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -92,8 +94,10 @@ falcon_connection_pool.batch_size = $FalconConnectionPoolBatchSize
 falcon_connection_pool.wait_adjust = $FalconConnectionPoolWaitAdjust
 falcon_connection_pool.wait_min = $FalconConnectionPoolWaitMin
 falcon_connection_pool.wait_max = $FalconConnectionPoolWaitMax
-falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libbrpcplugin.so'
+falcon_communication.plugin_path = '$PG_INSTALL_DIR/lib/postgresql/libhcomplugin.so'
 falcon_communication.server_ip = '${workerIp}'
+falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
+falcon.local_ip = '$localIp'
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi
@@ -153,6 +157,8 @@ if [[ "$cnIp" == "$localIp" ]]; then
 
         psql -d postgres -h "${server_ip_list[i]}" -p "${server_port_list[i]}" <<EOF
 select falcon_create_distributed_data_table();
+select falcon_create_slice_table();
+select falcon_create_kvmeta_table();
 select falcon_start_background_service();
 EOF
     done

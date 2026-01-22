@@ -14,6 +14,8 @@
 
 extern MemoryManager PgMemoryManager;
 
+typedef FalconMetaServiceType FalconSupportMetaService;
+
 // func whose name ends with internal is not supposed to be called by external user
 void FalconMkdirHandle(MetaProcessInfo *infoArray, int count);
 void FalconMkdirSubMkdirHandle(MetaProcessInfo *infoArray, int count);
@@ -34,5 +36,15 @@ void FalconRenameSubCreateHandle(MetaProcessInfo info);
 void FalconUtimeNsHandle(MetaProcessInfo info);
 void FalconChownHandle(MetaProcessInfo info);
 void FalconChmodHandle(MetaProcessInfo info);
+
+void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count);
+void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count);
+void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count);
+
+void FalconKvmetaPutHandle(KvMetaProcessInfo info);
+void FalconKvmetaGetHandle(KvMetaProcessInfo info);
+void FalconKvmetaDelHandle(KvMetaProcessInfo info);
+
+void FalconFetchSliceIdHandle(SliceIdProcessInfo infoData);
 
 #endif

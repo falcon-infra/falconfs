@@ -25,6 +25,13 @@ typedef enum FalconMetaServiceType {
     UTIMENS,
     CHOWN,
     CHMOD,
+    KV_PUT,
+    KV_GET,
+    KV_DEL,
+    SLICE_PUT,
+    SLICE_GET,
+    SLICE_DEL,
+    FETCH_SLICE_ID,
     NOT_SUPPORTED
 } FalconMetaServiceType;
 #endif // FALCON_META_SERVICE_DEF_H

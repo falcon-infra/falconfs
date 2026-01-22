@@ -14,6 +14,8 @@ else
     echo "max_wal_senders=10" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "hot_standby=on" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "synchronous_commit=on" >>/home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_plugin.directory = '/FalconFS/plugins'" >> /home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon.local_ip = '${NODE_IP:-127.0.0.1}'" >> /home/falconMeta/data/metadata/postgresql.conf
 
     # default replica_server_num set to 2, compatible to ADS.
     replica_server_num=${replica_server_num:-2}
@@ -37,7 +39,7 @@ else
     echo "falcon_connection_pool.wait_adjust = 1" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.wait_min = 1" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_connection_pool.wait_max = 500" >>/home/falconMeta/data/metadata/postgresql.conf
-    echo "falcon_communication.plugin_path = '/home/falconMeta/metadb/lib/postgresql/libbrpcplugin.so'" >>/home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon_communication.plugin_path = '/home/falconMeta/metadb/lib/postgresql/libhcomplugin.so'" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_communication.server_ip = '${POD_IP}'" >>/home/falconMeta/data/metadata/postgresql.conf
     pg_ctl start -D /home/falconMeta/data/metadata
 fi

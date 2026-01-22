@@ -61,6 +61,61 @@ typedef struct MetaProcessInfoData
 } MetaProcessInfoData;
 typedef MetaProcessInfoData *MetaProcessInfo;
 
+typedef struct SliceInfo
+{
+    uint64_t inodeId;
+    uint32_t chunkId;
+    uint64_t sliceId;
+    uint32_t sliceSize;
+    uint32_t sliceOffset;
+    uint32_t sliceLen;
+    uint32_t sliceLoc1;
+    uint32_t sliceLoc2;
+} SliceInfo;
+
+typedef struct SliceProcessInfoData
+{
+    uint64_t *inodeIds;
+    uint32_t *chunkIds;
+    uint64_t *sliceIds;
+    uint32_t *sliceSizes;
+    uint32_t *sliceOffsets;
+    uint32_t *sliceLens;
+    uint32_t *sliceLoc1s;
+    uint32_t *sliceloc2s;
+    const char *name;
+    uint64_t inputInodeid;
+    uint32_t inputChunkid;
+    uint32_t count;
+    FalconErrorCode errorCode;
+} SliceProcessInfoData;
+
+typedef SliceProcessInfoData *SliceProcessInfo;
+
+typedef struct KvMetaProcessInfoData
+{
+    const char *userkey;
+    uint32_t valuelen;
+    uint16_t slicenum;
+    uint64_t *valuekey;
+    uint64_t *location;
+    uint32_t *slicelen;
+    FalconErrorCode errorCode;
+} KvMetaProcessInfoData;
+
+typedef KvMetaProcessInfoData *KvMetaProcessInfo;
+
+typedef struct SliceIdProcessInfoData
+{
+    uint32_t count;
+    uint8_t type;
+    uint64_t start;
+    uint64_t end;
+    FalconErrorCode errorCode;
+} SliceIdProcessInfoData;
+
+typedef SliceIdProcessInfoData *SliceIdProcessInfo;
+
 int pg_qsort_meta_process_info_by_path_cmp(const void *a, const void *b);
 
 #endif

@@ -25,6 +25,13 @@ enum MetaServiceType {
     UTIMENS = 17;
     CHOWN = 18;
     CHMOD = 19;
+    KV_PUT = 20;
+    KV_GET = 21;
+    KV_DEL = 22;
+    SLICE_PUT = 23;
+    SLICE_GET = 24;
+    SLICE_DEL = 25;
+    FETCH_SLICE_ID = 26;
 }
 
 message MetaRequest {

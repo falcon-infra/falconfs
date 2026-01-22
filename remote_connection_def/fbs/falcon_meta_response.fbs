@@ -85,6 +85,28 @@ table RenameSubRenameLocallyResponse {
     st_ctim: uint64;
     node_id: int32;
 }
+table GetKVMetaResponse {
+    value_len: uint32;
+    slice_num: uint16;
+    value_key: [uint64];
+    location: [uint64];
+    size: [uint32];
+}
+table SliceInfoResponse {
+    slicenum: uint32;
+    inodeid: [uint64];
+    chunkid: [uint32];
+    sliceid: [uint64];
+    slicesize: [uint32];
+    sliceoffset: [uint32];
+    slicelen: [uint32];
+    sliceloc1: [uint32];
+    sliceloc2: [uint32];
+}
+table SliceIdResponse {
+    startid: uint64;
+    endid: uint64;
+}
 union AnyMetaResponse {
     PlainCommandResponse,
     CreateResponse,
@@ -93,7 +115,10 @@ union AnyMetaResponse {
     UnlinkResponse,
     ReadDirResponse,
     OpenDirResponse,
-    RenameSubRenameLocallyResponse
+    RenameSubRenameLocallyResponse,
+    GetKVMetaResponse,
+    SliceInfoResponse,
+    SliceIdResponse
 }
 table MetaResponse {
     error_code: uint32;
