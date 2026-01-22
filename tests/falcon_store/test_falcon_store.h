@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <filesystem>
 #include <sstream>
+#include <iostream>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -73,7 +74,7 @@ class FalconStoreUT : public testing::Test {
 
         ret = FalconStore::GetInstance()->GetInitStatus();
         if (ret != SUCCESS) {
-            println(std::cerr, "init failed, check the log.");
+            std::cerr << "init failed, check the log." << std::endl;
             exit(1);
         }
 

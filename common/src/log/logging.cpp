@@ -11,7 +11,7 @@
 #include <climits>
 #include <cstring>
 #include <filesystem>
-#include <format>
+#include <string>
 #include <ranges>
 
 #include <sys/stat.h>
@@ -124,17 +124,20 @@ std::string FalconLog::GetLogPrefix(const char *fileName, int lineNumber, Falcon
     std::tm time_tm;
     localtime_r(&tt, &time_tm);
 
-    std::string logTime = std::format("{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d} {:06d}",
-                                      time_tm.tm_year + 1900,
-                                      time_tm.tm_mon + 1,
-                                      time_tm.tm_mday,
-                                      time_tm.tm_hour,
-                                      time_tm.tm_min,
-                                      time_tm.tm_sec,
-                                      micros.count());
+    std::ostringstream oss;
+    oss << std::setfill('0') 
+        << std::setw(4) << (time_tm.tm_year + 1900) << "-"
+        << std::setw(2) << (time_tm.tm_mon + 1) << "-"
+        << std::setw(2) << time_tm.tm_mday << " "
+        << std::setw(2) << time_tm.tm_hour << ":"
+        << std::setw(2) << time_tm.tm_min << ":"
+        << std::setw(2) << time_tm.tm_sec << " "
+        << std::setw(6) << micros.count();
+    std::string logTime = oss.str();
 
     std::string_view baseFileName = std::strrchr(fileName, '/') ? std::strrchr(fileName, '/') + 1 : fileName;
-    return std::format("[{}] [FALCON] {} [{}:{}] ", logTime, severityPrefixMap[severity], baseFileName, lineNumber);
+    return "[" + logTime + "] [FALCON] " + std::string(severityPrefixMap[severity]) + " [" + 
+           std::string(baseFileName) + ":" + std::to_string(lineNumber) + "] ";
 }
 
 FalconLogLevel FalconLog::GetFalconLogLevel() { return severityThreshold; }
@@ -165,13 +168,13 @@ void FalconLog::Clean()
 
     // 使用函数式风格处理符号链接
     auto excludeFiles = severityLogNames |
-                        std::views::transform([this](const auto &name) { return std::format("{}/{}", logDir, name); }) |
+                        std::views::transform([this](const auto &name) { return std::string(logDir) + "/" + std::string(name); }) |
                         std::views::filter([](const auto &path) { return access(path.c_str(), F_OK) == 0; }) |
                         std::views::transform([](const auto &path) {
                             char buf[PATH_MAX];
                             ssize_t len = readlink(path.c_str(), buf, sizeof(buf) - 1);
                             if (len < 0) {
-                                FALCON_LOG(LOG_ERROR) << std::format("{}: {}", path, std::strerror(errno));
+                                FALCON_LOG(LOG_ERROR) << path << ": " << std::strerror(errno);
                                 return std::optional<std::string>{};
                             }
                             buf[len] = '\0';
@@ -202,7 +205,7 @@ void FalconLog::DeleteLogFiles(const std::unordered_set<std::string> &excludeFil
     };
     std::unique_ptr<DIR, decltype(dirCloser)> dirPtr(opendir(logDir.c_str()), dirCloser);
     if (!dirPtr) {
-        FALCON_LOG(LOG_ERROR) << std::format("opendir failed for {}", logDir);
+        FALCON_LOG(LOG_ERROR) << "opendir failed for " << logDir;
         return;
     }
 
@@ -220,12 +223,12 @@ void FalconLog::DeleteLogFiles(const std::unordered_set<std::string> &excludeFil
             return std::nullopt;
         }
 
-        const auto filePath = std::format("{}/{}", logDir, entity->d_name);
+        const std::string filePath = std::string(logDir) + "/" + entity->d_name;
 
         // 对于可能是符号链接的情况，再次检查文件类型
         struct stat st;
         if (lstat(filePath.c_str(), &st) != 0) {
-            FALCON_LOG(LOG_ERROR) << std::format("{} lstat failed: {}", filePath, std::strerror(errno));
+            FALCON_LOG(LOG_ERROR) << filePath << " lstat failed: " << std::strerror(errno);
             return std::nullopt;
         }
 
@@ -244,9 +247,9 @@ void FalconLog::DeleteLogFiles(const std::unordered_set<std::string> &excludeFil
         }
 
         if (unlink(filePath.c_str()) == 0) {
-            FALCON_LOG(LOG_INFO) << std::format("Deleted (older than reserved_time_): {}", filePath);
+            FALCON_LOG(LOG_INFO) << "Deleted (older than reserved_time_): " << filePath;
         } else {
-            FALCON_LOG(LOG_ERROR) << std::format("Failed to delete {}: {}", filePath, std::strerror(errno));
+            FALCON_LOG(LOG_ERROR) << "Failed to delete " << filePath << ": " << std::strerror(errno);
         }
         return std::nullopt;
     };
@@ -267,9 +270,9 @@ void FalconLog::DeleteLogFiles(const std::unordered_set<std::string> &excludeFil
 
         for (const auto &file : filesToDelete) {
             if (unlink(file.filePath.c_str()) == 0) {
-                FALCON_LOG(LOG_INFO) << std::format("Deleted (exceeds max count): {}", file.filePath);
+                FALCON_LOG(LOG_INFO) << "Deleted (exceeds max count): " << file.filePath;
             } else {
-                FALCON_LOG(LOG_ERROR) << std::format("Failed to delete {}: {}", file.filePath, std::strerror(errno));
+                FALCON_LOG(LOG_ERROR) << "Failed to delete " << file.filePath << ": " << std::strerror(errno);
             }
         }
     }

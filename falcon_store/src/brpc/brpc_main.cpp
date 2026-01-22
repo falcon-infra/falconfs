@@ -6,12 +6,12 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <iostream>
 
 #include <brpc/server.h>
 #include <bthread/unstable.h>
 #include <butil/iobuf.h>
 #include <memory_resource>
-#include <print>
 
 #include "buffer/dir_open_instance.h"
 #include "buffer/open_instance.h"
@@ -428,7 +428,7 @@ int RemoteIOServer::Run()
     butil::str2endpoint(endPoint.c_str(), &point);
     brpc::ServerOptions options;
 #ifdef USE_RDMA
-    std::println("BRPC is configured to use RDMA");
+    std::cout << "BRPC is configured to use RDMA" << std::endl;
     options.use_rdma = true;
 #endif
     if (server.Start(point, &options) != 0) {

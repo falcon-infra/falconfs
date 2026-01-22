@@ -10,8 +10,8 @@
 #include <unistd.h>
 #include <atomic>
 #include <csignal>
-#include <print>
 #include <thread>
+#include <iostream>
 
 #include <fuse/fuse.h>
 #include <gflags/gflags.h>
@@ -459,7 +459,7 @@ int main(int argc, char *argv[])
         } else if (strcmp(argv[1], "stats-all") == 0) {
             scatter = true;
         } else {
-            std::println(stderr, "Invalid argv[1], should be stats or stats-all");
+            std::cerr << "Falcon init failed" << std::endl;
             return 1;
         }
 
@@ -468,7 +468,7 @@ int main(int argc, char *argv[])
         auto channel = std::make_shared<brpc::Channel>();
         brpc::ChannelOptions options;
         if (channel->Init(FLAGS_rpc_endpoint.c_str(), &options) != 0) {
-            std::println(stderr, "Falied to initialize channel");
+            std::cerr << "Falied to initialize channel" << std::endl;
             return 1;
         }
         auto client = std::make_shared<FalconIOClient>(channel);
@@ -480,11 +480,11 @@ int main(int argc, char *argv[])
             sleep(1);
             ret = client->StatCluster(-1, stats, scatter);
             if (ret != 0) {
-                std::println(stderr, "StatCluster falied: {}", strerror(-ret));
+                std::cerr << "StatCluster falied: " << strerror(-ret) << std::endl;
                 continue;
             }
             if (cnt++ % 30 == 0) {
-                std::println(stdout, "Current opened fds = {}", FalconFd::GetInstance()->GetCurrentOpenInstanceCount());
+                std::cout << "Current opened fds =" << FalconFd::GetInstance()->GetCurrentOpenInstanceCount() << std::endl;
                 printStatsHeader();
             }
             printStatsVector(convertStatstoString(stats));
@@ -496,7 +496,7 @@ int main(int argc, char *argv[])
 
     falcon::brpc_io::RemoteIOServer &server = falcon::brpc_io::RemoteIOServer::GetInstance();
     server.endPoint = FLAGS_rpc_endpoint;
-    std::println("brpc endpoint = {}", server.endPoint);
+    std::cout << "brpc endpoint = " << server.endPoint << std::endl;
     std::thread brpcServerThread(&falcon::brpc_io::RemoteIOServer::Run, &server);
     {
         std::unique_lock<std::mutex> lk(server.mutexStart);
@@ -506,17 +506,17 @@ int main(int argc, char *argv[])
     int ret;
     ret = GetInit().Init();
     if (ret != FALCON_SUCCESS) {
-        std::println(stderr, "Falcon init failed");
+        std::cerr << "Falcon init failed" << std::endl;
     }
     auto &config = GetInit().GetFalconConfig();
     g_persist = config->GetBool(FalconPropertyKey::FALCON_PERSIST);
     uint32_t maxOpenNum = config->GetUint32(FalconPropertyKey::FALCON_MAX_OPEN_NUM);
     SetMaxOpenInstanceNum(maxOpenNum);
 #ifdef ZK_INIT
-    std::println("Initialize with ZK");
+    std::cout << "Initialize with ZK" << std::endl;
     const char *zkEndPoint = std::getenv("zk_endpoint");
     if (zkEndPoint == nullptr) {
-        std::println(stderr, "Fetch zk endpoint failed!");
+        std::cerr << "Fetch zk endpoint failed!" << std::endl;
         return -1;
     }
     ret = FalconInitWithZK(zkEndPoint);
@@ -530,7 +530,7 @@ int main(int argc, char *argv[])
         if (brpcServerThread.joinable()) {
             brpcServerThread.join();
         }
-        std::println(stderr, "Falcon cluster init failed");
+        std::cerr << "Falcon cluster init failed" << std::endl;
         return ret;
     }
     server.SetReadyFlag();
@@ -551,11 +551,11 @@ int main(int argc, char *argv[])
         try {
             int port = std::stoi(prometheusPort);
             if (port < 0 || port > 65535) {
-                std::println(stderr, "Falcon prometheus port out of range: {}", port);
+                std::cerr << "Falcon prometheus port out of range: " << port << std::endl;
                 return 1;
             }
         } catch (const std::exception &e) {
-            std::println(stderr, "Falcon prometheus port {}: {}", prometheusPort, e.what());
+            std::cerr << "Falcon prometheus port " << prometheusPort << ": " << e.what() << std::endl;
             return 1;
         }
         prometheusThread = std::jthread([prometheusPort](std::stop_token stoken) {
@@ -564,7 +564,8 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    std::println("{}", ret);
+    // std::println("{}", ret);
+    std::cout << ret << std::endl;
     ret = fuse_main(args.argc, args.argv, &falconOperations, nullptr);
     fuse_opt_free_args(&args);
     return ret;
