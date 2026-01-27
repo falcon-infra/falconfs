@@ -20,10 +20,21 @@ jobs:
         apt update
         apt install -y git
 
+    - name: Checkout submodules
+      run: |
+        git config --global --add safe.directory /__w/falconfs/falconfs
+        rm -rf third_party/concurrentqueue || true
+        rm -rf third_party/postgres || true
+        git rm --cached third_party/concurrentqueue || true
+        if [ -f .gitmodules ] && [ -s .gitmodules ]; then
+          git submodule sync
+          git submodule update --init --recursive --depth=1
+        fi
+
     - name: Check out the repository
       uses: actions/checkout@v4
       with:
-        submodules: true
+        submodules: false
 
     - name: Add non-root user
       run: |
@@ -32,6 +43,12 @@ jobs:
         useradd -u 1001 -m -s /bin/bash falcon
         echo "falcon ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
         chown -R falcon $GITHUB_WORKSPACE
+
+    - name: Check library installed
+      run: |
+        apt update
+        apt install -y libboost-all-dev
+        ls /usr/include/boost/lockfree/queue.hpp 2>/dev/null || echo "Boost header not found"
 
     - name: Install dependencies
       run: .github/workflows/install_dependencies.sh

@@ -8,7 +8,7 @@ ENV TZ=Asia/Shanghai \
     LC_ALL=en_US.UTF-8
 RUN apt-get install -y gdb vim tar python3 python3-pip libreadline-dev liblz4-dev libzstd-dev libssl-dev
 RUN apt-get install -y linux-tools-common linux-tools-generic net-tools
-RUN apt-get install -y numactl
+RUN apt-get install -y numactl libboost-all-dev
 RUN mkdir /opt/falcon && chmod -R 0755 /opt/falcon
 ARG USER_NAME=falconMeta
 RUN useradd -m -s /bin/bash $USER_NAME
