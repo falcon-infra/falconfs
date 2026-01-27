@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#ifndef HCOM_META_SERVICE_H
-#define HCOM_META_SERVICE_H
+#ifndef FALCON_META_SERVICE_H
+#define FALCON_META_SERVICE_H
 
 #include <mutex>
 
@@ -12,22 +12,22 @@
 namespace falcon {
 namespace meta_service {
 
-class HcomMetaServiceJob;
+class FalconMetaServiceJob;
 
-class HcomMetaService {
+class FalconMetaService {
 private:
-    static HcomMetaService* instance;
+    static FalconMetaService* instance;
     static std::mutex instanceMutex;
     bool initialized;
 
-    HcomMetaService();
+    FalconMetaService();
 
 public:
-    static HcomMetaService* Instance();
+    static FalconMetaService* Instance();
 
-    virtual ~HcomMetaService();
+    virtual ~FalconMetaService();
 
-    int DispatchHcomMetaServiceJob(HcomMetaServiceJob* job);
+    int DispatchFalconMetaServiceJob(FalconMetaServiceJob* job);
 
     int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
                                 FalconMetaServiceCallback callback,
@@ -37,4 +37,4 @@ public:
 } // namespace meta_service
 } // namespace falcon
 
-#endif // HCOM_META_SERVICE_H
+#endif // FALCON_META_SERVICE_H
