@@ -191,7 +191,7 @@ static void FalconPluginInitializeSlot(int slot_index, const char *plugin_name, 
     ereport(LOG, (errmsg("Plugin %s allocated slot %d", plugin_name, slot_index)));
 }
 
-/* 获取当前节点信息 - 供插件使用 */
+__attribute__((visibility("default")))
 void FalconPluginGetNodeInfo(FalconNodeInfo *node_info)
 {
     if (node_info == NULL) {

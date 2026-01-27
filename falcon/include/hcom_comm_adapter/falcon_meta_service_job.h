@@ -2,8 +2,8 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#ifndef HCOM_META_SERVICE_JOB_H
-#define HCOM_META_SERVICE_JOB_H
+#ifndef FALCON_META_SERVICE_JOB_H
+#define FALCON_META_SERVICE_JOB_H
 
 #include <chrono>
 #include <vector>
@@ -14,12 +14,12 @@
 namespace falcon {
 namespace meta_service {
 
-class HcomMetaServiceJob : public BaseMetaServiceJob {
+class FalconMetaServiceJob : public BaseMetaServiceJob {
   public:
-    HcomMetaServiceJob(const FalconMetaServiceRequest &request,
+    FalconMetaServiceJob(const FalconMetaServiceRequest &request,
                        FalconMetaServiceCallback callback,
                        void *user_context);
-    ~HcomMetaServiceJob() override;
+    ~FalconMetaServiceJob() override;
 
     void Done() override;
     bool IsAllowBatchProcess() override;
@@ -45,4 +45,4 @@ class HcomMetaServiceJob : public BaseMetaServiceJob {
 } // namespace meta_service
 } // namespace falcon
 
-#endif // HCOM_META_SERVICE_JOB_H
+#endif // FALCON_META_SERVICE_JOB_H

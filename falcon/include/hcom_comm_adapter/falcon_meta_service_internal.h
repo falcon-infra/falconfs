@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "hcom_comm_adapter/hcom_meta_service.h"
+#include "hcom_comm_adapter/falcon_meta_service.h"
 
 extern "C" {
 #include "remote_connection_utils/error_code_def.h"

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#include "hcom_comm_adapter/hcom_meta_service_job.h"
+#include "hcom_comm_adapter/falcon_meta_service_job.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -137,7 +137,7 @@ static bool IsAllowBatchOperation(FalconMetaOperationType op)
     }
 }
 
-HcomMetaServiceJob::HcomMetaServiceJob(const FalconMetaServiceRequest &request,
+FalconMetaServiceJob::FalconMetaServiceJob(const FalconMetaServiceRequest &request,
                                        FalconMetaServiceCallback callback,
                                        void *user_context)
     : m_request(request),
@@ -154,12 +154,12 @@ HcomMetaServiceJob::HcomMetaServiceJob(const FalconMetaServiceRequest &request,
     }
 }
 
-HcomMetaServiceJob::~HcomMetaServiceJob()
+FalconMetaServiceJob::~FalconMetaServiceJob()
 {
     CleanupResponseData(m_response);
 }
 
-void HcomMetaServiceJob::Done()
+void FalconMetaServiceJob::Done()
 {
     LatencyData* e2eData = GetOpcodeE2ELatencyData(static_cast<int>(opcodeForE2E));
     e2eTimer.End(e2eData);
@@ -170,27 +170,27 @@ void HcomMetaServiceJob::Done()
     }
 }
 
-bool HcomMetaServiceJob::IsAllowBatchProcess()
+bool FalconMetaServiceJob::IsAllowBatchProcess()
 {
     return IsAllowBatchOperation(m_request.operation);
 }
 
-bool HcomMetaServiceJob::IsEmptyRequest()
+bool FalconMetaServiceJob::IsEmptyRequest()
 {
     return false;
 }
 
-int HcomMetaServiceJob::GetReqServiceCnt()
+int FalconMetaServiceJob::GetReqServiceCnt()
 {
     return 1;
 }
 
-size_t HcomMetaServiceJob::GetReqDatasize()
+size_t FalconMetaServiceJob::GetReqDatasize()
 {
     return m_request_buffer.size();
 }
 
-size_t HcomMetaServiceJob::CopyOutData(void *dst, size_t dstSize)
+size_t FalconMetaServiceJob::CopyOutData(void *dst, size_t dstSize)
 {
     if (!dst || dstSize < m_request_buffer.size()) {
         return 0;
@@ -199,7 +199,7 @@ size_t HcomMetaServiceJob::CopyOutData(void *dst, size_t dstSize)
     return m_request_buffer.size();
 }
 
-FalconMetaServiceType HcomMetaServiceJob::GetFalconMetaServiceType(int index)
+FalconMetaServiceType FalconMetaServiceJob::GetFalconMetaServiceType(int index)
 {
     if (index != 0) {
         fprintf(stderr,
@@ -218,7 +218,7 @@ FalconMetaServiceType HcomMetaServiceJob::GetFalconMetaServiceType(int index)
     return type;
 }
 
-void HcomMetaServiceJob::ProcessResponse(void *data, size_t size, FalDataDeleter deleter)
+void FalconMetaServiceJob::ProcessResponse(void *data, size_t size, FalDataDeleter deleter)
 {
     m_response.opcode = m_request.operation;
     if (m_response.status != SUCCESS) {
