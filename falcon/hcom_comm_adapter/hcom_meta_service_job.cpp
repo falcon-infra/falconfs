@@ -142,8 +142,7 @@ HcomMetaServiceJob::HcomMetaServiceJob(const FalconMetaServiceRequest &request,
                                        void *user_context)
     : m_request(request),
       m_callback(callback),
-      m_user_context(user_context),
-      m_start_time(std::chrono::steady_clock::now())
+      m_user_context(user_context)
 {
     FalconErrorCode err = FalconMetaServiceSerializer::SerializeRequestToSerializedData(m_request, m_request_buffer);
     if (err != SUCCESS) {
@@ -162,8 +161,8 @@ HcomMetaServiceJob::~HcomMetaServiceJob()
 
 void HcomMetaServiceJob::Done()
 {
-    auto end_time = std::chrono::steady_clock::now();
-    auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(end_time - m_start_time).count();
+    LatencyData* e2eData = GetOpcodeE2ELatencyData(static_cast<int>(opcodeForE2E));
+    e2eTimer.End(e2eData);
 
     if (m_callback) {
         m_callback(m_response, m_user_context);

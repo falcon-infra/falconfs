@@ -19,6 +19,7 @@
 #include "connection_pool/falcon_batch_service_def.h"
 #include "connection_pool/falcon_worker_task.h"
 #include "connection_pool/pg_connection.h"
+#include "perf_counter/perf_stat.h"
 
 class PGConnectionPool {
   private:
@@ -140,12 +141,24 @@ int PGConnectionPool::BatchDequeueExec(int toDequeue, int queueIndex)
     if (count == 0) {
         return 0;
     }
+
+    /* Report inQueueLatency and restart timer for connWait measurement */
+    for (auto &job : jobList) {
+        job->stageTimer.EndAndRestart(GetInQueueLatencyData());
+    }
+
     auto workerTaskPtr = std::make_shared<BatchWorkerTask>(GetFalconConnectionPoolShmemAllocator(), jobList);
     if (workerTaskPtr == nullptr) {
         throw std::runtime_error("BatchDequeueExec make_shared<BatchWorkerTask> failed, out of memory.");
     }
 
     PGConnection *conn = GetPGConnection(); // get idle connection, may block
+
+    /* Report connWaitLatency and restart timer for workerWait measurement */
+    for (auto &job : jobList) {
+        job->stageTimer.EndAndRestart(GetConnWaitLatencyData());
+    }
+
     conn->Exec(workerTaskPtr);
     return count;
 }
@@ -160,12 +173,22 @@ int PGConnectionPool::SingleDequeueExec(int toDequeue)
     if (count == 0) {
         return 0;
     }
+
+    /* Report inQueueLatency and restart timer for connWait measurement */
+    for (auto &job : singleJobList) {
+        job->stageTimer.EndAndRestart(GetInQueueLatencyData());
+    }
+
     for (auto &job : singleJobList) {
         auto workerTaskPtr = std::make_shared<SingleWorkerTask>(GetFalconConnectionPoolShmemAllocator(), job);
         if (workerTaskPtr == nullptr) {
             throw std::runtime_error("BatchDequeueExec make_shared<BatchWorkerTask> failed, out of memory.");
         }
         PGConnection *conn = GetPGConnection(); // get idle connection, may block
+
+        /* Report connWaitLatency and restart timer for workerWait measurement */
+        job->stageTimer.EndAndRestart(GetConnWaitLatencyData());
+
         conn->Exec(workerTaskPtr);
     }
     return count;
@@ -199,6 +222,14 @@ void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
     FalconBatchServiceType FalconBatchServiceType = job->IsAllowBatchProcess()
                                                         ? FalconMetaServiceTypeToBatchServiceType(falconSupportType)
                                                         : FalconBatchServiceType::NOT_SUPPORT;
+
+    job->opcodeForE2E = falconSupportType;
+
+    job->e2eTimer.Start();
+
+    /* Start latency timer for inQueue measurement */
+    job->stageTimer.Start();
+
     while (!supportBatchTaskList[(int)FalconBatchServiceType].jobList.enqueue(job)) {
         std::cout << "DispatchMetaServiceJob: enqueue failed, type = " << (int)FalconBatchServiceType << std::endl;
         std::this_thread::yield();

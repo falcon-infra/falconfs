@@ -4,24 +4,11 @@ falcon_srcdir = .
 hcom_plugin_srcdir = hcom_comm_adapter
 HCOM_PLUGIN_CXX_OBJS += \
 	$(patsubst $(hcom_plugin_srcdir)/%.cpp,$(hcom_plugin_srcdir)/%.o, $(wildcard $(hcom_plugin_srcdir)/*.cpp))
-HCOM_PLUGIN_C_OBJS += \
-	$(patsubst $(hcom_plugin_srcdir)/%.c,$(hcom_plugin_srcdir)/%.o,$(wildcard $(hcom_plugin_srcdir)/*.c))
 
-# serialized_data.c is in utils/, not hcom_comm_adapter/
-HCOM_PLUGIN_UTILS_C_OBJS = utils/serialized_data.o
-
-HCOM_PLUGIN_OBJS = $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) $(HCOM_PLUGIN_UTILS_C_OBJS)
+HCOM_PLUGIN_C_OBJS = utils/serialized_data.o
 
 REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
 CONNECTION_POOL_DIR = $(falcon_srcdir)/connection_pool
-PG_CONFIG ?= pg_config
-PG_PKGLIBDIR ?= $(shell $(PG_CONFIG) --pkglibdir 2>/dev/null)
-FALCON_SO ?= $(firstword $(wildcard $(falcon_srcdir)/falcon.so) $(PG_PKGLIBDIR)/falcon.so)
-FALCON_SO_DIR := $(dir $(FALCON_SO))
-
-ifeq ($(strip $(FALCON_SO)),)
-$(error falcon.so not found; set FALCON_SO=/path/to/falcon.so)
-endif
 
 FBS_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/fbs$$')
 FBS_FILE = $(wildcard $(FBS_DIR)/*.fbs)
@@ -31,26 +18,22 @@ HCOM_PLUGIN_CPPFLAGS = -I./include -I./connection_pool/fbs \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
 			  -I/usr/local/include
 
-HCOM_PLUGIN_LINK_LIB = -L$(FALCON_SO_DIR) -l:falcon.so -lpthread -ldl
+HCOM_PLUGIN_LINK_LIB = -L. -l:falcon.so -lpthread -ldl
 
 HCOM_PLUGIN_LIB_NAME = libhcomplugin.so
 
 CXXFLAGS=-Wall -Wextra -O2 -fPIC
 CFLAGS=-Wall -Wextra -O2 -fPIC
-HCOM_PLUGIN_LDFLAGS = -Wl,--no-undefined -Wl,-rpath,\$$ORIGIN
 
 all: $(FBS_HEAD) ${HCOM_PLUGIN_LIB_NAME}
 
-${HCOM_PLUGIN_LIB_NAME}:$(HCOM_PLUGIN_OBJS)
-	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(HCOM_PLUGIN_LDFLAGS) $(HCOM_PLUGIN_LINK_LIB)
+${HCOM_PLUGIN_LIB_NAME}:$(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS)
+	$(CXX) -shared -o $@ $^ $(LDFLAGS) -Wl,-rpath,\$$ORIGIN $(HCOM_PLUGIN_LINK_LIB)
 
-$(HCOM_PLUGIN_CXX_OBJS): %.o: %.cpp $(FBS_HEAD)
+$(HCOM_PLUGIN_CXX_OBJS):%.o:%.cpp $(FBS_HEAD)
 	$(CXX) -c $(HCOM_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
-$(HCOM_PLUGIN_C_OBJS): %.o: %.c
-	$(CC) -c $(HCOM_PLUGIN_CPPFLAGS) $(CFLAGS) $(CPPFLAGS) $< -o $@
-
-$(HCOM_PLUGIN_UTILS_C_OBJS): %.o: %.c
+$(HCOM_PLUGIN_C_OBJS):%.o:%.c
 	$(CC) -c $(HCOM_PLUGIN_CPPFLAGS) $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 $(FBS_HEAD): $(FBS_FILE)
@@ -58,4 +41,4 @@ $(FBS_HEAD): $(FBS_FILE)
 	flatc --cpp -o $(CONNECTION_POOL_DIR)/fbs/ $(FBS_FILE)
 
 clean:
-	rm -f $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) $(HCOM_PLUGIN_UTILS_C_OBJS) ${HCOM_PLUGIN_LIB_NAME}
+	rm -f $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) ${HCOM_PLUGIN_LIB_NAME}
