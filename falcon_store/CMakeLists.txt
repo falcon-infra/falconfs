@@ -27,6 +27,7 @@ file(GLOB OBS_LIBS "${OBS_LIB_DIR}/*.so")
 target_link_libraries(FalconStore PUBLIC
     pthread
     ${OBS_LIBS}
+    boundscheck
     ${BRPC_LIBRARIES}
     ${DYNAMIC_LIB}
     fmt

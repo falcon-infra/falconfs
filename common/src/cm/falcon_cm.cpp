@@ -190,7 +190,7 @@ int FalconCM::FetchLeaders(std::vector<std::string> &leaders)
     int n = leaderNames.count;
     for (int i = 0; i < n; i++) {
         std::string childName = leaderNames.data[i];
-        std::cout << childName << std::endl;
+        FALCON_LOG(LOG_INFO) << childName;
         std::string nodeLeaderPath = leaderPath + "/" + childName;
         char buf[BUFF_SIZE] = {0};
         int len = BUFF_SIZE;
@@ -390,7 +390,7 @@ int FalconCM::ReUpload()
     assert(localNodeStatus.load() == EXPIRED);
     int ret = 0;
     std::string nodePath = clusterName + "/StoreNode/Nodes/Node00" + std::to_string(nodeId);
-    std::cout << nodePath << std::endl;
+    FALCON_LOG(LOG_INFO) << nodePath;
     ret = zoo_create(zhandle,
                      nodePath.c_str(),
                      nodeInfo.c_str(),

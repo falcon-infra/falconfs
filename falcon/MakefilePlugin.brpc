@@ -10,6 +10,9 @@ BRPC_PLUGIN_C_OBJS += \
 REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
 BRPC_COMM_ADAPTER = $(falcon_srcdir)/brpc_comm_adapter
 
+PG_CONFIG ?= pg_config
+PG_INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
+
 PROTO_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/proto$$')
 PROTO_FILE = $(wildcard $(PROTO_DIR)/*.proto)
 PROTO_SRC = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.proto, $(BRPC_COMM_ADAPTER)/%.pb.cc, $(PROTO_FILE))
@@ -22,6 +25,7 @@ BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread 
 
 BRPC_PLUGIN_CPPFLAGS = -I./include -I./brpc_comm_adapter/proto  \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I$(PG_INCLUDEDIR_SERVER) \
 			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include
 
 BRPC_PLUGIN_LINK_LIB = $(BPRC_LDFLAGS_BRPC) $(BRPC_LDFLAGS_PROTO) $(BRPC_LDFLAGS_DEPENDENCIES)

@@ -13,7 +13,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(falcon_meta_service_test_plugin)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -44,6 +44,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/falcon/include
     ${CMAKE_SOURCE_DIR}/falcon/connection_pool/proto
     ${CMAKE_SOURCE_DIR}/falcon/connection_pool/fbs
+    ${CMAKE_SOURCE_DIR}/common/src/include
     ${CMAKE_SOURCE_DIR}/remote_connection_def
     ${PG_INCLUDEDIR_SERVER}
     ${PG_INCLUDEDIR}

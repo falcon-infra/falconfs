@@ -10,6 +10,7 @@
 #include <sstream>
 #include "base_comm_adapter/base_meta_service_job.h"
 #include "brpc_comm_adapter/brpc_meta_service_imp.h"
+#include "utils/error_log.h"
 class FalconBrpcServer {
   public:
     FalconBrpcServer(falcon_meta_job_dispatch_func dispatchFun, const char *serverIp, int port)
@@ -28,12 +29,14 @@ class FalconBrpcServer {
         butil::ip_t brpcServerIp;
         int ret = butil::str2ip(m_serverIp.c_str(), &brpcServerIp);
         if (ret != 0) {
-            printf("FalconBrpcServer: failed to convert %s to brpc ip_t type, using 127.0.0.1 as server ip.",
-                   m_serverIp.c_str());
+            FALCON_ELOG_THREAD_SAFE_EXTENDED(
+                "FalconBrpcServer: failed to convert %s to brpc ip_t type, using 127.0.0.1 as server ip.",
+                m_serverIp.c_str());
             brpcServerIp = butil::IP_ANY;
         } else {
-            printf("FalconBrpcServer: convert %s to brpc ip_t type success, using it as server ip.",
-                   m_serverIp.c_str());
+            FALCON_ELOG_THREAD_SAFE_EXTENDED(
+                "FalconBrpcServer: convert %s to brpc ip_t type success, using it as server ip.",
+                m_serverIp.c_str());
         }
 
         butil::EndPoint point;
@@ -70,8 +73,7 @@ int StartFalconCommunicationServer(falcon_meta_job_dispatch_func dispatchFunc, c
             return true;
         }
     } catch (const std::runtime_error &e) {
-        printf("%s", e.what());
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("%s", e.what());
         return 1;
     }
     return 0;
@@ -86,8 +88,7 @@ int StopFalconCommunicationServer()
             return 0;
         }
     } catch (const std::exception &e) {
-        printf("%s", e.what());
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("%s", e.what());
         return 1;
     }
     return 1;

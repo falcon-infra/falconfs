@@ -12,6 +12,7 @@
 #include "conf/falcon_property_key.h"
 #include "falcon_store/falcon_store.h"
 #include "init/falcon_init.h"
+#include "log/logging.h"
 #include "remote_connection_utils/error_code_def.h"
 
 static std::jthread statsThread;
@@ -21,7 +22,7 @@ class FalconStoreUT : public testing::Test {
   public:
     static void SetUpTestSuite()
     {
-        std::cout << "Calling SetUpTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling SetUpTestSuite!";
         int ret = GetInit().Init();
         if (ret != 0) {
             exit(1);
@@ -31,19 +32,19 @@ class FalconStoreUT : public testing::Test {
             auto cachePath = config->GetString(FalconPropertyKey::FALCON_CACHE_ROOT);
             if (std::filesystem::exists(cachePath)) {
                 std::filesystem::remove_all(cachePath);
-                std::cout << "已删除目录及其内容: " << cachePath << std::endl;
+                FALCON_LOG(LOG_INFO) << "已删除目录及其内容: " << cachePath;
             }
             std::filesystem::create_directory(cachePath);
-            std::cout << "已重新创建目录: " << cachePath << std::endl;
+            FALCON_LOG(LOG_INFO) << "已重新创建目录: " << cachePath;
 
             // 在目录下创建 100 个子目录
             for (int i = 0; i <= 100; ++i) {
                 std::string subdir_name = cachePath + "/" + std::to_string(i);
                 std::filesystem::create_directory(subdir_name);
             }
-            std::cout << "已创建子目录: 0 ~ 100 " << std::endl;
+            FALCON_LOG(LOG_INFO) << "已创建子目录: 0 ~ 100 ";
         } catch (const std::exception &e) {
-            std::cerr << "发生错误: " << e.what() << std::endl;
+            FALCON_LOG(LOG_ERROR) << "发生错误: " << e.what();
             exit(1);
         }
 
@@ -59,7 +60,7 @@ class FalconStoreUT : public testing::Test {
             }
             int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
             server.endPoint = views[nodeId];
-            std::cout << "brpc endpoint = " << server.endPoint << std::endl;
+            FALCON_LOG(LOG_INFO) << "brpc endpoint = " << server.endPoint;
             std::thread brpcServerThread(&falcon::brpc_io::RemoteIOServer::Run, &server);
             {
                 std::unique_lock<std::mutex> lk(server.mutexStart);
@@ -68,13 +69,13 @@ class FalconStoreUT : public testing::Test {
             brpcServerThread.detach();
             server.SetReadyFlag();
         } catch (const std::exception &e) {
-            std::cerr << "发生错误: " << e.what() << std::endl;
+            FALCON_LOG(LOG_ERROR) << "发生错误: " << e.what();
             exit(1);
         }
 
         ret = FalconStore::GetInstance()->GetInitStatus();
         if (ret != SUCCESS) {
-            std::cerr << "init failed, check the log." << std::endl;
+            FALCON_LOG(LOG_ERROR) << "init failed, check the log.";
             exit(1);
         }
 
@@ -87,7 +88,7 @@ class FalconStoreUT : public testing::Test {
         auto channel = std::make_shared<brpc::Channel>();
         brpc::ChannelOptions options;
         if (channel->Init("localhost:56039", &options) != 0) {
-            std::cerr << "Falied to initialize channel" << std::endl;
+            FALCON_LOG(LOG_ERROR) << "Falied to initialize channel";
             exit(1);
         }
         client = std::make_shared<FalconIOClient>(channel);
@@ -98,7 +99,7 @@ class FalconStoreUT : public testing::Test {
         auto cachePath = config->GetString(FalconPropertyKey::FALCON_CACHE_ROOT);
         if (std::filesystem::exists(cachePath)) {
             std::filesystem::remove_all(cachePath);
-            std::cout << "已删除目录及其内容: " << cachePath << std::endl;
+            FALCON_LOG(LOG_INFO) << "已删除目录及其内容: " << cachePath;
         }
         if (writeBuf) {
             free(writeBuf);
