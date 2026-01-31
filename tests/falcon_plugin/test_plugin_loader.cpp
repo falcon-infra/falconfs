@@ -24,7 +24,7 @@ class PluginLoaderUT : public testing::Test {
 public:
     static void SetUpTestSuite()
     {
-        std::cout << "Calling PluginLoaderUT SetUpTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling PluginLoaderUT SetUpTestSuite!";
 
         // Initialize test plugin paths - try multiple possible locations
         std::vector<std::string> possible_paths = {
@@ -78,7 +78,7 @@ public:
 
     static void TearDownTestSuite()
     {
-        std::cout << "Calling PluginLoaderUT TearDownTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling PluginLoaderUT TearDownTestSuite!";
 
         // Clean up test directory
         if (std::filesystem::exists(test_plugin_dir)) {

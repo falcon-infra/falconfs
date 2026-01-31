@@ -10,6 +10,7 @@
 #include "zookeeper/zookeeper.h"
 
 #include "cm/falcon_cm.h"
+#include "log/logging.h"
 
 class FalconCMIT : public testing::Test {
 protected:
@@ -17,18 +18,18 @@ protected:
         // zookeeper container should be running and already initialized
         const char *zkEndPoint = std::getenv("zk_endpoint");
         if (zkEndPoint == nullptr) {
-            std::cout << "env zk_endpoint not set!" << std::endl;
+            FALCON_LOG(LOG_ERROR) << "env zk_endpoint not set!";
             exit(1);
         }
         int ret = FalconCM::GetInstance(zkEndPoint, 10000, "/falcon")->GetInitStatus();
         if (ret != 0) {
-            std::cout << "FalconCM init connection failed! : " << ret << std::endl;
+            FALCON_LOG(LOG_ERROR) << "FalconCM init connection failed! : " << ret;
             exit(1);
         }
 
         zhandle = zookeeper_init(zkEndPoint, nullptr, 10000, nullptr, nullptr, 0);
         if (zhandle == nullptr) {
-            std::cout << "zookeeper connect failed" << std::endl;
+            FALCON_LOG(LOG_ERROR) << "zookeeper connect failed";
             exit(1);
         }
 

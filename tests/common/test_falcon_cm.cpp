@@ -62,13 +62,14 @@ TEST_F(FalconCMIT, ExpireAfterUpLoad) {
 TEST_F(FalconCMIT, NotConnectedState) {
     // edit exitControl file to not exit the process
     // std::filesystem::remove(FalconCM::GetExitControlFilePath());
-    std::cout << "ExitControlFilePath = " << FalconCM::GetExitControlFilePath() << std::endl;
+    FALCON_LOG(LOG_INFO) << "ExitControlFilePath = " << FalconCM::GetExitControlFilePath();
     if (access(FalconCM::GetExitControlFilePath().c_str(), F_OK) == 0) {
         uint32_t doExit = 0;
         std::ofstream fout;
         fout.open(FalconCM::GetExitControlFilePath().c_str(), std::ios::out);
         if (!fout.is_open()) {
-            std::cout << "open existed " << FalconCM::GetExitControlFilePath() << " file failed: " << strerror(errno);
+            FALCON_LOG(LOG_ERROR) << "open existed " << FalconCM::GetExitControlFilePath()
+                                  << " file failed: " << strerror(errno);
             exit(1);
         }
         fout << doExit;

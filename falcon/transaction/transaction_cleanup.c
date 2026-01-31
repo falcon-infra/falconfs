@@ -78,10 +78,9 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
                                                     ALLOCSET_DEFAULT_MAXSIZE);
     ResourceOwner oldOwner = CurrentResourceOwner;
     CurrentResourceOwner = myOwner;
-    elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: wait init.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemon2PCFailureCleanupProcessMain: wait init.");
     bool falconHasBeenLoad = false;
-    while (true)
-    {
+    while (true) {
         StartTransactionCommand();
         falconHasBeenLoad = CheckFalconHasBeenLoaded();
         CommitTransactionCommand();
@@ -95,21 +94,20 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
         sleep(1);
         serviceStarted = CheckFalconBackgroundServiceStarted();
     } while (!serviceStarted || RecoveryInProgress());
-    elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: init finished.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemon2PCFailureCleanupProcessMain: init finished.");
     int serverId = -1;
-    while (true)
-    {
+    while (true) {
         StartTransactionCommand();
         serverId = GetLocalServerId();
         CommitTransactionCommand();
         if (serverId != -1)
             break;
-        
+
         // wait for shard table init
         sleep(1);
     }
     if (serverId == 0) {
-        elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: Running.");
+        FALCON_ELOG_LOG_EXTENDED("FalconDaemon2PCFailureCleanupProcessMain: Running.");
         while (!got_SIGTERM) {
             MemoryContext oldContext = MemoryContextSwitchTo(myContext);
 
@@ -118,7 +116,7 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
             CommitTransactionCommand();
 
             if (count != 0) {
-                elog(LOG, "2PCFailureCleanup: cleanup %d 2PC failure", count);
+                FALCON_ELOG_LOG_EXTENDED("2PCFailureCleanup: cleanup %d 2PC failure", count);
             }
 
             MemoryContextSwitchTo(oldContext);
@@ -127,7 +125,7 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
         }
     }
 
-    elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: exit.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemon2PCFailureCleanupProcessMain: exit.");
     CurrentResourceOwner = oldOwner;
     ResourceOwnerRelease(myOwner, RESOURCE_RELEASE_BEFORE_LOCKS, true, true);
     ResourceOwnerRelease(myOwner, RESOURCE_RELEASE_LOCKS, true, true);
@@ -308,7 +306,7 @@ static bool CommitOrRollbackPreparedTransaction(int serverId, char *transactionG
     FalconPlainCommandOnWorkerList(command, REMOTE_COMMAND_FLAG_NO_BEGIN, list_make1_int(serverId));
     FalconSendCommandAndWaitForResult();
 
-    elog(LOG, "cleanup a prepared transaction on server: %d, command: %s", serverId, command);
+    FALCON_ELOG_LOG_EXTENDED("cleanup a prepared transaction on server: %d, command: %s", serverId, command);
 
     return true;
 }
@@ -434,7 +432,7 @@ static void FalconDaemon2PCCleanupProcessSigTermHandler(SIGNAL_ARGS)
 {
     int save_errno = errno;
 
-    elog(LOG, "FalconDaemon2PCCleanupProcessSigTermHandler: get sigterm.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemon2PCCleanupProcessSigTermHandler: get sigterm.");
     got_SIGTERM = true;
 
     errno = save_errno;

@@ -15,6 +15,9 @@
 #include <string>
 #include <vector>
 
+#include "falcon_code.h"
+#include "init/falcon_init.h"
+#include "log/logging.h"
 #include "base_comm_adapter/comm_server_interface.h"
 #include "connection_pool/connection_pool_config.h"
 #include "connection_pool/pg_connection_pool.h"
@@ -54,7 +57,7 @@ HcomMetaService::~HcomMetaService() = default;
 int HcomMetaService::DispatchHcomMetaServiceJob(HcomMetaServiceJob *job)
 {
     if (job == nullptr) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DispatchJob failed: job is null\n");
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [HcomMetaService] DispatchJob failed: job is null\n");
         return -1;
     }
 
@@ -67,7 +70,7 @@ int HcomMetaService::DispatchHcomMetaServiceJob(HcomMetaServiceJob *job)
     }
 
     if (g_dispatchFunc == nullptr) {
-        fprintf(stderr, "[ERROR] [HcomMetaService] Dispatch func is null\n");
+        FALCON_LOG_PRINTF(LOG_ERROR,  "[ERROR] [HcomMetaService] Dispatch func is null\n");
         job->GetResponse().status = -1;
         job->Done();
         delete job;
@@ -129,7 +132,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -147,7 +150,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -166,7 +169,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -189,7 +192,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
@@ -208,7 +211,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
@@ -233,7 +236,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
@@ -252,7 +255,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
@@ -271,14 +274,14 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->src)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Source path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->src.c_str());
             return INVALID_PARAMETER;
         }
         if (!ValidatePathComponentLengths(param->dst)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Destination path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->dst.c_str());
@@ -298,14 +301,14 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->src_name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Source name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->src_name.c_str());
             return INVALID_PARAMETER;
         }
         if (!ValidateNameLength(param->dst_name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Destination name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->dst_name.c_str());
@@ -334,7 +337,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
@@ -369,7 +372,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -387,7 +390,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -405,7 +408,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
         if (!param)
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
-            fprintf(stderr,
+            FALCON_LOG_PRINTF(LOG_WARNING, 
                     "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
@@ -524,7 +527,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
     SerializedDataInit(&sd, NULL, 0, 0, NULL);
     char *buf = SerializedDataApplyForSegment(&sd, builder.GetSize());
     if (!buf) {
-        fprintf(stderr,
+        FALCON_LOG_PRINTF(LOG_WARNING, 
                 "[WARNING] [HcomMetaService] SerializeRequest: failed to allocate buffer, size=%u\n",
                 builder.GetSize());
         return OUT_OF_MEMORY;
@@ -543,7 +546,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
                                                                         FalconMetaOperationType operation)
 {
     if (data == nullptr || size < sizeof(sd_size_t)) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: attachment too small, size=%zu\n", size);
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [HcomMetaService] DeserializeResponse: attachment too small, size=%zu\n", size);
         return false;
     }
 
@@ -552,13 +555,13 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
 
     SerializedData sd;
     if (!SerializedDataInit(&sd, &buffer[0], buffer.size(), buffer.size(), NULL)) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: SerializedDataInit failed\n");
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [HcomMetaService] DeserializeResponse: SerializedDataInit failed\n");
         return false;
     }
 
     sd_size_t item_size = SerializedDataNextSeveralItemSize(&sd, 0, 1);
     if (item_size == (sd_size_t)-1) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: invalid item size\n");
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [HcomMetaService] DeserializeResponse: invalid item size\n");
         return false;
     }
 
@@ -570,7 +573,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
 
     flatbuffers::Verifier verifier((uint8_t *)fbs_data, fbs_size);
     if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaResponse>()) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: FlatBuffers verification failed\n");
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [HcomMetaService] DeserializeResponse: FlatBuffers verification failed\n");
         return false;
     }
 
@@ -579,7 +582,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
     response->status = meta_response->error_code();
 
     if (response->status != SUCCESS) {
-        fprintf(stderr,
+        FALCON_LOG_PRINTF(LOG_INFO, 
                 "[LOG] [HcomMetaService] DeserializeResponse: opcode=%d, error_code=%d, creating empty response\n",
                 static_cast<int>(operation),
                 response->status);
@@ -873,15 +876,15 @@ class FalconHcomServer {
 
     bool LoadPlugins()
     {
-        fprintf(stderr, "[Log] [FalconHcomServer] In LoadPlugins\n"); 
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[Log] [FalconHcomServer] In LoadPlugins\n");
         if (falcon_plugin_directory == nullptr || falcon_plugin_directory[0] == '\0') {
-            fprintf(stderr, "[WARNING] [FalconHcomServer] falcon_plugin_directory not set\n");
+            FALCON_LOG_PRINTF(LOG_WARNING, "[WARNING] [FalconHcomServer] falcon_plugin_directory not set");
             return false;
         }
 
         DIR *dir = opendir(falcon_plugin_directory);
         if (!dir) {
-            fprintf(stderr, "[WARNING] [FalconHcomServer] Cannot open plugin directory: %s\n", falcon_plugin_directory);
+            FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Cannot open plugin directory: %s\n", falcon_plugin_directory);
             return false;
         }
 
@@ -897,7 +900,7 @@ class FalconHcomServer {
 
             void *dl_handle = dlopen(plugin_path, RTLD_LAZY);
             if (!dl_handle) {
-                fprintf(stderr, "[WARNING] [FalconHcomServer] Failed to load plugin %s: %s\n", plugin_path, dlerror());
+                FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Failed to load plugin %s: %s\n", plugin_path, dlerror());
                 continue;
             }
 
@@ -906,7 +909,7 @@ class FalconHcomServer {
             auto cleanup_func = (falcon_plugin_cleanup_func_t)dlsym(dl_handle, FALCON_PLUGIN_CLEANUP_FUNC_NAME);
 
             if (!init_func || !work_func || !cleanup_func) {
-                fprintf(stderr, "[WARNING] [FalconHcomServer] Plugin %s missing required functions\n", plugin_path);
+                FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Plugin %s missing required functions\n", plugin_path);
                 dlclose(dl_handle);
                 continue;
             }
@@ -918,18 +921,18 @@ class FalconHcomServer {
             strncpy(plugin_data->plugin_path, plugin_path, FALCON_PLUGIN_MAX_PATH_SIZE - 1);
             plugin_data->main_pid = getpid();
 
-            fprintf(stderr, "[LOG] [FalconHcomServer] Loading plugin: %s\n", plugin_path);
+            FALCON_LOG_PRINTF(LOG_INFO,  "[LOG] [FalconHcomServer] Loading plugin: %s\n", plugin_path);
 
             int init_ret = init_func(plugin_data);
             if (init_ret != 0) {
-                fprintf(stderr, "[WARNING] [FalconHcomServer] Plugin %s init failed: %d\n", plugin_path, init_ret);
+                FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Plugin %s init failed: %d\n", plugin_path, init_ret);
                 delete plugin_data;
                 dlclose(dl_handle);
                 continue;
             }
 
             int work_ret = work_func(plugin_data);
-            fprintf(stderr, "[LOG] [FalconHcomServer] Plugin %s work returned: %d\n", plugin_path, work_ret);
+            FALCON_LOG_PRINTF(LOG_INFO,  "[LOG] [FalconHcomServer] Plugin %s work returned: %d\n", plugin_path, work_ret);
 
             PluginEntry plugin_entry;
             plugin_entry.handle = dl_handle;
@@ -947,13 +950,13 @@ class FalconHcomServer {
 
     void Run()
     {
-        fprintf(stderr, "[LOG] [FalconHcomServer] Started: ip=%s, port=%d\n", m_serverIp.c_str(), m_port);
+        FALCON_LOG_PRINTF(LOG_INFO,  "[LOG] [FalconHcomServer] Started: ip=%s, port=%d\n", m_serverIp.c_str(), m_port);
 
         while (!m_stop.load()) {
             sleep(1);
         }
 
-        fprintf(stderr, "[LOG] [FalconHcomServer] Stop signal received\n");
+        FALCON_LOG_PRINTF(LOG_INFO,  "[LOG] [FalconHcomServer] Stop signal received\n");
         CleanupPlugins();
     }
 
@@ -964,7 +967,7 @@ class FalconHcomServer {
     {
         for (auto &plugin : m_plugins) {
             if (plugin.cleanup_func && plugin.data) {
-                fprintf(stderr, "[LOG] [FalconHcomServer] Cleaning up plugin: %s\n", plugin.name.c_str());
+                FALCON_LOG_PRINTF(LOG_INFO,  "[LOG] [FalconHcomServer] Cleaning up plugin: %s\n", plugin.name.c_str());
                 plugin.cleanup_func(plugin.data);
             }
             delete plugin.data;
@@ -994,9 +997,12 @@ int StartFalconCommunicationServer(falcon_meta_job_dispatch_func dispatchFunc,
                                    const char *serverIp,
                                    int serverListenPort)
 {
+    int ret = GetInit().Init();
+    if (ret != FALCON_SUCCESS) {
+        FALCON_LOG(LOG_ERROR) << "Falcon init failed";
+    }
     try {
-        fprintf(stderr, "[LOG] [FalconHcomServer] In StartFalconCommunicationServer\n");
-        fflush(stderr);
+        FALCON_LOG_PRINTF(LOG_INFO, "[LOG] [FalconHcomServer] In StartFalconCommunicationServer");
 
         if (falcon::meta_service::g_falconHcomServerInstance == nullptr) {
             falcon::meta_service::g_dispatchFunc = dispatchFunc;
@@ -1007,7 +1013,7 @@ int StartFalconCommunicationServer(falcon_meta_job_dispatch_func dispatchFunc,
             return 0;
         }
     } catch (const std::exception &e) {
-        fprintf(stderr, "[WARNING] [FalconHcomServer] Start failed: %s\n", e.what());
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Start failed: %s\n", e.what());
         return 1;
     }
     return 0;
@@ -1023,7 +1029,7 @@ int StopFalconCommunicationServer()
             return 0;
         }
     } catch (const std::exception &e) {
-        fprintf(stderr, "[WARNING] [FalconHcomServer] Stop failed: %s\n", e.what());
+        FALCON_LOG_PRINTF(LOG_WARNING,  "[WARNING] [FalconHcomServer] Stop failed: %s\n", e.what());
         return 1;
     }
     return 1;
