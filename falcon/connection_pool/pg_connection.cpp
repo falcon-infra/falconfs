@@ -33,7 +33,7 @@ void PGConnection::BackgroundWorker()
         if (!working)
             break;
         std::shared_ptr<BaseWorkerTask> baseWorkerTaskPtr(nullptr);
-        m_workerTaskQueue.wait_dequeue(baseWorkerTaskPtr);
+        m_workerTaskQueue.pull(baseWorkerTaskPtr);
         baseWorkerTaskPtr->DoWork(conn, flatBufferBuilder, replyBuilder);
         // now no one handle the ptr, auto release WorkerTask
         baseWorkerTaskPtr = nullptr;
@@ -45,10 +45,7 @@ void PGConnection::BackgroundWorker()
 
 void PGConnection::Exec(std::shared_ptr<BaseWorkerTask> workerTaskPtr)
 {
-    while (!this->m_workerTaskQueue.enqueue(workerTaskPtr)) {
-        std::cout << "PGConnection::Exec: enqueue failed" << std::endl;
-        std::this_thread::yield();
-    }
+    this->m_workerTaskQueue.push(workerTaskPtr);
 }
 
 void PGConnection::Stop() { working = false; }

@@ -14,11 +14,11 @@
 #include <unordered_set>
 #include <vector>
 #include "base_comm_adapter/base_meta_service_job.h"
-#include "concurrentqueue/concurrentqueue.h"
 #include "connection_pool/connection_pool_config.h"
 #include "connection_pool/falcon_batch_service_def.h"
 #include "connection_pool/falcon_worker_task.h"
 #include "connection_pool/pg_connection.h"
+#include "connection_pool/falcon_concurrent_queue.h"
 #include "perf_counter/perf_stat.h"
 
 class PGConnectionPool {
@@ -38,7 +38,7 @@ class PGConnectionPool {
 
     class TaskSupportBatch {
       public:
-        moodycamel::ConcurrentQueue<BaseMetaServiceJob *> jobList;
+        pg_connection_pool::ConcurrentQueue<BaseMetaServiceJob *> jobList;
         std::mutex taskMutex;
         std::condition_variable cvBatchNotFull;
     };
@@ -137,7 +137,13 @@ int PGConnectionPool::BatchDequeueExec(int toDequeue, int queueIndex)
 {
     std::vector<BaseMetaServiceJob *> jobList;
     jobList.reserve(toDequeue);
-    int count = supportBatchTaskList[queueIndex].jobList.try_dequeue_bulk(std::back_inserter(jobList), toDequeue);
+    std::function func = [&jobList](BaseMetaServiceJob *job) {
+        jobList.emplace_back(job);
+    };
+    size_t count = supportBatchTaskList[queueIndex].jobList.dequeue_bulk(
+        std::move(func),
+        toDequeue
+    );
     if (count == 0) {
         return 0;
     }
@@ -167,9 +173,13 @@ int PGConnectionPool::SingleDequeueExec(int toDequeue)
 {
     std::vector<BaseMetaServiceJob *> singleJobList;
     singleJobList.reserve(toDequeue);
-    size_t count = supportBatchTaskList[(int)FalconBatchServiceType::NOT_SUPPORT].jobList.try_dequeue_bulk(
-        std::back_inserter(singleJobList),
-        toDequeue);
+    std::function func = [&singleJobList](BaseMetaServiceJob *job) {
+        singleJobList.emplace_back(job);
+    };
+    size_t count = supportBatchTaskList[(int)FalconBatchServiceType::NOT_SUPPORT].jobList.dequeue_bulk(
+        std::move(func),
+        toDequeue
+    );
     if (count == 0) {
         return 0;
     }

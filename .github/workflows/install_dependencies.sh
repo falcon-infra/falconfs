@@ -5,6 +5,8 @@ set -euo pipefail
 sudo apt-get update
 echo -e "Asia\nShanghai" | sudo apt-get install -y tzdata
 apt-get install -y locales && locale-gen en_US.UTF-8
+sudo apt-get install libboost-all-dev
+
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 sudo apt-get install -y gcc-14 g++-14
