@@ -6,9 +6,28 @@ HCOM_PLUGIN_CXX_OBJS += \
 	$(patsubst $(hcom_plugin_srcdir)/%.cpp,$(hcom_plugin_srcdir)/%.o, $(wildcard $(hcom_plugin_srcdir)/*.cpp))
 
 HCOM_PLUGIN_C_OBJS = utils/serialized_data.o
+# serialized_data.c is in utils/, not hcom_comm_adapter/
+HCOM_PLUGIN_UTILS_C_OBJS = utils/serialized_data.o
+
+COMMON_LOG_SRC = $(falcon_srcdir)/../common/src/log/logging.cpp
+COMMON_INIT_SRC = $(falcon_srcdir)/../common/src/init/falcon_init.cpp
+COMMON_CONF_SRCS = $(falcon_srcdir)/../common/src/conf/falcon_config.cpp \
+		   $(falcon_srcdir)/../common/src/conf/property_key.cpp
+HCOM_PLUGIN_CXX_OBJS += $(patsubst %.cpp,%.o,$(COMMON_LOG_SRC) $(COMMON_INIT_SRC) $(COMMON_CONF_SRCS))
+
+HCOM_PLUGIN_OBJS = $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) $(HCOM_PLUGIN_UTILS_C_OBJS)
 
 REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
 CONNECTION_POOL_DIR = $(falcon_srcdir)/connection_pool
+PG_CONFIG ?= pg_config
+PG_PKGLIBDIR ?= $(shell $(PG_CONFIG) --pkglibdir 2>/dev/null)
+PG_INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
+FALCON_SO ?= $(firstword $(wildcard $(falcon_srcdir)/falcon.so) $(PG_PKGLIBDIR)/falcon.so)
+FALCON_SO_DIR := $(dir $(FALCON_SO))
+
+ifeq ($(strip $(FALCON_SO)),)
+$(error falcon.so not found; set FALCON_SO=/path/to/falcon.so)
+endif
 
 FBS_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/fbs$$')
 FBS_FILE = $(wildcard $(FBS_DIR)/*.fbs)
@@ -16,13 +35,16 @@ FBS_HEAD = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.fbs, $(CONNECTION_POOL_DIR)
 
 HCOM_PLUGIN_CPPFLAGS = -I./include -I./connection_pool/fbs \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I$(PG_INCLUDEDIR_SERVER) \
+			  -I$(falcon_srcdir)/../common/src/include \
+			  -I/usr/local/obs/include \
 			  -I/usr/local/include
 
-HCOM_PLUGIN_LINK_LIB = -L. -l:falcon.so -lpthread -ldl
+HCOM_PLUGIN_LINK_LIB = -L$(FALCON_SO_DIR) -L/usr/local/obs/lib -l:falcon.so -lpthread -ldl -ljsoncpp -lboundscheck -lglog -lgflags
 
 HCOM_PLUGIN_LIB_NAME = libhcomplugin.so
 
-CXXFLAGS=-Wall -Wextra -O2 -fPIC
+CXXFLAGS=-Wall -Wextra -O2 -fPIC -std=c++20
 CFLAGS=-Wall -Wextra -O2 -fPIC
 
 all: $(FBS_HEAD) ${HCOM_PLUGIN_LIB_NAME}
@@ -41,4 +63,4 @@ $(FBS_HEAD): $(FBS_FILE)
 	flatc --cpp -o $(CONNECTION_POOL_DIR)/fbs/ $(FBS_FILE)
 
 clean:
-	rm -f $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) ${HCOM_PLUGIN_LIB_NAME}
+	rm -f $(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS) $(HCOM_PLUGIN_UTILS_C_OBJS) ${HCOM_PLUGIN_LIB_NAME}

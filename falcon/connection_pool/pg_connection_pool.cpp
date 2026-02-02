@@ -5,7 +5,6 @@
 #include "connection_pool/pg_connection_pool.h"
 #include <atomic>
 #include <condition_variable>
-#include <iostream>
 #include <memory>
 #include <queue>
 #include <string>
@@ -19,6 +18,7 @@
 #include "connection_pool/falcon_batch_service_def.h"
 #include "connection_pool/falcon_worker_task.h"
 #include "connection_pool/pg_connection.h"
+#include "utils/error_log.h"
 #include "perf_counter/perf_stat.h"
 
 class PGConnectionPool {
@@ -231,7 +231,8 @@ void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
     job->stageTimer.Start();
 
     while (!supportBatchTaskList[(int)FalconBatchServiceType].jobList.enqueue(job)) {
-        std::cout << "DispatchMetaServiceJob: enqueue failed, type = " << (int)FalconBatchServiceType << std::endl;
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("DispatchMetaServiceJob: enqueue failed, type = %d",
+                                         (int)FalconBatchServiceType);
         std::this_thread::yield();
     }
 }

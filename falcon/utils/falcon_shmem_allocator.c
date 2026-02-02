@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "utils/error_log.h"
 
 int FalconShmemAllocatorInit(FalconShmemAllocator *allocator, char *shmem, uint64_t size)
 {
@@ -60,8 +61,7 @@ static uint64_t LevelBlockOccupyBitMap[FALCON_SHMEM_ALLOCATOR_FREE_LIST_COUNT] =
 uint64_t FalconShmemAllocatorMalloc(FalconShmemAllocator *allocator, uint64_t size)
 {
     if (size > FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr)) {
-        printf("asked size exceed limit, size: %" PRIu64 ".", size);
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED("asked size exceed limit, size: %" PRIu64 ".", size);
         return 0; // valid shift of allocated buffer cannot be zero, since there must be a memory head before it
     }
 
@@ -161,8 +161,7 @@ uint64_t FalconShmemAllocatorMalloc(FalconShmemAllocator *allocator, uint64_t si
 
             if (succeed) {
                 if (allocatedShift == -1) {
-                    printf("unexpected situation in FalconShmemAllocatorMalloc.");
-                    fflush(stdout);
+                    FALCON_ELOG_THREAD_SAFE("unexpected situation in FalconShmemAllocatorMalloc.");
                     return 0;
                 }
                 MemoryHdr *hdr = (MemoryHdr *)FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, allocatedShift);
@@ -173,8 +172,7 @@ uint64_t FalconShmemAllocatorMalloc(FalconShmemAllocator *allocator, uint64_t si
             }
         }
     }
-    printf("FalconShmemAllocatorMalloc: Cannot find a segment.");
-    fflush(stdout);
+    FALCON_ELOG_THREAD_SAFE("FalconShmemAllocatorMalloc: Cannot find a segment.");
     return 0;
 }
 
