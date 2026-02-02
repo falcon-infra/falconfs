@@ -42,6 +42,7 @@ else
     echo "falcon_connection_pool.wait_max = 500" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_communication.plugin_path = '/home/falconMeta/metadb/lib/postgresql/libbrpcplugin.so'" >>/home/falconMeta/data/metadata/postgresql.conf
     echo "falcon_communication.server_ip = '${POD_IP}'" >>/home/falconMeta/data/metadata/postgresql.conf
+    echo "falcon.perf_enabled = on" >> /home/falconMeta/data/metadata/postgresql.conf
     pg_ctl start -D /home/falconMeta/data/metadata
 fi
 
