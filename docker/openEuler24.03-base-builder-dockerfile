@@ -1,0 +1,63 @@
+FROM falcon-dev:v1.1 AS builder
+#按需求设置git代码的分支，用户，仓库等参数
+ARG FALCONFS_TAG
+ARG GIT_USERNAME
+ARG GIT_TOKEN
+ARG GIT_REPO
+# 环境变量
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    FALCONFS_DIR=/root/code/falconfs \
+    LD_LIBRARY_PATH=/usr/local/obs/lib:/usr/local/lib64:/usr/local/lib:/usr/lib64
+
+# Clone and setup falconfs
+RUN git config --global http.sslVerify false && \
+    git clone https://${GIT_USERNAME}:${GIT_TOKEN}@${GIT_REPO} ${FALCONFS_DIR} && \
+    cd ${FALCONFS_DIR} && \
+    git checkout ${FALCONFS_TAG} && \
+    git submodule update --init --recursive
+
+# 构建FalconFS
+RUN ${FALCONFS_DIR}/patches/apply.sh && \
+    ${FALCONFS_DIR}/build.sh clean && \
+    ${FALCONFS_DIR}/build.sh build pg && \
+    ${FALCONFS_DIR}/build.sh build falcon --with-zk-init --with-prometheus && \
+    ${FALCONFS_DIR}/build.sh install
+
+# 准备运行时文件
+RUN mkdir -p /output/store/falconfs/{bin,lib} && \
+    mkdir -p /output/cn /output/dn && \
+    mkdir -p /output/cn/metadb/lib && \
+    mkdir -p /output/dn/metadb/lib && \
+    
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/store/falconfs/lib/ && \
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b ${FALCONFS_DIR}/build/bin/falcon_client -t /output/store/falconfs/lib/ && \
+    cp -f ${FALCONFS_DIR}/build/bin/falcon_client /output/store/falconfs/bin/ && \
+    # 复制metadb和falcon_cm
+    cp -rf /root/metadb /output/cn/ && \
+    cp -rf /root/metadb /output/dn/ && \
+    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/cn/ && \
+    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/dn/ && \
+    # 生成配置文件
+    cp -f ${FALCONFS_DIR}/config/config.json /output/store/ && \
+    jq '.main.falcon_log_dir = "/opt/log" | \
+        .main.falcon_cache_root = "/opt/falcon" | \
+        .main.falcon_mount_path = "/mnt/data" | \
+        .main.falcon_log_reserved_num = 50 | \
+        .main.falcon_log_reserved_time = 168 | \
+        .main.falcon_stat_max = true | \
+        .main.falcon_use_prometheus = true' \
+    /output/store/config.json > /output/store/config.json.tmp && \
+    mv /output/store/config.json.tmp /output/store/config.json && \
+
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/cn/metadb/lib/ && \
+    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/dn/metadb/lib && \
+
+    # 设置权限
+    chmod -R 777 /output/cn/metadb && \
+    chmod -R 777 /output/cn/falcon_cm && \
+    chmod -R 777 /output/dn/metadb && \
+    chmod -R 777 /output/dn/falcon_cm && \
+    chmod -R 777 /output/store/falconfs
