@@ -83,6 +83,7 @@ falcon_communication.plugin_path = '$comm_plugin_path'
 falcon_communication.server_ip = '$cnIp'
 falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
 falcon.local_ip = '$localIp'
+falcon.perf_enabled = on
 EOF
         echo "host all all 0.0.0.0/0 trust" >>"$cnPath/pg_hba.conf"
     fi
@@ -133,6 +134,7 @@ falcon_communication.plugin_path = '$comm_plugin_path'
 falcon_communication.server_ip = '${workerIp}'
 falcon_plugin.directory = '$(cd $DIR/../.. && pwd)/plugins'
 falcon.local_ip = '$localIp'
+falcon.perf_enabled = on
 EOF
                 echo "host all all 0.0.0.0/0 trust" >>"${workerPath}/pg_hba.conf"
             fi

@@ -25,6 +25,7 @@
 #include "utils/path_parse.h"
 #include "utils/rwlock.h"
 #include "utils/utils.h"
+#include "perf_counter/perf_macros.h"
 
 static FalconExplicitTransactionState falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
 
@@ -84,8 +85,11 @@ bool FalconExplicitTransactionCommit()
     if (falconExplicitTransactionState != FALCON_EXPLICIT_TRANSACTION_BEGIN)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "incorrect transaction state.");
 
+    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
+    PERF_LATENCY_BEGIN(commit, perf ? &perf->commitLatency : NULL);
     bool isCommit = EndTransactionBlock(false);
     CommitTransactionCommand();
+    PERF_LATENCY_END(commit);
 
     falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
     return isCommit;
@@ -119,9 +123,12 @@ extern void FalconExplicitTransactionCommitPrepared(const char *gid)
     if (falconExplicitTransactionState != FALCON_EXPLICIT_TRANSACTION_PREPARED)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "incorrect transaction state.");
 
+    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
+    PERF_LATENCY_BEGIN(commit, perf ? &perf->commitLatency : NULL);
     PreventInTransactionBlock(true, "COMMIT PREPARED");
     FinishPreparedTransaction(gid, true);
     CommitTransactionCommand();
+    PERF_LATENCY_END(commit);
 
     falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
 }

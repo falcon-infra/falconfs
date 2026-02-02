@@ -28,6 +28,7 @@
 #include "utils/shmem_control.h"
 #include "utils/falcon_plugin_guc.h"
 #include "plugin/falcon_plugin_loader.h"
+#include "perf_counter/falcon_perf_latency_shmem.h"
 
 PG_MODULE_MAGIC;
 
@@ -57,6 +58,11 @@ void _PG_init(void)
 
     FalconStart2PCCleanupWorker();
     FalconStartConnectionPoolWorker();
+
+    /* Register performance monitoring output worker */
+    if (process_shared_preload_libraries_in_progress) {
+        RegisterFalconPerfOutputWorker();
+    }
 }
 
 /*
@@ -157,6 +163,7 @@ static void FalconShmemRequest(void)
     RequestAddinShmemSpace(DirPathShmemsize());
     RequestAddinShmemSpace(FalconConnectionPoolShmemsize());
     RequestAddinShmemSpace(FalconPluginShmemSize());
+    RequestAddinShmemSpace(FalconPerfLatencyShmemSize());
 }
 static void FalconShmemInit(void)
 {
@@ -173,9 +180,9 @@ static void FalconShmemInit(void)
     DirPathShmemInit();
     FalconConnectionPoolShmemInit();
     FalconPluginShmemInit();
+    FalconPerfLatencyShmemInit();
 
     LWLockRelease(AddinShmemInitLock);
-
 
     FalconPluginInitBackgroundPlugins();
 }
@@ -186,6 +193,14 @@ static void InitializeFalconShmemStruct(void)
 
     prev_shmem_startup_hook = shmem_startup_hook;
     shmem_startup_hook = FalconShmemInit;
+}
+
+/* Assign hook for falcon_perf_enabled GUC */
+static void falcon_perf_enabled_assign(bool newval, void *extra)
+{
+    if (g_FalconPerfLatencyShmem != NULL) {
+        g_FalconPerfLatencyShmem->enabled = newval;
+    }
 }
 
 /* Register Falcon configuration variables. */
@@ -328,4 +343,15 @@ static void RegisterFalconConfigVariables(void)
                               NULL,
                               NULL,
                               NULL);
+
+    DefineCustomBoolVariable("falcon.perf_enabled",
+                             gettext_noop("Enable Falcon performance monitoring."),
+                             NULL,
+                             &falcon_perf_enabled,
+                             true,
+                             PGC_SUSET,
+                             0,
+                             NULL,
+                             falcon_perf_enabled_assign,
+                             NULL);
 }

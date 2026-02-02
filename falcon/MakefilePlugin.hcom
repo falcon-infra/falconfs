@@ -4,9 +4,8 @@ falcon_srcdir = .
 hcom_plugin_srcdir = hcom_comm_adapter
 HCOM_PLUGIN_CXX_OBJS += \
 	$(patsubst $(hcom_plugin_srcdir)/%.cpp,$(hcom_plugin_srcdir)/%.o, $(wildcard $(hcom_plugin_srcdir)/*.cpp))
-HCOM_PLUGIN_C_OBJS += \
-	$(patsubst $(hcom_plugin_srcdir)/%.c,$(hcom_plugin_srcdir)/%.o,$(wildcard $(hcom_plugin_srcdir)/*.c))
 
+HCOM_PLUGIN_C_OBJS = utils/serialized_data.o
 # serialized_data.c is in utils/, not hcom_comm_adapter/
 HCOM_PLUGIN_UTILS_C_OBJS = utils/serialized_data.o
 
@@ -47,20 +46,16 @@ HCOM_PLUGIN_LIB_NAME = libhcomplugin.so
 
 CXXFLAGS=-Wall -Wextra -O2 -fPIC -std=c++20
 CFLAGS=-Wall -Wextra -O2 -fPIC
-HCOM_PLUGIN_LDFLAGS = -Wl,--no-undefined -Wl,-rpath,\$$ORIGIN
 
 all: $(FBS_HEAD) ${HCOM_PLUGIN_LIB_NAME}
 
-${HCOM_PLUGIN_LIB_NAME}:$(HCOM_PLUGIN_OBJS)
-	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(HCOM_PLUGIN_LDFLAGS) $(HCOM_PLUGIN_LINK_LIB)
+${HCOM_PLUGIN_LIB_NAME}:$(HCOM_PLUGIN_CXX_OBJS) $(HCOM_PLUGIN_C_OBJS)
+	$(CXX) -shared -o $@ $^ $(LDFLAGS) -Wl,-rpath,\$$ORIGIN $(HCOM_PLUGIN_LINK_LIB)
 
-$(HCOM_PLUGIN_CXX_OBJS): %.o: %.cpp $(FBS_HEAD)
+$(HCOM_PLUGIN_CXX_OBJS):%.o:%.cpp $(FBS_HEAD)
 	$(CXX) -c $(HCOM_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
-$(HCOM_PLUGIN_C_OBJS): %.o: %.c
-	$(CC) -c $(HCOM_PLUGIN_CPPFLAGS) $(CFLAGS) $(CPPFLAGS) $< -o $@
-
-$(HCOM_PLUGIN_UTILS_C_OBJS): %.o: %.c
+$(HCOM_PLUGIN_C_OBJS):%.o:%.c
 	$(CC) -c $(HCOM_PLUGIN_CPPFLAGS) $(CFLAGS) $(CPPFLAGS) $< -o $@
 
 $(FBS_HEAD): $(FBS_FILE)
