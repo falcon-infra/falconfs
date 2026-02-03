@@ -109,10 +109,12 @@ Datum falcon_insert_foreign_server(PG_FUNCTION_ARGS)
     bool isLocal = PG_GETARG_BOOL(4);
     char *userName = PG_GETARG_CSTRING(5);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(ForeignServerRelationId(), RowExclusiveLock);
     InsertForeignServerByRel(rel, serverId, serverName, host, port, isLocal, userName);
 
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
     InvalidateForeignServerShmemCache();
 
     PG_RETURN_INT16(0);
@@ -122,9 +124,11 @@ Datum falcon_delete_foreign_server(PG_FUNCTION_ARGS)
 {
     int32_t serverId = PG_GETARG_INT32(0);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(ForeignServerRelationId(), RowExclusiveLock);
     DeleteForeignServerByRel(rel, serverId);
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
     InvalidateForeignServerShmemCache();
 
     PG_RETURN_INT16(0);
@@ -136,9 +140,11 @@ Datum falcon_update_foreign_server(PG_FUNCTION_ARGS)
     char *host = PG_GETARG_CSTRING(1);
     int32_t port = PG_GETARG_INT32(2);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(ForeignServerRelationId(), RowExclusiveLock);
     UpdateForeignServerByRel(rel, serverId, host, port);
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
     InvalidateForeignServerShmemCache();
     PG_RETURN_INT16(0);
 }
