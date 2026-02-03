@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
-#include "hcom_comm_adapter/hcom_meta_service.h"
+#include "hcom_comm_adapter/falcon_meta_service.h"
 
 #include <dirent.h>
 #include <dlfcn.h>
@@ -21,7 +21,7 @@
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
 #include "hcom_comm_adapter/falcon_meta_service_internal.h"
-#include "hcom_comm_adapter/hcom_meta_service_job.h"
+#include "hcom_comm_adapter/falcon_meta_service_job.h"
 #include "plugin/falcon_plugin_framework.h"
 #include "utils/falcon_plugin_guc.h"
 
@@ -35,26 +35,32 @@ namespace meta_service
 {
 
 static falcon_meta_job_dispatch_func g_dispatchFunc = nullptr;
-HcomMetaService *HcomMetaService::instance = nullptr;
-std::mutex HcomMetaService::instanceMutex;
+FalconMetaService *FalconMetaService::instance = nullptr;
+std::mutex FalconMetaService::instanceMutex;
 
-HcomMetaService::HcomMetaService() = default;
+FalconMetaService::FalconMetaService() = default;
 
-HcomMetaService *HcomMetaService::Instance()
+FalconMetaService *FalconMetaService::Instance()
 {
     std::lock_guard<std::mutex> lock(instanceMutex);
     if (instance == nullptr) {
-        instance = new HcomMetaService();
+        instance = new FalconMetaService();
     }
     return instance;
 }
 
-HcomMetaService::~HcomMetaService() = default;
+FalconMetaService::~FalconMetaService() = default;
 
-int HcomMetaService::DispatchHcomMetaServiceJob(HcomMetaServiceJob *job)
+__attribute__((visibility("default")))
+bool FalconMetaService::Init(int port, int pool_size)
+{
+    return true;
+}
+
+int FalconMetaService::DispatchFalconMetaServiceJob(FalconMetaServiceJob *job)
 {
     if (job == nullptr) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DispatchJob failed: job is null\n");
+        fprintf(stderr, "[WARNING] [FalconMetaService] DispatchJob failed: job is null\n");
         return -1;
     }
 
@@ -67,7 +73,7 @@ int HcomMetaService::DispatchHcomMetaServiceJob(HcomMetaServiceJob *job)
     }
 
     if (g_dispatchFunc == nullptr) {
-        fprintf(stderr, "[ERROR] [HcomMetaService] Dispatch func is null\n");
+        fprintf(stderr, "[ERROR] [FalconMetaService] Dispatch func is null\n");
         job->GetResponse().status = -1;
         job->Done();
         delete job;
@@ -78,12 +84,12 @@ int HcomMetaService::DispatchHcomMetaServiceJob(HcomMetaServiceJob *job)
     return 0;
 }
 
-int HcomMetaService::SubmitFalconMetaRequest(const FalconMetaServiceRequest &request,
+int FalconMetaService::SubmitFalconMetaRequest(const FalconMetaServiceRequest &request,
                                              FalconMetaServiceCallback callback,
                                              void *user_context)
 {
-    HcomMetaServiceJob *job = new HcomMetaServiceJob(request, callback, user_context);
-    return DispatchHcomMetaServiceJob(job);
+    FalconMetaServiceJob *job = new FalconMetaServiceJob(request, callback, user_context);
+    return DispatchFalconMetaServiceJob(job);
 }
 
 static bool ValidateNameLength(const std::string &name) { return name.length() <= FALCON_MAX_NAME_LENGTH; }
@@ -130,7 +136,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -148,7 +154,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -167,7 +173,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -190,7 +196,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
             return INVALID_PARAMETER;
@@ -209,7 +215,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
             return INVALID_PARAMETER;
@@ -234,7 +240,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
             return INVALID_PARAMETER;
@@ -253,7 +259,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
             return INVALID_PARAMETER;
@@ -272,14 +278,14 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->src)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Source path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Source path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->src.c_str());
             return INVALID_PARAMETER;
         }
         if (!ValidatePathComponentLengths(param->dst)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Destination path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Destination path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->dst.c_str());
             return INVALID_PARAMETER;
@@ -299,14 +305,14 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->src_name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Source name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Source name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->src_name.c_str());
             return INVALID_PARAMETER;
         }
         if (!ValidateNameLength(param->dst_name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Destination name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Destination name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->dst_name.c_str());
             return INVALID_PARAMETER;
@@ -335,7 +341,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidateNameLength(param->name)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Name exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Name exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->name.c_str());
             return INVALID_PARAMETER;
@@ -370,7 +376,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -388,7 +394,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -406,7 +412,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
             return ARGUMENT_ERROR;
         if (!ValidatePathComponentLengths(param->path)) {
             fprintf(stderr,
-                    "[WARNING] [HcomMetaService] Path component exceeds %zu bytes: %s\n",
+                    "[WARNING] [FalconMetaService] Path component exceeds %zu bytes: %s\n",
                     FALCON_MAX_NAME_LENGTH,
                     param->path.c_str());
             return INVALID_PARAMETER;
@@ -525,7 +531,7 @@ FalconErrorCode FalconMetaServiceSerializer::SerializeRequestToSerializedData(co
     char *buf = SerializedDataApplyForSegment(&sd, builder.GetSize());
     if (!buf) {
         fprintf(stderr,
-                "[WARNING] [HcomMetaService] SerializeRequest: failed to allocate buffer, size=%u\n",
+                "[WARNING] [FalconMetaService] SerializeRequest: failed to allocate buffer, size=%u\n",
                 builder.GetSize());
         return OUT_OF_MEMORY;
     }
@@ -543,7 +549,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
                                                                         FalconMetaOperationType operation)
 {
     if (data == nullptr || size < sizeof(sd_size_t)) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: attachment too small, size=%zu\n", size);
+        fprintf(stderr, "[WARNING] [FalconMetaService] DeserializeResponse: attachment too small, size=%zu\n", size);
         return false;
     }
 
@@ -552,13 +558,13 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
 
     SerializedData sd;
     if (!SerializedDataInit(&sd, &buffer[0], buffer.size(), buffer.size(), NULL)) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: SerializedDataInit failed\n");
+        fprintf(stderr, "[WARNING] [FalconMetaService] DeserializeResponse: SerializedDataInit failed\n");
         return false;
     }
 
     sd_size_t item_size = SerializedDataNextSeveralItemSize(&sd, 0, 1);
     if (item_size == (sd_size_t)-1) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: invalid item size\n");
+        fprintf(stderr, "[WARNING] [FalconMetaService] DeserializeResponse: invalid item size\n");
         return false;
     }
 
@@ -570,7 +576,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
 
     flatbuffers::Verifier verifier((uint8_t *)fbs_data, fbs_size);
     if (!verifier.VerifyBuffer<falcon::meta_fbs::MetaResponse>()) {
-        fprintf(stderr, "[WARNING] [HcomMetaService] DeserializeResponse: FlatBuffers verification failed\n");
+        fprintf(stderr, "[WARNING] [FalconMetaService] DeserializeResponse: FlatBuffers verification failed\n");
         return false;
     }
 
@@ -580,7 +586,7 @@ bool FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(const vo
 
     if (response->status != SUCCESS) {
         fprintf(stderr,
-                "[LOG] [HcomMetaService] DeserializeResponse: opcode=%d, error_code=%d, creating empty response\n",
+                "[LOG] [FalconMetaService] DeserializeResponse: opcode=%d, error_code=%d, creating empty response\n",
                 static_cast<int>(operation),
                 response->status);
 
