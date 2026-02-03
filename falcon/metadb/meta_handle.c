@@ -496,6 +496,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         }
 
         MetaProcessInfo info = NULL;
+        int savedInterruptHoldoffCount = InterruptHoldoffCount;
         while (list_length(toHandleMetaProcessList) != 0) {
             BeginInternalSubTransaction(NULL);
             PERF_LATENCY_BEGIN(table_open, op ? &op->tableOpen : NULL);
@@ -584,6 +585,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
             {
                 FlushErrorState();
                 RollbackAndReleaseCurrentSubTransaction();
+                InterruptHoldoffCount = savedInterruptHoldoffCount;
 
                 //
                 if (updateExisted) {
