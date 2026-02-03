@@ -30,6 +30,8 @@
 static FalconExplicitTransactionState falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
 
 static void FalconTransactionCallback(XactEvent event, void *args);
+static void FalconSubTransactionCallback(SubXactEvent event, SubTransactionId mySubid,
+                                         SubTransactionId parentSubid, void *arg);
 
 char PreparedTransactionGid[MAX_TRANSACTION_GID_LENGTH + 1];
 char RemoteTransactionGid[MAX_TRANSACTION_GID_LENGTH + 1];
@@ -144,7 +146,11 @@ extern void FalconExplicitTransactionRollbackPrepared(const char *gid)
     falconExplicitTransactionState = FALCON_EXPLICIT_TRANSACTION_NONE;
 }
 
-void RegisterFalconTransactionCallback(void) { RegisterXactCallback(FalconTransactionCallback, NULL); }
+void RegisterFalconTransactionCallback(void)
+{
+    RegisterXactCallback(FalconTransactionCallback, NULL);
+    RegisterSubXactCallback(FalconSubTransactionCallback, NULL);
+}
 
 static void FalconTransactionCallback(XactEvent event, void *args)
 {
@@ -191,5 +197,19 @@ static void FalconTransactionCallback(XactEvent event, void *args)
     case XACT_EVENT_PARALLEL_ABORT: {
         break;
     }
+    }
+}
+
+static void FalconSubTransactionCallback(SubXactEvent event, SubTransactionId mySubid,
+                                         SubTransactionId parentSubid, void *arg)
+{
+    switch (event) {
+    case SUBXACT_EVENT_ABORT_SUB:
+        RWLockReleaseAll(true);
+        break;
+    case SUBXACT_EVENT_START_SUB:
+    case SUBXACT_EVENT_COMMIT_SUB:
+    case SUBXACT_EVENT_PRE_COMMIT_SUB:
+        break;
     }
 }
