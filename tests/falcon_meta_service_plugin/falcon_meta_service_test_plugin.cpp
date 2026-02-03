@@ -16,6 +16,7 @@
 #include "hcom_comm_adapter/falcon_meta_service.h"
 #include "plugin/falcon_plugin_framework.h"
 #include "plugin/falcon_plugin_loader.h"
+#include "remote_connection_utils/error_code_def.h"
 
 using namespace falcon::meta_service;
 
@@ -1886,6 +1887,85 @@ static bool TestConcurrentFileCreation()
     TEST_PASS("Concurrent File Creation");
 }
 
+static bool TestConcurrentSameFileCreation()
+{
+    SKIP_IF_NOT_WORKER("Concurrent Same File Creation");
+    TEST_BEGIN("Concurrent Same File Creation");
+
+    const int THREAD_COUNT = 8;
+    const int ROUND_COUNT = 50;
+    std::atomic<int> round_pass(0);
+    std::atomic<int> round_fail(0);
+
+    for (int round = 0; round < ROUND_COUNT; round++) {
+        std::string file_path = std::string("/concurrent_same_file_") +
+                                std::to_string(g_loop_iteration.load()) +
+                                "_r" + std::to_string(round) + ".txt";
+
+        std::atomic<int> success_count(0);
+        std::atomic<int> exist_count(0);
+        std::atomic<int> error_count(0);
+
+        std::mutex barrier_mtx;
+        std::condition_variable barrier_cv;
+        int ready_count = 0;
+
+        auto create_worker = [&](int thread_id) {
+            {
+                std::unique_lock<std::mutex> lock(barrier_mtx);
+                ready_count++;
+                if (ready_count == THREAD_COUNT) {
+                    barrier_cv.notify_all();
+                } else {
+                    barrier_cv.wait(lock, [&] { return ready_count == THREAD_COUNT; });
+                }
+            }
+
+            CreateResponse create_resp;
+            int status = DoCreate(file_path, &create_resp);
+            if (status == 0) {
+                success_count++;
+            } else if (status == FILE_EXISTS) {
+                exist_count++;
+            } else {
+                error_count++;
+                printf("  [Round %d][Thread %d] Unexpected error: status=%d\n",
+                       round, thread_id, status);
+            }
+        };
+
+        std::vector<std::thread> threads;
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            threads.emplace_back(create_worker, i);
+        }
+        for (auto &t : threads) {
+            t.join();
+        }
+
+        if (success_count.load() == 1 &&
+            exist_count.load() == THREAD_COUNT - 1 &&
+            error_count.load() == 0) {
+            round_pass++;
+        } else {
+            round_fail++;
+            printf("  [Round %d] UNEXPECTED: success=%d, exist=%d, error=%d\n",
+                   round, success_count.load(), exist_count.load(), error_count.load());
+        }
+
+        DoUnlink(file_path);
+    }
+
+    printf("  Concurrent same-file creation: %d/%d rounds passed\n",
+           round_pass.load(), ROUND_COUNT);
+
+    TEST_ASSERT_MSG(round_fail.load() == 0,
+                    "Expected all %d rounds to have exactly 1 success + %d FILE_EXISTS, "
+                    "but %d rounds failed",
+                    ROUND_COUNT, THREAD_COUNT - 1, round_fail.load());
+
+    TEST_PASS("Concurrent Same File Creation");
+}
+
 /*
  * 测试 13: 并发获取Slice ID
  * [Worker-only] 测试多线程并发获取slice ID的正确性和线程安全性
@@ -2282,6 +2362,7 @@ static void RunAllTests()
         // TestAttributeOperations();
         // TestSliceOperations();
         // TestConcurrentFileCreation();  // 并发文件创建测试
+        TestConcurrentSameFileCreation();  // 并发创建同名文件测试
         // TestConcurrentFetchSliceId();  // 并发slice ID获取测试
         // TestKvOperations();
 
