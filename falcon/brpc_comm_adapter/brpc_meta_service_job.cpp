@@ -46,6 +46,20 @@ FalconMetaServiceType BrpcMetaServiceJob::MetaServiceTypeDecode(falcon::meta_pro
         return FalconMetaServiceType::CHOWN;
     case falcon::meta_proto::MetaServiceType::CHMOD:
         return FalconMetaServiceType::CHMOD;
+    case falcon::meta_proto::MetaServiceType::KV_PUT:
+        return FalconMetaServiceType::KV_PUT;
+    case falcon::meta_proto::MetaServiceType::KV_GET:
+        return FalconMetaServiceType::KV_GET;
+    case falcon::meta_proto::MetaServiceType::KV_DEL:
+        return FalconMetaServiceType::KV_DEL;
+    case falcon::meta_proto::MetaServiceType::SLICE_PUT:
+        return FalconMetaServiceType::SLICE_PUT;
+    case falcon::meta_proto::MetaServiceType::SLICE_GET:
+        return FalconMetaServiceType::SLICE_GET;
+    case falcon::meta_proto::MetaServiceType::SLICE_DEL:
+        return FalconMetaServiceType::SLICE_DEL;
+    case falcon::meta_proto::MetaServiceType::FETCH_SLICE_ID:
+        return FalconMetaServiceType::FETCH_SLICE_ID;
     default:
         return FalconMetaServiceType::NOT_SUPPORTED;
     }
