@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <sys/stat.h>
 
@@ -136,4 +137,73 @@ class Connection {
     FalconErrorCode UtimeNs(const char *path, int64_t atime = -1, int64_t mtime = -1, ConnectionCache *cache = nullptr);
     FalconErrorCode Chown(const char *path, uint32_t uid, uint32_t gid, ConnectionCache *cache = nullptr);
     FalconErrorCode Chmod(const char *path, uint32_t mode, ConnectionCache *cache = nullptr);
+
+    // KV operations
+    struct KvSliceData {
+        uint64_t valueKey;
+        uint64_t location;
+        uint32_t size;
+    };
+
+    class KvGetResult {
+        friend Connection;
+
+      protected:
+        std::unique_ptr<char[]> responseBuffer;
+
+      public:
+        uint32_t valueLen;
+        uint16_t sliceNum;
+        std::vector<KvSliceData> slices;
+
+        KvGetResult() : valueLen(0), sliceNum(0) {}
+    };
+
+    FalconErrorCode KvPut(const char *key,
+                          uint32_t valueLen,
+                          uint16_t sliceNum,
+                          const std::vector<uint64_t> &valueKey,
+                          const std::vector<uint64_t> &location,
+                          const std::vector<uint32_t> &size,
+                          ConnectionCache *cache = nullptr);
+    FalconErrorCode KvGet(const char *key, KvGetResult &result, ConnectionCache *cache = nullptr);
+    FalconErrorCode KvDel(const char *key, ConnectionCache *cache = nullptr);
+
+    // Slice operations
+    class SliceGetResult {
+        friend Connection;
+
+      protected:
+        std::unique_ptr<char[]> responseBuffer;
+
+      public:
+        uint32_t sliceNum;
+        std::vector<uint64_t> inodeId;
+        std::vector<uint32_t> chunkId;
+        std::vector<uint64_t> sliceId;
+        std::vector<uint32_t> sliceSize;
+        std::vector<uint32_t> sliceOffset;
+        std::vector<uint32_t> sliceLen;
+        std::vector<uint32_t> sliceLoc1;
+        std::vector<uint32_t> sliceLoc2;
+
+        SliceGetResult() : sliceNum(0) {}
+    };
+
+    FalconErrorCode SlicePut(const char *filename,
+                             uint32_t sliceNum,
+                             const std::vector<uint64_t> &inodeId,
+                             const std::vector<uint32_t> &chunkId,
+                             const std::vector<uint64_t> &sliceId,
+                             const std::vector<uint32_t> &sliceSize,
+                             const std::vector<uint32_t> &sliceOffset,
+                             const std::vector<uint32_t> &sliceLen,
+                             const std::vector<uint32_t> &sliceLoc1,
+                             const std::vector<uint32_t> &sliceLoc2,
+                             ConnectionCache *cache = nullptr);
+    FalconErrorCode
+    SliceGet(const char *filename, uint64_t inodeId, uint32_t chunkId, SliceGetResult &result, ConnectionCache *cache = nullptr);
+    FalconErrorCode SliceDel(const char *filename, uint64_t inodeId, uint32_t chunkId, ConnectionCache *cache = nullptr);
+    FalconErrorCode
+    FetchSliceId(uint32_t count, uint8_t type, uint64_t &startId, uint64_t &endId, ConnectionCache *cache = nullptr);
 };

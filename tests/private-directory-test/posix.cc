@@ -50,3 +50,48 @@ void dfs_shutdown()
 {
     return;
 }
+
+int dfs_kv_put(const char *key, uint32_t value_len, uint16_t slice_num,
+               const uint64_t *value_key, const uint64_t *location, const uint32_t *size)
+{
+    cerr << "KV operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+int dfs_kv_get(const char *key, uint32_t *value_len, uint16_t *slice_num)
+{
+    cerr << "KV operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+int dfs_kv_del(const char *key)
+{
+    cerr << "KV operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+// Slice operations - not supported in POSIX mode
+int dfs_slice_put(const char *filename, uint64_t inode_id, uint32_t chunk_id,
+                  uint64_t slice_id, uint32_t slice_size, uint32_t slice_offset, uint32_t slice_len)
+{
+    cerr << "Slice operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+int dfs_slice_get(const char *filename, uint64_t inode_id, uint32_t chunk_id, uint32_t *slice_num)
+{
+    cerr << "Slice operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+int dfs_slice_del(const char *filename, uint64_t inode_id, uint32_t chunk_id)
+{
+    cerr << "Slice operations not supported in POSIX mode" << endl;
+    return -1;
+}
+
+int dfs_fetch_slice_id(uint32_t count, uint64_t *start_id, uint64_t *end_id)
+{
+    cerr << "Slice operations not supported in POSIX mode" << endl;
+    return -1;
+}

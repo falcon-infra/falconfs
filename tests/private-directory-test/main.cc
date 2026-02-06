@@ -30,7 +30,7 @@ DBarrierOnUDP *g_barrier;
 volatile uint64_t op_count[16384];
 volatile uint64_t latency_count[16384];
 
-void (*workloads[])(string, int) = {workload_init, workload_create, workload_stat, workload_open, workload_close, workload_delete, workload_mkdir, workload_rmdir, workload_open_write_close, workload_open_write_close_nocreate, workload_open_read_close, workload_uninit};
+void (*workloads[])(string, int) = {workload_init, workload_create, workload_stat, workload_open, workload_close, workload_delete, workload_mkdir, workload_rmdir, workload_open_write_close, workload_open_write_close_nocreate, workload_open_read_close, workload_kv_put, workload_kv_get, workload_kv_del, workload_slice_put, workload_slice_get, workload_slice_del, workload_uninit};
 
 void init_namespace() {
   int round_num = sizeof(workloads) / sizeof(void (*)());
