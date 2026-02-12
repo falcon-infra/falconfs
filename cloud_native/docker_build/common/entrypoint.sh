@@ -23,7 +23,7 @@ case "$NODE_TYPE" in
             chown falconMeta:falconMeta ${METADATA_DIR}
             chmod 777 ${METADATA_DIR}
         fi
-        exec su falconMeta -c "bash ${FALCONFS_INSTALL_DIR}/falcon_cn/docker-entrypoint.sh"
+        exec su -s /bin/bash falconMeta -c "bash ${FALCONFS_INSTALL_DIR}/falcon_cn/docker-entrypoint.sh"
         ;;
 
   dn)
@@ -37,7 +37,7 @@ case "$NODE_TYPE" in
             chown falconMeta:falconMeta ${METADATA_DIR}
             chmod 777 ${METADATA_DIR}
         fi
-        exec su falconMeta -c "bash ${FALCONFS_INSTALL_DIR}/falcon_dn/docker-entrypoint.sh"
+        exec su -s /bin/bash falconMeta -c "bash ${FALCONFS_INSTALL_DIR}/falcon_dn/docker-entrypoint.sh"
         ;;
 
   store)

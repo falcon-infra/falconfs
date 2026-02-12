@@ -61,7 +61,22 @@ jobs:
 
     - name: Build
       shell: bash
-      run: sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c './build.sh build pg && sudo ./build.sh install pg && ./build.sh build falcon && sudo ./build.sh install falcon'
+      run: |
+        sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c '
+          set -eux
+          WORKSPACE="$(pwd)"
+          cd "$WORKSPACE/third_party/postgres"
+          if [ -f config.status ]; then make distclean || true; fi
+          ./configure --prefix=/usr/local/pgsql --without-icu
+          make -j$(nproc)
+          make -C contrib -j$(nproc)
+          sudo make install
+          sudo make -C contrib install
+          sudo ln -sf /usr/local/pgsql/bin/pg_config /usr/local/bin/pg_config
+          cd "$WORKSPACE"
+          PATH=/usr/local/pgsql/bin:$PATH LD_LIBRARY_PATH=/usr/local/obs/lib:/usr/local/pgsql/lib:$LD_LIBRARY_PATH ./build.sh build falcon
+          sudo -E PATH=/usr/local/pgsql/bin:$PATH LD_LIBRARY_PATH=/usr/local/obs/lib:/usr/local/pgsql/lib:$LD_LIBRARY_PATH ./build.sh install falcon
+        '
 
     - name: Deploy and run tests
       shell: bash
