@@ -14,11 +14,10 @@ target_link_libraries(test_posix
 )
 
 link_directories(
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_LIB_DIR}
 )
 include_directories(
-    ${POSTGRES_SRC_DIR}/src/include
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include
     ${PROJECT_SOURCE_DIR}/falcon_client/src/include
     ${PROJECT_SOURCE_DIR}/common/src/include

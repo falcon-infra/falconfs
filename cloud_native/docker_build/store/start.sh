@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# prepare the directory to store files
+# 设置默认的安装目录
+FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
 
-CACHE_PATH=/opt/falcon/
+# prepare the directory to store files
+CACHE_PATH=${FALCONFS_INSTALL_DIR}/falcon_store/cache
 if [ ! -d ${CACHE_PATH} ]; then
     mkdir ${CACHE_PATH}
     for i in {0..100}
@@ -24,4 +26,5 @@ else
     rm -rf /mnt/data/*
 fi
 
-/root/falconfs/bin/falcon_client /mnt/data -f -o direct_io,allow_other,nonempty -o attr_timeout=20 -o entry_timeout=20 -brpc true -rpc_endpoint=0.0.0.0:50039 -socket_max_unwritten_bytes=268435456 > /opt/log/falconfs.out 2>&1 &
+export LD_LIBRARY_PATH=${FALCONFS_INSTALL_DIR}/falcon_client/lib:${LD_LIBRARY_PATH}
+${FALCONFS_INSTALL_DIR}/falcon_client/bin/falcon_client /mnt/data -f -o direct_io,allow_other,nonempty -o attr_timeout=20 -o entry_timeout=20 -brpc true -rpc_endpoint=0.0.0.0:50039 -socket_max_unwritten_bytes=268435456 > ${FALCONFS_INSTALL_DIR}/falcon_store/log/falcon_client.log 2>&1 &

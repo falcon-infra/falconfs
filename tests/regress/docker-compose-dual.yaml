@@ -7,7 +7,7 @@ x-falcon-env: &falcon-env
   STORAGE_THRESHOLD: "0.9"
   BRPC_PORT: "50039"
   wait_replica_time: "600"
-  data_dir: "/home/falconMeta/data"
+  data_dir: "/usr/local/falconfs/data/"
   cn_num: "3"
   cn_sup_num: "0"
   dn_num: "3"
@@ -21,14 +21,14 @@ x-falcon-common: &falcon-common
   stop_grace_period: 10s
 
 x-falcon-healthcheck: &falcon-healthcheck
-  test: ["CMD-SHELL", "bash /home/falconMeta/check_liveness.sh"]
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
   interval: 10s
   timeout: 5s
   retries: 3
   start_period: 10s
 
 x-store-healthcheck: &store-healthcheck
-  test: ["CMD-SHELL", "bash /root/check_liveness.sh"]
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_store/check_liveness.sh"]
   interval: 10s
   timeout: 5s
   retries: 3
@@ -71,7 +71,7 @@ services:
       POD_NAME: falcon-cn-1
       POD_IP: 172.18.0.11
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-1/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-1/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -93,7 +93,7 @@ services:
       POD_NAME: falcon-cn-2
       POD_IP: 172.18.0.12
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-2/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-2/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -115,7 +115,7 @@ services:
       POD_NAME: falcon-cn-3
       POD_IP: 172.18.0.13
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-3/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-3/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -137,7 +137,7 @@ services:
       POD_NAME: falcon-dn-1
       POD_IP: 172.18.0.21
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-1/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-1/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -165,7 +165,7 @@ services:
       POD_NAME: falcon-dn-2
       POD_IP: 172.18.0.22
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-2/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-2/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -193,7 +193,7 @@ services:
       POD_NAME: falcon-dn-3
       POD_IP: 172.18.0.23
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-3/data:/home/falconMeta/data
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/dn-3/data:/usr/local/falconfs/data/
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
     depends_on:
       zk1:
@@ -221,8 +221,8 @@ services:
       POD_NAME: falcon-store-1
       POD_IP: 172.18.0.31
     volumes:
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/cache:/opt/falcon
-      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/log:/opt/log
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/cache:/usr/local/falconfs/falcon_store/cache
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/log:/usr/local/falconfs/falcon_store/log
       - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
       - type: bind
         source: ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/data
@@ -231,10 +231,6 @@ services:
           propagation: rshared
     depends_on:
       dn1:
-        condition: service_started
-      dn2:
-        condition: service_started
-      dn3:
         condition: service_started
     healthcheck: *store-healthcheck
 

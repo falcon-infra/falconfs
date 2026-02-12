@@ -33,7 +33,7 @@ CLIENT_OPTIONS=(
     -socket_max_unwritten_bytes=268435456
 )
 
-nohup falcon_client "${CLIENT_OPTIONS[@]}" >falcon_client.log 2>&1 &
+nohup falcon_client "${CLIENT_OPTIONS[@]}" >${DIR}/falcon_client.log 2>&1 &
 
 sleep 1
 if ! pgrep -f "falcon_client" >/dev/null; then

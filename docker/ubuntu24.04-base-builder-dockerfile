@@ -1,49 +1,86 @@
-FROM ghcr.io/falcon-infra/falconfs-dev:ubuntu24.04 AS builder
-ARG FALCONFS_TAG=v0.1.0-alpha
-# 环境变量
+FROM 127.0.0.1:5000/ubuntu:24.04
+
+# 基础配置
+RUN apt-get update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
 ENV TZ=Asia/Shanghai \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8 \
-    FALCONFS_DIR=/root/code/falconfs \
-    LD_LIBRARY_PATH=/usr/local/obs/lib
+    LC_ALL=en_US.UTF-8
 
-# Clone and setup falconfs
-RUN git clone https://github.com/falcon-infra/falconfs.git ${FALCONFS_DIR} && \
-    cd ${FALCONFS_DIR} && \
-    git checkout ${FALCONFS_TAG} && \
-    git submodule update --init --recursive
+# 安装 GCC-14
+RUN apt-get install -y gcc-14 g++-14 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 60 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60 && \
+    update-alternatives --set gcc /usr/bin/gcc-14 && \
+    update-alternatives --set g++ /usr/bin/g++-14 && \
+    ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6 && \
+    ln -sf /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so
 
-# 构建FalconFS
-RUN ${FALCONFS_DIR}/build.sh clean && \
-    ${FALCONFS_DIR}/build.sh build pg && ${FALCONFS_DIR}/build.sh install && \
-    ${FALCONFS_DIR}/build.sh build falcon --with-zk-init --with-prometheus
+# 安装编译依赖
+RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev \
+    libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config \
+    libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler \
+    libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev \
+    libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev \
+    libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils \
+    build-essential git libboost-all-dev rsync
 
-# 准备运行时文件
-RUN mkdir -p /output/store/falconfs/{bin,lib} && \
-    mkdir -p /output/cn /output/dn && \
-    # 复制库文件
-    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b /root/metadb/lib/postgresql/falcon.so -t /output/store/falconfs/lib/ && \
-    ${FALCONFS_DIR}/cloud_native/docker_build/ldd_copy.sh -b ${FALCONFS_DIR}/build/bin/falcon_client -t /output/store/falconfs/lib/ && \
-    # 复制二进制文件
-    cp -f ${FALCONFS_DIR}/build/bin/falcon_client /output/store/falconfs/bin/ && \
-    # 复制metadb和falcon_cm
-    cp -rf /root/metadb /output/cn/ && \
-    cp -rf /root/metadb /output/dn/ && \
-    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/cn/ && \
-    cp -rf ${FALCONFS_DIR}/cloud_native/falcon_cm /output/dn/ && \
-    # 生成配置文件
-    cp -f ${FALCONFS_DIR}/config/config.json /output/store/ && \
-    jq '.main.falcon_log_dir = "/opt/log"' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_cache_root = "/opt/falcon"' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_mount_path = "/mnt/data"' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_log_reserved_num = 50' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_log_reserved_time = 168' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_stat_max = true' /output/store/config.json | sponge /output/store/config.json && \
-    jq '.main.falcon_use_prometheus = true' /output/store/config.json | sponge /output/store/config.json && \
-    # 设置权限
-    chmod -R 777 /output/cn/metadb && \
-    chmod -R 777 /output/cn/falcon_cm && \
-    chmod -R 777 /output/dn/metadb && \
-    chmod -R 777 /output/dn/falcon_cm && \
-    chmod -R 777 /output/store/falconfs
+# 从源码编译安装 PostgreSQL 17
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
+
+RUN wget -O- "${PG_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd /tmp/postgresql-${PG_VERSION} && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && make install && \
+    rm -rf /tmp/postgresql-${PG_VERSION}
+
+# 设置 PostgreSQL 环境变量
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib \
+    PGDATA=/usr/local/pgsql/data
+
+# 安装 Prometheus C++
+RUN apt install -y libcurl4-openssl-dev
+ARG PROMETHEUS_CPP_VERSION=1.3.0
+RUN wget -O- "https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_CPP_VERSION}/prometheus-cpp-with-submodules.tar.gz" | \
+    tar -xzvf - -C /tmp && \
+    cd "/tmp/prometheus-cpp-with-submodules" && \
+    mkdir build && cd build && \
+    cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PULL=ON -DENABLE_COMPRESSION=OFF && \
+    make -j$(nproc) && make install && \
+    rm -rf "/tmp/prometheus-cpp-with-submodules"
+
+# 安装 brpc
+ARG BRPC_VERSION=1.12.1
+RUN wget -O- "https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz" | \
+    tar -xzvf - -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja -DWITH_GLOG=ON .. -DWITH_RDMA=ON && \
+    ninja && ninja install && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+# 安装 OBS SDK
+ARG OBS_VERSION=v3.24.12
+ARG OBS_INSTALL_PREFIX=/usr/local/obs
+RUN wget -O- "https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/${OBS_VERSION}.tar.gz" | \
+    tar -xzvf - -C /tmp && \
+    cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    sed -i '/if(NOT DEFINED OPENSSL_INC_DIR)/,+5d' CMakeLists.txt && \
+    sed -i '/OPENSSL/d' CMakeLists.txt && \
+    cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && bash build.sh sdk && \
+    mkdir -p "${OBS_INSTALL_PREFIX}" && \
+    tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
+    rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    rm ${OBS_INSTALL_PREFIX}/lib/libcurl.so*
+
+ENV LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH
+
+# 修复 jsoncpp 头文件路径
+RUN mv /usr/include/jsoncpp/json /usr/include/json && rm -rf /usr/include/jsoncpp
+
+# 设置工作目录
+WORKDIR /root/code/falconfs

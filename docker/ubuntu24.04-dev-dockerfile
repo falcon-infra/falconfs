@@ -1,32 +1,52 @@
-FROM ghcr.io/falcon-infra/dev:ubuntu24.04
+FROM 127.0.0.1:5000/ubuntu:24.04
+
+RUN apt-get update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
+
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en:en \
+    LC_ALL=en_US.UTF-8
+
+# 安装 GCC-14
+RUN apt-get install -y gcc-14 g++-14 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 60 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 60 && \
+    update-alternatives --set gcc /usr/bin/gcc-14 && \
+    update-alternatives --set g++ /usr/bin/g++-14 && \
+    ln -sf /usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33 /usr/lib/libstdc++.so.6 && \
+    ln -sf /usr/lib/libstdc++.so.6 /usr/lib/libstdc++.so
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
-RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev jq moreutils libboost-system-dev libboost-thread-dev
-# brpc
-RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool libibverbs-dev
 
-ARG PROTOBUF_VERSION=3.12.4
-ARG PROTOBUF_DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
+# 安装基础依赖
+RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev \
+    libzstd-dev libpython3-dev bison flex m4 autoconf automake pkg-config \
+    libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler \
+    libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev \
+    libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev \
+    libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils \
+    build-essential git libcurl4-openssl-dev
 
-RUN wget -O- "${PROTOBUF_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
-    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
-    ./autogen.sh && \
-    CXXFLAGS="-fPIC" ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig
+# 从源码编译安装 PostgreSQL 17
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
 
-ARG BRPC_VERSION=1.12.1
-ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
+RUN wget -O- "${PG_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd /tmp/postgresql-${PG_VERSION} && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && make install && \
+    rm -rf /tmp/postgresql-${PG_VERSION}
 
-RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
-    cd "/tmp/brpc-${BRPC_VERSION}" && \
-    mkdir build && cd build && \
-    cmake -GNinja -DWITH_GLOG=ON -DWITH_RDMA=ON .. && \
-    ninja && ninja install && \
-    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+# 设置 PostgreSQL 环境变量
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib \
+    PGDATA=/usr/local/pgsql/data
 
+RUN mv /usr/include/jsoncpp/json /usr/include/json && rm -rf /usr/include/jsoncpp
+
+# 安装 Prometheus C++
 RUN apt install -y libcurl4-openssl-dev
 ARG PROMETHEUS_CPP_VERSION=1.3.0
 ARG PROMETHEUS_DOWNLOAD_URL=https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_CPP_VERSION}/prometheus-cpp-with-submodules.tar.gz
@@ -38,52 +58,50 @@ RUN wget -O- "${PROMETHEUS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
     make -j$(nproc) && make install && \
     rm -rf "/tmp/prometheus-cpp-with-submodule"
 
-ARG FLATBUFFERS_VERSION=25.2.10
-ARG FLATBUFFERS_DOWNLOAD_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
+# 安装 brpc
+ARG BRPC_VERSION=1.12.1
+ARG BRPC_DOWNLOAD_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
 
-RUN wget -O- "${FLATBUFFERS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
-    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
+RUN wget -O- "${BRPC_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
     mkdir build && cd build && \
-    cmake -GNinja .. && \
+    cmake -GNinja -DWITH_GLOG=ON .. -DWITH_RDMA=ON && \
     ninja && ninja install && \
-    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
 
-ARG JSONCPP_VERSION=1.9.6
-ARG JSONCPP_DOWNLOAD_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
-
-RUN wget -O- "${JSONCPP_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
-    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
-    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
-    mkdir build && cd build && \
-    cmake .. && \
-    make -j$(nproc) && \
-    make install && \
-    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
-
+# 安装 OBS SDK
 ARG OBS_VERSION=v3.24.12
 ARG OBS_DOWNLOAD_URL=https://github.com/huaweicloud/huaweicloud-sdk-c-obs/archive/refs/tags/${OBS_VERSION}.tar.gz
 ARG OBS_INSTALL_PREFIX=/usr/local/obs
 
 RUN wget -O- "${OBS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
     cd "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
+    sed -i '/if(NOT DEFINED OPENSSL_INC_DIR)/,+5d' CMakeLists.txt && \
+    sed -i '/OPENSSL/d' CMakeLists.txt && \
     cd source/eSDK_OBS_API/eSDK_OBS_API_C++ && \
-    export SPDLOG_VERSION=spdlog-1.12.0 && \
-    # Detect architecture and use appropriate build script
-    if [ "$(uname -m)" = "aarch64" ]; then \
-        bash build_aarch.sh sdk; \
-    else \
-        bash build.sh sdk; \
-    fi && \
+    export SPDLOG_VERSION=spdlog-1.12.0 && bash build.sh sdk && \
     mkdir -p "${OBS_INSTALL_PREFIX}" && \
     tar zxvf sdk.tgz -C "${OBS_INSTALL_PREFIX}" && \
-    # Cleanup
-    rm -f ${OBS_INSTALL_PREFIX}/lib/libcurl.so* && \
     rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION#v}" && \
-    ln -sf ${OBS_INSTALL_PREFIX}/lib/libiconv.so ${OBS_INSTALL_PREFIX}/lib/libiconv.so.0 && \
-    cat <<EOF >> ~/.zshrc
-export OBS_INSTALL_PREFIX=${OBS_INSTALL_PREFIX}
-export LD_LIBRARY_PATH=\$OBS_INSTALL_PREFIX/lib:\$LD_LIBRARY_PATH
-export CPLUS_INCLUDE_PATH=\$OBS_INSTALL_PREFIX/include:\$CPLUS_INCLUDE_PATH
-export USER=root
+    rm ${OBS_INSTALL_PREFIX}/lib/libcurl.so*
 
-EOF
+ENV LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH
+
+# 安装 Docker
+RUN apt-get update && \
+    apt-get install -y ca-certificates curl && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+    tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update && \
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# 复制本地源码
+COPY . /root/code/falconfs
+
+# 设置工作目录
+WORKDIR /root/code/falconfs

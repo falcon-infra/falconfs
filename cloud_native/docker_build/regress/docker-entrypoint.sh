@@ -1,6 +1,4 @@
 #!/bin/bash
-
-# 无限循环, 保持容器运行
 while true; do
     sleep 10
 done

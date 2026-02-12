@@ -2,6 +2,22 @@
 DIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
 source $DIR/falcon_meta_config.sh
 
+# 安装/卸载 PostgreSQL falcon 扩展文件到系统目录
+# PostgreSQL 在编译时确定扩展文件 (.control, .sql) 的查找位置，无法通过配置修改
+install_falcon_extension() {
+    local pg_ext_dir="$(pg_config --sharedir)/extension"
+    local pg_lib_dir="$(pg_config --pkglibdir)"
+
+    echo "Installing Falcon extension files to PostgreSQL system directories..."
+    echo "  Extension files: $pg_ext_dir"
+    echo "  Library files: $pg_lib_dir"
+    sudo mkdir -p "$pg_ext_dir"
+    sudo cp -f "$FALCONFS_INSTALL_DIR/falcon_meta/share/extension"/falcon* "$pg_ext_dir/" 2>/dev/null || true
+    sudo cp -f "$FALCONFS_INSTALL_DIR/falcon_meta/lib/postgresql"/falcon*.so "$pg_lib_dir/" 2>/dev/null || true
+
+    echo "Falcon extension files installed."
+}
+
 # Parse command line arguments
 COMM_PLUGIN="brpc"
 while [[ $# -gt 0 ]]; do
@@ -50,8 +66,10 @@ server_port_list=()
 
 shardcount=50
 
-FALCONFS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 && pwd)"
-comm_plugin_path="$FALCONFS_DIR/falcon/lib${COMM_PLUGIN}plugin.so"
+comm_plugin_path="$FALCONFS_INSTALL_DIR/falcon_meta/lib/postgresql/lib${COMM_PLUGIN}plugin.so"
+
+# 安装 falcon 扩展到 PostgreSQL 系统目录
+install_falcon_extension
 
 if [[ "$cnIp" == "$localIp" ]]; then
     cnPath="${cnPathPrefix}0"

@@ -1,5 +1,9 @@
-#! /bin/bash
-log_dir="/home/falconMeta/data/metadata/log/"
+#!/bin/bash
+# 设置默认的安装目录
+FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
+DATA_DIR=${FALCONFS_INSTALL_DIR}/data
+METADATA_DIR=${DATA_DIR}/metadata
+log_dir="${METADATA_DIR}/log/"
 max_files=20
 
 while true
@@ -14,6 +18,6 @@ do
         echo "Deleted $files_to_delete old log files."
     else
         echo "No old log files to delete."
-    fi 
+    fi
     sleep 86400
 done
