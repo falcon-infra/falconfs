@@ -5,7 +5,7 @@
 #include <sstream>
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
-#include "perf_counter/perf_stat.h"
+#include "perf_counter/falcon_per_request_stat.h"
 #include "remote_connection_utils/error_code_def.h"
 #include "remote_connection_utils/serialized_data.h"
 
@@ -18,11 +18,6 @@ void SingleWorkerTask::DoWork(PGconn *conn,
                               flatbuffers::FlatBufferBuilder &flatBufferBuilder,
                               SerializedData &replyBuilder)
 {
-    /* Report workerWaitLatency (final stage, no restart needed) */
-    if (m_job != nullptr) {
-        m_job->stageTimer.End(GetWorkerWaitLatencyData());
-    }
-
     // 1. Reset status and check validity of input
     PGresult *res{nullptr};
     while ((res = PQgetResult(conn)) != NULL)
@@ -48,9 +43,19 @@ void SingleWorkerTask::DoWork(PGconn *conn,
     }
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, sharedParamDataAddrShift);
     m_job->CopyOutData(paramBuffer, requestParamSize);
+    STAT_CKPT(m_job->statArrayIndex, CKPT_SHMEM_COPY);
     SerializedData requestData;
     if (!SerializedDataInit(&requestData, paramBuffer, requestParamSize, requestParamSize, NULL))
         throw std::runtime_error("request attachment is corrupt.");
+    uint64_t statIndicesShift = 0;
+    {
+        size_t statIndicesSize = sizeof(int32_t) * requestServiceCount;
+        statIndicesShift = FalconShmemAllocatorMalloc(m_allocator, statIndicesSize);
+        if (statIndicesShift != 0) {
+            int32_t *statIndices = (int32_t *)FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, statIndicesShift);
+            statIndices[0] = m_job->statArrayIndex;
+        }
+    }
 
     // 2.2 construct req msg
     std::stringstream toSendCommand;
@@ -91,7 +96,7 @@ void SingleWorkerTask::DoWork(PGconn *conn,
             signatureList.push_back(FalconShmemAllocatorGetUniqueSignature(m_allocator));
             toSendCommand << "select falcon_meta_call_by_serialized_shmem_internal(" << serviceType << ", "
                           << currentParamSegmentCount << ", " << sharedParamDataAddrShift + currentParamSegment << ", "
-                          << signatureList.back() << ");";
+                          << signatureList.back() << ", " << (int64_t)statIndicesShift << ");";
 
             isPlainCommand.push_back(false);
         }
@@ -101,6 +106,7 @@ void SingleWorkerTask::DoWork(PGconn *conn,
     }
 
     // 2.3 Send request to PG worker process
+    STAT_CKPT(m_job->statArrayIndex, CKPT_PQ_SEND);
     int sendQuerySucceed = PQsendQuery(conn, toSendCommand.str().c_str());
     if (sendQuerySucceed != static_cast<int>(isPlainCommand.size())) {
         throw std::runtime_error(PQerrorMessage(conn));
@@ -111,6 +117,13 @@ void SingleWorkerTask::DoWork(PGconn *conn,
     while ((res = PQgetResult(conn)) != NULL) {
         result.push_back(res);
     }
+    {
+        int32_t si = m_job->statArrayIndex;
+        if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+            StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+    }
+    if (statIndicesShift != 0)
+        FalconShmemAllocatorFree(m_allocator, statIndicesShift);
 
     FalconShmemAllocatorFree(m_allocator, sharedParamDataAddrShift);
     if (result.size() != isPlainCommand.size()) {
@@ -178,6 +191,12 @@ void SingleWorkerTask::DoWork(PGconn *conn,
 
     // 2.5.1 SendResponse & recycle resource
     m_job->ProcessResponse(replyData.buffer, replyData.size, NULL);
+    {
+        int32_t si = m_job->statArrayIndex;
+        if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+            StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+    }
+    PerRequestStatComplete(m_job->statArrayIndex, (int32_t)m_job->opcodeForE2E);
     m_job->Done();
 
     for (size_t i = 0; i < result.size(); ++i) {
@@ -192,13 +211,6 @@ void BatchWorkerTask::DoWork(PGconn *conn,
                              flatbuffers::FlatBufferBuilder &flatBufferBuilder,
                              SerializedData &replyBuilder)
 {
-    /* Report workerWaitLatency (final stage, no restart needed) for all jobs in batch */
-    for (auto &job : m_jobList) {
-        if (job != nullptr) {
-            job->stageTimer.End(GetWorkerWaitLatencyData());
-        }
-    }
-
     // 1. Reset status and check validity of input
     PGresult *res{nullptr};
     while ((res = PQgetResult(conn)) != NULL)
@@ -245,19 +257,37 @@ void BatchWorkerTask::DoWork(PGconn *conn,
         m_jobList[i]->CopyOutData(FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, curStartOffset), curDataSize);
         curStartOffset += curDataSize;
     }
+    for (auto &job : m_jobList) {
+        STAT_CKPT(job->statArrayIndex, CKPT_SHMEM_COPY);
+    }
     FALCON_SHMEM_ALLOCATOR_SET_SIGNATURE(FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, sharedParamDataAddrShift),
                                          signature);
+    uint64_t statIndicesShift = 0;
+    {
+        size_t statIndicesSize = sizeof(int32_t) * m_jobList.size();
+        statIndicesShift = FalconShmemAllocatorMalloc(m_allocator, statIndicesSize);
+        if (statIndicesShift != 0) {
+            int32_t *statIndices = (int32_t *)FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, statIndicesShift);
+            for (size_t si = 0; si < m_jobList.size(); si++) {
+                statIndices[si] = m_jobList[si]->statArrayIndex;
+            }
+        }
+    }
 
     // 2.2 construct req msg
-    char command[128];
+    char command[256];
     sprintf(command,
-            "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld);",
+            "select falcon_meta_call_by_serialized_shmem_internal(%d, %u, %ld, %ld, %ld);",
             serviceType,
             totalRequestServiceCount,
             (int64_t)sharedParamDataAddrShift,
-            signature);
+            signature,
+            (int64_t)statIndicesShift);
 
     // 2.3 Send request to PG worker process
+    for (auto &job : m_jobList) {
+        STAT_CKPT(job->statArrayIndex, CKPT_PQ_SEND);
+    }
     int sendQuerySucceed = PQsendQuery(conn, command);
     if (sendQuerySucceed != 1)
         throw std::runtime_error(PQerrorMessage(conn));
@@ -266,10 +296,16 @@ void BatchWorkerTask::DoWork(PGconn *conn,
     res = PQgetResult(conn);
     if (res == NULL)
         throw std::runtime_error(PQerrorMessage(conn));
-
+    for (auto &job : m_jobList) {
+        int32_t si = job->statArrayIndex;
+        if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+            StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+    }
     // now sharedParamData is useless, free the shared memory.
     FalconErrorCode errorCode = SUCCESS;
     FalconShmemAllocatorFree(m_allocator, sharedParamDataAddrShift);
+    if (statIndicesShift != 0)
+        FalconShmemAllocatorFree(m_allocator, statIndicesShift);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         char *totalErrorMsg = PQresultErrorMessage(res);
         const char *validErrorMsg = NULL;
@@ -278,7 +314,7 @@ void BatchWorkerTask::DoWork(PGconn *conn,
             errorCode = PROGRAM_ERROR;
     }
 
-    // 2.5 Process result
+    // 2.5 Process result (parse PGresult and prepare response data)
     if (errorCode != SUCCESS) {
         SerializedDataClear(&replyBuilder);
         flatBufferBuilder.Clear();
@@ -286,12 +322,17 @@ void BatchWorkerTask::DoWork(PGconn *conn,
         flatBufferBuilder.Finish(metaResponse);
         char *buf = SerializedDataApplyForSegment(&replyBuilder, flatBufferBuilder.GetSize());
         memcpy(buf, flatBufferBuilder.GetBufferPointer(), flatBufferBuilder.GetSize());
-
         for (size_t i = 0; i < m_jobList.size(); ++i) {
             char *data = (char *)malloc(replyBuilder.size);
             memcpy(data, replyBuilder.buffer, replyBuilder.size);
             // 2.5.1 SendResponse & clear resource
             m_jobList[i]->ProcessResponse(data, replyBuilder.size, NULL);
+            {
+                int32_t si = m_jobList[i]->statArrayIndex;
+                if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+                    StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+            }
+            PerRequestStatComplete(m_jobList[i]->statArrayIndex, (int32_t)serviceType);
             m_jobList[i]->Done();
         }
     } else {
@@ -308,6 +349,7 @@ void BatchWorkerTask::DoWork(PGconn *conn,
                 throw std::runtime_error("reply data is corrupt.");
 
             uint32_t p = 0;
+            std::vector<std::pair<char*, uint32_t>> replyParts(m_jobList.size());
             for (size_t i = 0; i < m_jobList.size(); ++i) {
                 int count = m_jobList[i]->GetReqServiceCnt();
                 uint32_t size = SerializedDataNextSeveralItemSize(&replyData, p, count);
@@ -315,15 +357,30 @@ void BatchWorkerTask::DoWork(PGconn *conn,
                     throw std::runtime_error("response is corrupt.");
                 char *data = (char *)malloc(size);
                 memcpy(data, replyBuffer + p, size);
-                // 2.5.1 SendResponse & clear resource
-                m_jobList[i]->ProcessResponse(data, size, NULL);
-                m_jobList[i]->Done();
+                replyParts[i] = {data, size};
                 p += size;
+            }
+            // 2.5.1 SendResponse & clear resource
+            for (size_t i = 0; i < m_jobList.size(); ++i) {
+                m_jobList[i]->ProcessResponse(replyParts[i].first, replyParts[i].second, NULL);
+                {
+                    int32_t si = m_jobList[i]->statArrayIndex;
+                    if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+                        StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+                }
+                PerRequestStatComplete(m_jobList[i]->statArrayIndex, (int32_t)serviceType);
+                m_jobList[i]->Done();
             }
             FalconShmemAllocatorFree(m_allocator, replyShift);
         } else {
             // 2.5.1 SendResponse & clear resource
             for (size_t i = 0; i < m_jobList.size(); ++i) {
+                {
+                    int32_t si = m_jobList[i]->statArrayIndex;
+                    if (si >= 0 && g_FalconPerRequestStatShmem != nullptr)
+                        StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+                }
+                PerRequestStatComplete(m_jobList[i]->statArrayIndex, (int32_t)serviceType);
                 m_jobList[i]->Done();
             }
         }

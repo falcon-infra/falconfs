@@ -30,7 +30,6 @@
 
 #include "metadb/directory_path.h"
 #include "metadb/directory_table.h"
-#include "perf_counter/perf_macros.h"
 #include "utils/error_log.h"
 #include "utils/rwlock.h"
 #include "utils/shmem_control.h"
@@ -311,8 +310,6 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
                                          uint32_t numSubparts,
                                          DirPathLockMode lockMode)
 {
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(dir_insert_timer, perf ? &perf->dirInsertLatency : NULL);
 
     DirPathHashKey dirPathHashKey;
     strcpy(dirPathHashKey.fileName, name);
@@ -399,8 +396,6 @@ void InsertDirectoryByDirectoryHashTable(Relation relation,
 uint64_t
 SearchDirectoryByDirectoryHashTable(Relation relation, uint64_t parentId, const char *name, DirPathLockMode lockMode)
 {
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(dir_search_timer, perf ? &perf->dirSearchLatency : NULL);
 
     uint64_t inodeId;
 
@@ -484,8 +479,6 @@ void DeleteDirectoryByDirectoryHashTable(Relation relation,
                                          const char *name,
                                          DirPathLockMode lockMode)
 {
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(dir_delete_timer, perf ? &perf->dirDeleteLatency : NULL);
 
     if (lockMode == DIR_LOCK_SHARED)
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "not supported lockmode while deleting.");
