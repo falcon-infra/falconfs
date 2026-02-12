@@ -23,4 +23,4 @@ if [ ! -d "${METADATA_DIR}" ]; then
     echo "Falcon extension files installed."
 fi
 
-exec su falconMeta -c "bash ${STARTUP_SCRIPT} >${DATA_DIR}/start.log 2>&1"
+exec su -s /bin/bash falconMeta -c "bash ${STARTUP_SCRIPT} >${DATA_DIR}/start.log 2>&1"

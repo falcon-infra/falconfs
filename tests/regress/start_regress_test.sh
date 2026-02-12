@@ -84,7 +84,8 @@ function rebuild_falcon() {
     # fi
     # docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
     #     /root/code/falconfs/cloud_native/docker_build/docker_build.sh
-    source "${FALCON_CODE_PATH}"/falconenv.sh
+    # Build FalconFS directly from repository scripts.
+    # Some environments do not provide falconenv.sh.
     "${FALCON_CODE_PATH}"/cloud_native/docker_build/docker_build.sh
     return 0
 }

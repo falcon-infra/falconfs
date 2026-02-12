@@ -1,0 +1,260 @@
+version: "3.8"
+
+x-falcon-env: &falcon-env
+  POD_NAMESPACE: falconfs
+  zk_endpoint: zk-1:2181,zk-2:2181,zk-3:2181
+  cluster_name: "/falcon"
+  STORAGE_THRESHOLD: "0.9"
+  BRPC_PORT: "50039"
+  wait_replica_time: "600"
+  data_dir: "/usr/local/falconfs/data"
+  cn_num: "3"
+  cn_sup_num: "0"
+  dn_num: "3"
+  dn_sup_num: "0"
+  replica_server_num: "2"
+  has_falcon_stor: ""
+
+x-falcon-common: &falcon-common
+  user: "0:0"
+  privileged: true
+  restart: unless-stopped
+  stop_grace_period: 10s
+
+x-falcon-healthcheck-cn: &falcon-healthcheck-cn
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+x-falcon-healthcheck-dn: &falcon-healthcheck-dn
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_dn/check_liveness.sh"]
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+services:
+  zk1:
+    image: zookeeper:3.8.3
+    container_name: falcon-zk-1
+    hostname: zk-1
+    networks:
+      falcon-net:
+        aliases:
+          - zk-1
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/zk-1/data:/data
+
+  zk2:
+    image: zookeeper:3.8.3
+    container_name: falcon-zk-2
+    hostname: zk-2
+    networks:
+      falcon-net:
+        aliases:
+          - zk-2
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      ZOO_MY_ID: 2
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/zk-2/data:/data
+
+  zk3:
+    image: zookeeper:3.8.3
+    container_name: falcon-zk-3
+    hostname: zk-3
+    networks:
+      falcon-net:
+        aliases:
+          - zk-3
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    environment:
+      ZOO_MY_ID: 3
+      ZOO_SERVERS: server.1=zk-1:2888:3888;2181 server.2=zk-2:2888:3888;2181 server.3=zk-3:2888:3888;2181
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/zk-3/data:/data
+
+  cn1:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-cn-1
+    hostname: cn-1
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.11
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-1
+      NODE_IP: 172.18.0.11
+      POD_NAME: falcon-cn-1
+      POD_IP: 172.18.0.11
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/cn-1/data:/usr/local/falconfs/data
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-cn
+
+  cn2:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-cn-2
+    hostname: cn-2
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.12
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-2
+      NODE_IP: 172.18.0.12
+      POD_NAME: falcon-cn-2
+      POD_IP: 172.18.0.12
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/cn-2/data:/usr/local/falconfs/data
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-cn
+
+  cn3:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-cn-3
+    hostname: cn-3
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.13
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-3
+      NODE_IP: 172.18.0.13
+      POD_NAME: falcon-cn-3
+      POD_IP: 172.18.0.13
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/cn-3/data:/usr/local/falconfs/data
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-cn
+
+  dn1:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-dn-1
+    hostname: dn-1
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.21
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-1
+      NODE_IP: 172.18.0.21
+      POD_NAME: falcon-dn-1
+      POD_IP: 172.18.0.21
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/dn-1/data:/usr/local/falconfs/data
+    depends_on:
+      cn1:
+        condition: service_healthy
+      cn2:
+        condition: service_healthy
+      cn3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-dn
+
+  dn2:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-dn-2
+    hostname: dn-2
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.22
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-2
+      NODE_IP: 172.18.0.22
+      POD_NAME: falcon-dn-2
+      POD_IP: 172.18.0.22
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/dn-2/data:/usr/local/falconfs/data
+    depends_on:
+      cn1:
+        condition: service_healthy
+      cn2:
+        condition: service_healthy
+      cn3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-dn
+
+  dn3:
+    <<: *falcon-common
+    image: falconfs-release-openeuler24.03:v0.1.0
+    container_name: falcon-dn-3
+    hostname: dn-3
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.23
+    environment:
+      <<: *falcon-env
+      NODE_NAME: dn-3
+      NODE_IP: 172.18.0.23
+      POD_NAME: falcon-dn-3
+      POD_IP: 172.18.0.23
+    volumes:
+      - ${FALCON_DATA_PATH:?please set FALCON_DATA_PATH}/falcon-data/dn-3/data:/usr/local/falconfs/data
+    depends_on:
+      cn1:
+        condition: service_healthy
+      cn2:
+        condition: service_healthy
+      cn3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck-dn
+
+networks:
+  falcon-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "172.18.0.0/16"

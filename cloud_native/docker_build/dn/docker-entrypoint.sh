@@ -22,4 +22,4 @@ if [ ! -d "${METADATA_DIR}" ]; then
     cp -f ${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql/falcon*.so "$PG_LIB_DIR/" 2>/dev/null || true
 fi
 
-exec su falconMeta -c "bash ${STARTUP_SCRIPT} >${DATA_DIR}/start.log 2>&1"
+exec su -s /bin/bash falconMeta -c "bash ${STARTUP_SCRIPT} >${DATA_DIR}/start.log 2>&1"

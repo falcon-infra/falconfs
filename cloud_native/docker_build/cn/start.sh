@@ -1,10 +1,10 @@
 #!/bin/bash
 # 使用源码编译安装的 PostgreSQL 17
-export PATH=/usr/local/pgsql/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/pgsql/lib:${FALCONFS_INSTALL_DIR}/falcon_meta/lib
-
 # 设置默认的安装目录
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
+
+export PATH=/usr/local/pgsql/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/pgsql/lib:${FALCONFS_INSTALL_DIR}/falcon_meta/lib:/usr/local/obs/lib
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data
 METADATA_DIR=${DATA_DIR}/metadata
 
@@ -15,6 +15,8 @@ else
     cp ${FALCONFS_INSTALL_DIR}/falcon_cn/postgresql_falcon.conf ${METADATA_DIR}/postgresql.conf
     echo "host all all 0.0.0.0/0 trust" >>${METADATA_DIR}/pg_hba.conf
     echo "host replication all 0.0.0.0/0 trust" >>${METADATA_DIR}/pg_hba.conf
+    # Ensure PostgreSQL can locate falcon.so from FalconFS private lib path.
+    echo "dynamic_library_path = '\$libdir:${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql'" >>${METADATA_DIR}/postgresql.conf
     echo "shared_preload_libraries='falcon'" >>${METADATA_DIR}/postgresql.conf
     echo "listen_addresses='*'" >>${METADATA_DIR}/postgresql.conf
     echo "wal_level=logical" >>${METADATA_DIR}/postgresql.conf
