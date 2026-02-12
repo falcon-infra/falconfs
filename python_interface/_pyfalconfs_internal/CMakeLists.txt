@@ -4,15 +4,14 @@ set_target_properties(_pyfalconfs_internal PROPERTIES
     PREFIX ""
     SUFFIX ".so"
 )
-target_include_directories(_pyfalconfs_internal PUBLIC 
+target_include_directories(_pyfalconfs_internal PUBLIC
     ${Python3_INCLUDE_DIRS}
-    ${POSTGRES_SRC_DIR}/src/include
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include
     ${PROJECT_SOURCE_DIR}/common/src/include
 )
 target_link_options(_pyfalconfs_internal PRIVATE -static-libstdc++ -static-libgcc)
-target_link_libraries(_pyfalconfs_internal PUBLIC 
+target_link_libraries(_pyfalconfs_internal PUBLIC
     ${Python3_LIBRARIES}
     FalconClient
     FalconStore
@@ -27,7 +26,7 @@ target_link_libraries(_pyfalconfs_internal PUBLIC
     dl
 )
 target_link_directories(_pyfalconfs_internal PUBLIC
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_LIB_DIR}
 )
 
 install(TARGETS _pyfalconfs_internal

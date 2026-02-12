@@ -10,7 +10,7 @@ RUN dnf clean all && \
     dnf reinstall -y glibc-common && \
     dnf install -y \
     readline-devel gflags-devel glog-devel leveldb-devel \
-    openssl-devel postgresql-devel fuse-devel \
+    openssl-devel fuse-devel \
     fmt-devel fio libcurl-devel jq \
     snappy-devel gperftools-devel libunwind-devel gtest-devel gmock-devel \
     rdma-core-devel ninja-build cmake python3-devel \
@@ -19,6 +19,23 @@ RUN dnf clean all && \
     autoconf automake libtool cppunit-devel \
     wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks && \
     dnf clean all
+
+# 从源码编译安装 PostgreSQL 17
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
+
+RUN wget --no-check-certificate -O- "${PG_DOWNLOAD_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/postgresql-${PG_VERSION}" && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/postgresql-${PG_VERSION}"
+
+# 设置 PostgreSQL 环境变量
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib:$LD_LIBRARY_PATH \
+    PGDATA=/usr/local/pgsql/data
 
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8

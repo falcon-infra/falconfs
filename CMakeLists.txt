@@ -125,8 +125,14 @@ add_subdirectory(falcon_store)
 add_subdirectory(falcon_client)
 add_subdirectory(python_interface/_pyfalconfs_internal)
 
-if(NOT DEFINED POSTGRES_SRC_DIR)
-    message(FATAL_ERROR "POSTGRES_SRC_DIR must be defined")
+if(NOT DEFINED POSTGRES_INCLUDE_DIR)
+    message(FATAL_ERROR "POSTGRES_INCLUDE_DIR must be defined")
+endif()
+if(NOT DEFINED POSTGRES_LIB_DIR)
+    message(FATAL_ERROR "POSTGRES_LIB_DIR must be defined")
+endif()
+if(NOT DEFINED PG_PKGLIBDIR)
+    message(FATAL_ERROR "PG_PKGLIBDIR must be defined")
 endif()
 
 
@@ -149,12 +155,11 @@ target_link_libraries(falcon_client
 )
 
 target_link_directories(falcon_client PUBLIC
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_LIB_DIR}
 )
 
 target_include_directories(falcon_client PUBLIC
-    ${POSTGRES_SRC_DIR}/src/include
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include
     ${PROJECT_SOURCE_DIR}/common/src/include
 )

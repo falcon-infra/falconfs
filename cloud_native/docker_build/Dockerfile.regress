@@ -1,0 +1,37 @@
+FROM docker.1ms.run/ubuntu:24.04
+RUN apt-get -y update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
+
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+RUN apt-get install -y vim gdb pstack python3 python3-pip bc
+
+RUN mkdir /opt/falcon && chmod -R 0755 /opt/falcon
+ARG USER_NAME=falconRegress
+RUN useradd -m -s /bin/bash $USER_NAME
+
+# 后续步骤变更频繁，使用构建缓存破坏参数避免缓存影响
+ARG CACHE_BUST
+RUN echo "Cache bust: ${CACHE_BUST:-no-bust}"
+
+# 复制完整安装包到统一路径 (构建上下文是 docker_build/)
+COPY --chown=$USER_NAME:$USER_NAME falconfs /usr/local/falconfs/
+
+# 创建必要的目录
+RUN mkdir /usr/local/falconfs/readiness/ && mkdir /usr/local/falconfs/data/
+
+ENV TMOUT=0
+ENV FALCONFS_INSTALL_DIR=/usr/local/falconfs
+ENV NODE_TYPE=regress
+
+# 设置脚本执行权限
+RUN chmod +x /usr/local/falconfs/falcon_regress/docker-entrypoint.sh && \
+    chmod +x /usr/local/falconfs/falcon_regress/start.sh && \
+    chmod +x /usr/local/falconfs/falcon_regress/stop.sh
+
+USER root
+EXPOSE 5432
+ENTRYPOINT ["/usr/local/falconfs/falcon_regress/docker-entrypoint.sh"]

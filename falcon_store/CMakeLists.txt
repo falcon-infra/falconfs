@@ -15,8 +15,7 @@ add_dependencies(FalconStore GeneratedFlatBuffers)
 target_include_directories(FalconStore PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include/
     ${COMMON_SRC_PATH}/include/
-    ${POSTGRES_SRC_DIR}/src/include
-    ${POSTGRES_SRC_DIR}/src/interfaces/libpq
+    ${POSTGRES_INCLUDE_DIR}
     /usr/local/obs/include
     ${PROJECT_SOURCE_DIR}/falcon_client/src/include/
 )

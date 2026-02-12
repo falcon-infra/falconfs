@@ -8,7 +8,6 @@ WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
 WITH_RDMA=false
 WITH_PROMETHEUS=false
-CREATE_SOFT_LINK=true
 COMM_PLUGIN="brpc"
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
@@ -21,16 +20,24 @@ COMMAND=${1:-build}
 
 # Get source directory
 FALCONFS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-POSTGRES_SRC_DIR="$FALCONFS_DIR/third_party/postgres"
+POSTGRES_INCLUDE_DIR="$(pg_config --includedir)"
+POSTGRES_LIB_DIR="$(pg_config --libdir)"
+PG_PKGLIBDIR="$(pg_config --pkglibdir)"
 export CONFIG_FILE="$FALCONFS_DIR/config/config.json"
 
 # Set build directory
 BUILD_DIR="${BUILD_DIR:-$FALCONFS_DIR/build}"
 
 # Set default install directory
-PG_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_metadb"
+FALCON_META_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_meta"
+FALCON_CM_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_cm"
+FALCON_CN_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_cn"
+FALCON_DN_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_dn"
+FALCON_STORE_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_store"
+FALCON_REGRESS_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_regress"
 FALCON_CLIENT_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_client"
 PYTHON_SDK_INSTALL_DIR="$FALCONFS_INSTALL_DIR/falcon_python_interface"
+PRIVATE_DIRECTORY_TEST_INSTALL_DIR="$FALCONFS_INSTALL_DIR/private-directory-test"
 
 set_comm_plugin() {
     local plugin="${1,,}"
@@ -87,7 +94,7 @@ build_comm_plugin() {
         echo "Building hcom communication plugin..."
         cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom
         echo "hcom communication plugin build complete."
-        
+
         # Copy test plugins to plugins directory for hcom
         local test_plugin_src="$BUILD_DIR/test_plugins"
         local plugins_dest="$FALCONFS_DIR/plugins"
@@ -101,47 +108,6 @@ build_comm_plugin() {
     esac
 }
 
-build_pg() {
-    local BLD_OPT=${1:-"deploy"}
-    [[ "$BUILD_TYPE" == "Debug" ]] && BLD_OPT="debug"
-    local CONFIGURE_OPTS=(--without-icu)
-    local PG_CFLAGS=""
-
-    echo "Building PostgreSQL (mode: $BLD_OPT) ..."
-
-    # set build options
-    if [[ "$BLD_OPT" == "debug" ]]; then
-        CONFIGURE_OPTS+=(--enable-debug)
-        PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
-    else
-        PG_CFLAGS="-O2"
-    fi
-
-    # enter source directory
-    cd "$POSTGRES_SRC_DIR" || exit 1
-
-    # clean previous build artifacts if any
-    if [[ -f "config.status" ]]; then
-        make distclean || true
-    fi
-
-    # 生成配置并构建
-    CFLAGS="$PG_CFLAGS" ./configure --prefix=${PG_INSTALL_DIR} "${CONFIGURE_OPTS[@]}" \
-        --enable-rpath LDFLAGS="-Wl,-rpath,$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib" &&
-        make -j$(nproc) &&
-        cd "$POSTGRES_SRC_DIR/contrib" && make -j
-    echo "PostgreSQL build complete."
-}
-
-clean_pg() {
-    echo "Cleaning PostgreSQL..."
-    if [[ -d "$POSTGRES_SRC_DIR/contrib/falcon" ]]; then
-        cd "$POSTGRES_SRC_DIR" &&
-            [ -f "Makefile" ] && make clean || true
-    fi
-    echo "PostgreSQL clean complete."
-}
-
 # build_falconfs
 build_falconfs() {
     gen_proto
@@ -151,18 +117,21 @@ build_falconfs() {
         CONFIGURE_OPTS+=(--enable-debug)
         PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
     else
-        PG_CFLAGS="-O2"
+        PG_CFLAGS="-O0 -g"
     fi
     echo "Building FalconFS Meta (mode: $BUILD_TYPE)..."
     cd $FALCONFS_DIR/falcon
-    make USE_PGXS=1 CFLAGS="-Wno-shadow $PG_CFLAGS" CXXFLAGS="-Wno-shadow $PG_CFLAGS"
+    make USE_PGXS=1 CFLAGS="-Wno-shadow $PG_CFLAGS" CXXFLAGS="-Wno-shadow $PG_CFLAGS" \
+        FALCONFS_INSTALL_DIR="$FALCONFS_INSTALL_DIR"
 
     echo "Building FalconFS Client (mode: $BUILD_TYPE)..."
     cmake -B "$BUILD_DIR" -GNinja "$FALCONFS_DIR" \
         -DCMAKE_INSTALL_PREFIX=$FALCON_CLIENT_INSTALL_DIR \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-        -DPOSTGRES_SRC_DIR="$POSTGRES_SRC_DIR" \
+        -DPOSTGRES_INCLUDE_DIR="$POSTGRES_INCLUDE_DIR" \
+        -DPOSTGRES_LIB_DIR="$POSTGRES_LIB_DIR" \
+        -DPG_PKGLIBDIR="$PG_PKGLIBDIR" \
         -DWITH_FUSE_OPT="$WITH_FUSE_OPT" \
         -DWITH_ZK_INIT="$WITH_ZK_INIT" \
         -DWITH_RDMA="$WITH_RDMA" \
@@ -196,20 +165,10 @@ clean_tests() {
     echo "FalconFS tests clean complete."
 }
 
-install_pg() {
-    echo "Installing PostgreSQL to $PG_INSTALL_DIR..."
-    cd "$POSTGRES_SRC_DIR" &&
-        make install
-    cd "$POSTGRES_SRC_DIR/contrib" && make install
-    if [[ "$CREATE_SOFT_LINK" == "true" ]]; then
-        bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $PG_INSTALL_DIR $FALCONFS_INSTALL_DIR
-    fi
-    echo "PostgreSQL installed to $PG_INSTALL_DIR"
-}
-
 install_falcon_meta() {
     echo "Installing FalconFS meta ..."
-    cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install
+    cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install-falconfs \
+        FALCONFS_INSTALL_DIR="$FALCONFS_INSTALL_DIR"
     echo "FalconFS meta installed"
 
     local plugin_src=""
@@ -226,16 +185,39 @@ install_falcon_meta() {
         echo "Error: communication plugin ($COMM_PLUGIN) not built at $plugin_src" >&2
         exit 1
     fi
-    echo "copy ${COMM_PLUGIN} communication plugin to $PG_INSTALL_DIR/lib/postgresql..."
-    cp "$plugin_src" "$PG_INSTALL_DIR/lib/postgresql/"
+    echo "copy ${COMM_PLUGIN} communication plugin to $FALCON_META_INSTALL_DIR/lib/postgresql..."
+    cp "$plugin_src" "$FALCON_META_INSTALL_DIR/lib/postgresql/"
+    # 复制依赖库
+    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
+        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
+            -b "$plugin_src" \
+            -t "$FALCON_META_INSTALL_DIR/lib"
+    fi
+
     echo "${COMM_PLUGIN} communication plugin copied."
+
+    # 安装测试插件 (如果存在)
+    if [[ -f "$FALCONFS_DIR/falcon/libfalcon_meta_service_test_plugin.so" ]]; then
+        cp "$FALCONFS_DIR/falcon/libfalcon_meta_service_test_plugin.so" \
+           "$FALCON_META_INSTALL_DIR/lib/postgresql/"
+        echo "test plugin copied."
+    fi
 }
 
 install_falcon_client() {
     echo "Installing FalconFS client to $FALCON_CLIENT_INSTALL_DIR..."
+
     cd "$BUILD_DIR" && ninja install
-    if [[ "$CREATE_SOFT_LINK" == "true" ]]; then
-        bash $FALCONFS_DIR/deploy/ansible/link_third_party_to.sh $FALCON_CLIENT_INSTALL_DIR $FALCONFS_INSTALL_DIR
+
+    # 复制配置文件
+    mkdir -p "$FALCON_CLIENT_INSTALL_DIR/config"
+    cp -r "$FALCONFS_DIR/config"/* "$FALCON_CLIENT_INSTALL_DIR/config/"
+
+    # 复制依赖库
+    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
+        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
+            -b "$FALCON_CLIENT_INSTALL_DIR/bin/falcon_client" \
+            -t "$FALCON_CLIENT_INSTALL_DIR/lib"
     fi
 
     echo "FalconFS client installed to $FALCON_CLIENT_INSTALL_DIR"
@@ -244,23 +226,158 @@ install_falcon_client() {
 install_falcon_python_sdk() {
     echo "Installing FalconFS python sdk to $PYTHON_SDK_INSTALL_DIR..."
     rm -rf "$PYTHON_SDK_INSTALL_DIR"
-    cp -r "$FALCONFS_DIR/python_interface" "$PYTHON_SDK_INSTALL_DIR"
+    mkdir -p "$PYTHON_SDK_INSTALL_DIR"
+
+    # 复制 python_interface 目录内容，排除 _pyfalconfs_internal
+    for item in "$FALCONFS_DIR/python_interface"/*; do
+        base=$(basename "$item")
+        if [[ "$base" != "_pyfalconfs_internal" ]]; then
+            cp -r "$item" "$PYTHON_SDK_INSTALL_DIR/"
+        fi
+    done
+
     echo "FalconFS python sdk installed to $PYTHON_SDK_INSTALL_DIR"
 }
 
-install_deploy_scripts() {
-    echo "Installing deploy scripts to $FALCONFS_INSTALL_DIR..."
-    rm -rf "$FALCONFS_INSTALL_DIR/deploy"
-    rm -rf "$FALCONFS_INSTALL_DIR/config"
-    rsync -av --exclude='tmp' "$FALCONFS_DIR/deploy" "$FALCONFS_INSTALL_DIR"
-    rsync -av --exclude='tmp' "$FALCONFS_DIR/config" "$FALCONFS_INSTALL_DIR"
-    echo "deploy scripts installed to $FALCONFS_INSTALL_DIR"
+install_falcon_cm() {
+    echo "Installing FalconFS cluster management scripts..."
+    rm -rf "$FALCON_CM_INSTALL_DIR"
+    mkdir -p "$FALCON_CM_INSTALL_DIR"
+
+    # 从 cloud_native/falcon_cm/ 复制集群管理脚本
+    cp -r "$FALCONFS_DIR/cloud_native/falcon_cm"/* "$FALCON_CM_INSTALL_DIR/"
+
+    echo "FalconFS cluster management scripts installed"
 }
 
-clean_dist() {
-    echo "Removing installed PostgreSQL from $PG_INSTALL_DIR..."
-    rm -rf "$PG_INSTALL_DIR"
-    echo "PostgreSQL installation removed from $PG_INSTALL_DIR"
+install_falcon_cn() {
+    echo "Installing FalconFS CN scripts..."
+    rm -rf "$FALCON_CN_INSTALL_DIR"
+    mkdir -p "$FALCON_CN_INSTALL_DIR"
+
+    # 从 cloud_native/docker_build/cn/ 复制，排除 Dockerfile
+    for file in "$FALCONFS_DIR/cloud_native/docker_build/cn"/*; do
+        if [[ "$(basename "$file")" != "Dockerfile" ]]; then
+            cp -r "$file" "$FALCON_CN_INSTALL_DIR/"
+        fi
+    done
+
+    echo "FalconFS CN scripts installed"
+}
+
+install_falcon_dn() {
+    echo "Installing FalconFS DN scripts..."
+    rm -rf "$FALCON_DN_INSTALL_DIR"
+    mkdir -p "$FALCON_DN_INSTALL_DIR"
+
+    # 从 cloud_native/docker_build/dn/ 复制，排除 Dockerfile
+    for file in "$FALCONFS_DIR/cloud_native/docker_build/dn"/*; do
+        if [[ "$(basename "$file")" != "Dockerfile" ]]; then
+            cp -r "$file" "$FALCON_DN_INSTALL_DIR/"
+        fi
+    done
+
+    echo "FalconFS DN scripts installed"
+}
+
+install_falcon_store() {
+    echo "Installing FalconFS Store scripts..."
+    rm -rf "$FALCON_STORE_INSTALL_DIR"
+    mkdir -p "$FALCON_STORE_INSTALL_DIR"
+
+    # 只复制脚本文件，排除 falconfs 子目录和 Dockerfile
+    for file in "$FALCONFS_DIR/cloud_native/docker_build/store"/*; do
+        base=$(basename "$file")
+        if [[ "$base" != "Dockerfile" && "$base" != "falconfs" ]]; then
+            cp -r "$file" "$FALCON_STORE_INSTALL_DIR/"
+        fi
+    done
+
+    echo "FalconFS Store scripts installed"
+}
+
+install_falcon_regress() {
+    echo "Installing FalconFS Regress scripts..."
+    rm -rf "$FALCON_REGRESS_INSTALL_DIR"
+    mkdir -p "$FALCON_REGRESS_INSTALL_DIR"
+
+    # 复制 regress 脚本
+    for file in "$FALCONFS_DIR/cloud_native/docker_build/regress"/*; do
+        base=$(basename "$file")
+        if [[ "$base" != "Dockerfile" ]]; then
+            cp -r "$file" "$FALCON_REGRESS_INSTALL_DIR/"
+        fi
+    done
+
+    echo "FalconFS Regress scripts installed"
+}
+
+install_private_directory_test() {
+    echo "Installing private-directory-test..."
+
+    # 创建目录结构
+    rm -rf "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR"
+    mkdir -p "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin"
+    mkdir -p "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
+
+    # 复制可执行文件
+    if [[ -f "$FALCONFS_DIR/build/tests/private-directory-test/test_falcon" ]]; then
+        cp "$FALCONFS_DIR/build/tests/private-directory-test/test_falcon" \
+           "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
+    fi
+    if [[ -f "$FALCONFS_DIR/build/tests/private-directory-test/test_posix" ]]; then
+        cp "$FALCONFS_DIR/build/tests/private-directory-test/test_posix" \
+           "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
+    fi
+
+    # 复制 FalconCMIT
+    if [[ -f "$FALCONFS_DIR/build/tests/common/FalconCMIT" ]]; then
+        cp "$FALCONFS_DIR/build/tests/common/FalconCMIT" \
+           "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
+    fi
+
+    # 复制依赖库
+    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
+        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
+            -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/test_falcon" \
+            -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
+        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
+            -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/test_posix" \
+            -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
+        # 复制 FalconCMIT 依赖
+        if [[ -f "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/FalconCMIT" ]]; then
+            "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
+                -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/FalconCMIT" \
+                -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
+        fi
+    fi
+
+    # 复制脚本文件（排除 C++ 源码）
+    for file in "$FALCONFS_DIR/tests/private-directory-test"/*; do
+        base=$(basename "$file")
+        case "$base" in
+            *.sh|*.py)
+                cp "$file" "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/"
+                ;;
+        esac
+    done
+
+    # 复制 README（如果存在）
+    if [[ -f "$FALCONFS_DIR/tests/private-directory-test/README.md" ]]; then
+        cp "$FALCONFS_DIR/tests/private-directory-test/README.md" \
+           "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/"
+    fi
+
+    echo "private-directory-test installed"
+}
+
+install_deploy_scripts() {
+    echo "Installing deploy scripts to $FALCONFS_INSTALL_DIR/deploy..."
+    rm -rf "$FALCONFS_INSTALL_DIR/deploy"
+    mkdir -p "$FALCONFS_INSTALL_DIR/deploy"
+    # 复制 deploy 目录内容，排除 tmp 目录
+    rsync -av --exclude='tmp' "$FALCONFS_DIR/deploy/" "$FALCONFS_INSTALL_DIR/deploy/"
+    echo "deploy scripts installed to $FALCONFS_INSTALL_DIR/deploy"
 }
 
 print_help() {
@@ -271,7 +388,6 @@ print_help() {
         echo "Build All Components of FalconFS"
         echo ""
         echo "Subcommands:"
-        echo "  pg               Build only PostgreSQL"
         echo "  falcon           Build only FalconFS"
         echo ""
         echo "Options:"
@@ -290,18 +406,15 @@ print_help() {
         echo "Clean build artifacts and installations"
         echo ""
         echo "Targets:"
-        echo "  pg       Clean PostgreSQL build artifacts"
         echo "  falcon   Clean FalconFS build artifacts"
         echo "  test     Clean test binaries"
-        echo "  dist     Remove installed PostgreSQL from $PG_INSTALL_DIR"
         echo ""
         echo "Options:"
         echo "  -h, --help  Show this help message"
         echo ""
         echo "Examples:"
-        echo "  $0 clean           # Clean everything except installed PostgreSQL"
-        echo "  $0 clean pg       # Clean only PostgreSQL"
-        echo "  $0 clean dist     # Remove installed PostgreSQL"
+        echo "  $0 clean           # Clean everything"
+        echo "  $0 clean falcon    # Clean only FalconFS"
         ;;
     *)
         # General help information
@@ -311,7 +424,7 @@ print_help() {
         echo "  build     Build components"
         echo "  clean     Clean artifacts"
         echo "  test      Run tests"
-        echo "  install   Install PostgreSQL"
+        echo "  install   Install components"
         echo ""
         echo "Run '$0 <command> --help' for more information on a specific command"
         ;;
@@ -358,21 +471,6 @@ build)
     done
 
     case "${2:-}" in
-    pg)
-        for arg in "${@:3}"; do
-            if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
-                echo "Usage: $0 build pg [options]"
-                echo ""
-                echo "Build PostgreSQL Components"
-                echo ""
-                echo "Options:"
-                echo "  --debug    Build in debug mode"
-                echo "  --deploy   Build in deploy mode"
-                exit 0
-            fi
-        done
-        build_pg "${@:3}"
-        ;;
     falcon)
         shift 2
         while [[ $# -gt 0 ]]; do
@@ -435,23 +533,12 @@ build)
         build_falconfs
         ;;
     *)
-        build_pg "${@:2}" && install_pg && build_falconfs
+        build_falconfs
         ;;
     esac
     ;;
 clean)
     case "${2:-}" in
-    pg)
-        # Check for --help in clean pg
-        for arg in "${@:3}"; do
-            if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
-                echo "Usage: $0 clean pg"
-                echo "Clean PostgreSQL build artifacts"
-                exit 0
-            fi
-        done
-        clean_pg
-        ;;
     falcon)
         # Check for --help in clean falcon
         for arg in "${@:3}"; do
@@ -474,17 +561,6 @@ clean)
         done
         clean_tests
         ;;
-    dist)
-        # Check for --help in clean dist
-        for arg in "${@:3}"; do
-            if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
-                echo "Usage: $0 clean dist"
-                echo "Remove installed PostgreSQL from $PG_INSTALL_DIR"
-                exit 0
-            fi
-        done
-        clean_dist
-        ;;
     *)
         # Main clean command options
         while true; do
@@ -496,7 +572,7 @@ clean)
             *) break ;;
             esac
         done
-        clean_pg && clean_falconfs
+        clean_falconfs
         ;;
     esac
     ;;
@@ -527,20 +603,28 @@ test)
     ;;
 install)
     case "${2:-}" in
-    pg)
-        install_pg
-        ;;
     falcon)
         install_falcon_meta
         install_falcon_client
         install_falcon_python_sdk
+        install_falcon_cm
+        install_falcon_cn
+        install_falcon_dn
+        install_falcon_store
+        install_falcon_regress
+        install_private_directory_test
         install_deploy_scripts
         ;;
     *)
-        install_pg
         install_falcon_meta
         install_falcon_client
         install_falcon_python_sdk
+        install_falcon_cm
+        install_falcon_cn
+        install_falcon_dn
+        install_falcon_store
+        install_falcon_regress
+        install_private_directory_test
         install_deploy_scripts
     esac
     ;;
