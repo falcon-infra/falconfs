@@ -1,0 +1,43 @@
+FROM docker.1ms.run/ubuntu:24.04
+RUN apt-get -y update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
+
+ENV TZ=Asia/Shanghai \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+RUN apt-get install -y vim fuse gdb pstack tar net-tools curl python3 iputils-ping fio iperf3 openssh-server sshpass net-tools bc sudo
+RUN apt-get install -y libprotobuf-dev
+
+# 添加 PostgreSQL 官方软件源
+RUN apt-get install -y curl ca-certificates gnupg lsb-release
+RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+RUN echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list
+RUN apt-get -y update
+
+# 安装 PostgreSQL 客户端（用于连接 CN/DN）
+RUN apt-get install -y postgresql-client-17 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 后续步骤变更频繁，使用构建缓存破坏参数避免缓存影响
+ARG CACHE_BUST
+RUN echo "Cache bust: ${CACHE_BUST:-no-bust}"
+
+# 复制完整安装包到统一路径 (构建上下文是 docker_build/)
+COPY falconfs /usr/local/falconfs/
+
+RUN mkdir /usr/local/falconfs/falcon_store/log && mkdir /usr/local/falconfs/falcon_store/cache && mkdir /mnt/falcon/
+
+ENV CONFIG_FILE=/usr/local/falconfs/falcon_store/config.json
+ENV FALCONFS_INSTALL_DIR=/usr/local/falconfs
+ENV NODE_TYPE=store
+
+# 设置脚本执行权限
+RUN chmod +x /usr/local/falconfs/falcon_store/docker-entrypoint.sh && \
+    chmod +x /usr/local/falconfs/falcon_store/start.sh && \
+    chmod +x /usr/local/falconfs/falcon_store/stop.sh && \
+    chmod +x /usr/local/falconfs/falcon_store/check_liveness.sh
+
+EXPOSE 50039
+ENTRYPOINT ["/usr/local/falconfs/falcon_store/docker-entrypoint.sh"]

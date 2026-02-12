@@ -1,7 +1,7 @@
 include(GoogleTest)
 
 enable_testing()
-link_directories(${POSTGRES_SRC_DIR}/src/interfaces/libpq)
+link_directories(${POSTGRES_LIB_DIR})
 
 # ==================== FalconCMIT =================
 add_executable(FalconCMIT

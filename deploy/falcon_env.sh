@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 
-SCRIPT_DIR="$(readlink -f "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")")"
-
-export FALCONFS_HOME="${SCRIPT_DIR}/.."
-echo "Setting FALCONFS_HOME to ${FALCONFS_HOME}"
-export CONFIG_FILE=$FALCONFS_HOME/config/config.json
 export FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
-export PATH=$FALCONFS_INSTALL_DIR/bin:$PATH
-
-export PG_INSTALL_DIR="$(pg_config --libdir)/.."
+echo "Setting FALCONFS_INSTALL_DIR to ${FALCONFS_INSTALL_DIR}"
+export CONFIG_FILE=$FALCONFS_INSTALL_DIR/falcon_client/config/config.json
+export PATH=$FALCONFS_INSTALL_DIR/falcon_client/bin:"$(pg_config --bindir)":$PATH
+export LD_LIBRARY_PATH=/usr/local/obs/lib:"$(pg_config --libdir)":$LD_LIBRARY_PATH

@@ -17,6 +17,21 @@ RUN apt-get install -y gcc-14 g++-14 && \
 
 # install dependencies
 RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-dev libzstd-dev libpython3-dev  bison flex m4 autoconf automake pkg-config libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils
+
+# 从源码编译安装 PostgreSQL 17
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
+
+RUN wget -O- "${PG_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd /tmp/postgresql-${PG_VERSION} && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && make install && \
+    rm -rf /tmp/postgresql-${PG_VERSION}
+
+# 设置 PostgreSQL 环境变量
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib \
+    PGDATA=/usr/local/pgsql/data
 RUN mv /usr/include/jsoncpp/json /usr/include/json && rm -rf /usr/include/jsoncpp
 
 # install prometheus
