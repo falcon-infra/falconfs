@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <securec.h>
+
 #include <atomic>
 #include <chrono>
 #include <cmath>

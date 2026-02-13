@@ -59,6 +59,7 @@ int FalconStore::InitStore()
 
     dataPath = rootPath;
     if (persistToStorage) {
+#ifdef WITH_OBS_STORAGE
         storage = OBSStorage::GetInstance();
 
         ret = storage->Init();
@@ -66,6 +67,11 @@ int FalconStore::InitStore()
             FALCON_LOG(LOG_ERROR) << "storage init fail " << ret;
             return ret;
         }
+#else
+        ret = FALCON_ERR_UNSUPPORTED;
+        FALCON_LOG(LOG_ERROR) << "This binary does not support OBS storage " << ret;
+        return ret;
+#endif
     }
 
     READ_BIGFILE_SIZE = bigFileReadSize;
@@ -306,7 +312,6 @@ int FalconStore::WriteFile(OpenInstance *openInstance, const char *buf, size_t s
 int FalconStore::ReadFile(OpenInstance *openInstance, char *buf, size_t size, off_t offset)
 {
     int ret = 0;
-    int err = 0;
     FalconReadBuffer falconBuf{buf, size};
 
     /* first persist the current write stream to let data to be read */
@@ -352,21 +357,10 @@ int FalconStore::ReadFile(OpenInstance *openInstance, char *buf, size_t size, of
         /* read small files */
         std::shared_lock<std::shared_mutex> lock(openInstance->fileMutex);
         if (offset + size <= (size_t)openInstance->readBufferSize) {
-            err = memcpy_s(falconBuf.ptr, falconBuf.size, openInstance->readBuffer.get() + offset, size);
-            if (err != 0) {
-                FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                return -EIO;
-            }
+            (void)memcpy(falconBuf.ptr, openInstance->readBuffer.get() + offset, size);
             return size;
         } else if (offset < (ssize_t)openInstance->readBufferSize) {
-            err = memcpy_s(falconBuf.ptr,
-                           falconBuf.size,
-                           openInstance->readBuffer.get() + offset,
-                           openInstance->readBufferSize - offset);
-            if (err != 0) {
-                FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                return -EIO;
-            }
+            (void)memcpy(falconBuf.ptr, openInstance->readBuffer.get() + offset, openInstance->readBufferSize - offset);
             return openInstance->readBufferSize - offset;
         }
     }
@@ -440,11 +434,7 @@ int FalconStore::RandomRead(FalconReadBuffer buf, OpenInstance *openInstance, of
             free(alignedBuf);
             return ret;
         }
-        int err = memcpy_s(buf.ptr, buf.size, alignedBuf, buf.size);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            ret = -EIO;
-        }
+        (void)memcpy(buf.ptr, alignedBuf, buf.size);
         free(alignedBuf);
         return ret;
     }
@@ -1272,11 +1262,7 @@ int FalconStore::StatFS(struct statvfs *vfsbuf)
         // falconIOClient shouldn't be null
         if (falconIOClient != nullptr) {
             struct StatFSBuf remoteVfsBuf;
-            errno_t err = memset_s(&remoteVfsBuf, sizeof(remoteVfsBuf), 0, sizeof(remoteVfsBuf));
-            if (err != 0) {
-                FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                return -EIO;
-            }
+            (void)memset(&remoteVfsBuf, 0, sizeof(remoteVfsBuf));
             std::string rpcEndpoint = StoreNode::GetInstance()->GetRpcEndPoint(nodeId);
             ret = falconIOClient->StatFS(rpcEndpoint, &remoteVfsBuf);
             if (ret != 0) {
@@ -1308,11 +1294,7 @@ int FalconStore::StatFSForBrpc(const std::string &path,
         return 0;
     }
     struct statvfs vfsBuf;
-    errno_t err = memset_s(&vfsBuf, sizeof(vfsBuf), 0, sizeof(vfsBuf));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return -EIO;
-    }
+    (void)memset(&vfsBuf, 0, sizeof(vfsBuf));
     int ret = statvfs(dataPath.c_str(), &vfsBuf);
     if (ret == 0) {
         fblocks = vfsBuf.f_blocks;

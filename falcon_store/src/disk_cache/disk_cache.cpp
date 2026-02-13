@@ -99,11 +99,7 @@ int DiskCache::Walk(std::string dirPath)
             continue;
         }
         struct stat st;
-        errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return RETURN_ERROR;
-        }
+        (void)memset(&st, 0, sizeof(st));
         std::string filePath = dirPath + "/" + f->d_name;
         stat(filePath.c_str(), &st);
         CacheItem cache;
@@ -124,11 +120,7 @@ int DiskCache::Walk(std::string dirPath)
 int DiskCache::GetCurFreeRatio()
 {
     struct statfs diskInfo;
-    errno_t err = memset_s(&diskInfo, sizeof(diskInfo), 0, sizeof(diskInfo));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return RETURN_ERROR;
-    }
+    (void)memset(&diskInfo, 0, sizeof(diskInfo));
     int32_t ret = statfs(rootDir.c_str(), &diskInfo);
     if (ret != 0) {
         FALCON_LOG(LOG_ERROR) << "Get disk(" << rootDir << ") stat ret " << ret << ": " << strerror(errno);

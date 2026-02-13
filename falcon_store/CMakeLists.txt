@@ -16,18 +16,20 @@ target_include_directories(FalconStore PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include/
     ${COMMON_SRC_PATH}/include/
     ${POSTGRES_INCLUDE_DIR}
-    /usr/local/obs/include
     ${PROJECT_SOURCE_DIR}/falcon_client/src/include/
 )
 
-set(OBS_LIB_DIR "/usr/local/obs/lib/")
-file(GLOB OBS_LIBS "${OBS_LIB_DIR}/*.so")
-
 target_link_libraries(FalconStore PUBLIC
     pthread
-    ${OBS_LIBS}
     ${BRPC_LIBRARIES}
     ${DYNAMIC_LIB}
     fmt
     jsoncpp
 )
+
+set(OBS_LIB_DIR "/usr/local/obs/lib/")
+file(GLOB OBS_LIBS "${OBS_LIB_DIR}/*.so")
+if(WITH_OBS_STORAGE)
+    target_include_directories(FalconStore PUBLIC /usr/local/obs/include)
+    target_link_libraries(FalconStore PUBLIC ${OBS_LIBS})
+endif()
