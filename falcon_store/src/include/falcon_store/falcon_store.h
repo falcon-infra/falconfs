@@ -5,7 +5,7 @@
 #pragma once
 
 #include <fcntl.h>
-#include <securec.h>
+
 #include <atomic>
 #include <cstring>
 #include <memory>

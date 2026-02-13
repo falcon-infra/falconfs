@@ -4,7 +4,7 @@
 
 #include "conf/falcon_config.h"
 
-#include <securec.h>
+#include <cstring>
 #include <fstream>
 
 #include "falcon_code.h"
@@ -47,11 +47,7 @@ int32_t FalconConfig::ReadJsonFile(const std::string &file)
     }
 
     char realFilePath[PATH_MAX];
-    errno_t err = memset_s(realFilePath, sizeof(realFilePath), 0, sizeof(realFilePath));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return FALCON_IEC_INIT_CONF_FAILED;
-    }
+    (void)memset(realFilePath, 0, sizeof(realFilePath));
 
     auto formatRet = realpath(file.c_str(), realFilePath);
     if (formatRet == nullptr) {
