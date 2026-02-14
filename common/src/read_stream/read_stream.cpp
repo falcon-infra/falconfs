@@ -70,11 +70,7 @@ ssize_t Pipe::WaitPop(char *buf, size_t popSize, bool &end)
     }
 
     ssize_t readSize = std::min(popSize, (size_t)size - index);
-    errno_t err = memcpy_s(buf, popSize, mem.get() + index, readSize);
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return -EIO;
-    }
+    (void)memcpy(buf, mem.get() + index, readSize);
     index += readSize;
     if (index == size) {
         /* all data popped in pipe */

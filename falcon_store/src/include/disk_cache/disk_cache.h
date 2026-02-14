@@ -5,7 +5,7 @@
 #pragma once
 
 #include <dirent.h>
-#include <securec.h>
+
 #include <atomic>
 #include <list>
 #include <mutex>

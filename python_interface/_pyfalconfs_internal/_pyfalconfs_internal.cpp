@@ -149,10 +149,7 @@ static int Create(const char *path, int oflags, uint64_t& fd)
     FalconStats::GetInstance().stats[META_CREATE].fetch_add(1);
     StatFuseTimer t;
     struct stat st;
-    errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-    if (err != 0) {
-        return -err;
-    }
+    (void)memset(&st, 0, sizeof(st));
     int ret = FalconCreate(pathStr, fd, oflags, &st);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
@@ -211,10 +208,7 @@ static int Open(const char *path, int oflags, uint64_t& fd)
     FalconStats::GetInstance().stats[META_OPEN].fetch_add(1);
     StatFuseTimer t;
     struct stat st;
-    errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-    if (err != 0) {
-        return -err;
-    }
+    (void)memset(&st, 0, sizeof(st));
     int ret = FalconOpen(path, oflags, fd, &st);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
@@ -383,14 +377,9 @@ static int Stat(const char *path, struct stat *stbuf)
         char middle_component_flag = *(lastSlash + 2);
 
         FalconStats::GetInstance().stats[META_LOOKUP].fetch_add(1);
-        errno_t err = memmove_s((char *)(lastSlash + 1),
-                                strlen(lastSlash + 1) + 1,
-                                (char *)(lastSlash + 3),
-                                strlen(lastSlash + 3) + 1);
-        if (err != 0) 
-        {
-            return -err;
-        }
+        (void)memmove((char *)(lastSlash + 1),
+                      (char *)(lastSlash + 3),
+                      strlen(lastSlash + 3) + 1);
         if (middle_component_flag == '1') 
         {
             stbuf->st_mode = 040777;

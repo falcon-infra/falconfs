@@ -5,7 +5,7 @@
 #define FUSE_USE_VERSION 26
 
 #include <execinfo.h>
-#include <securec.h>
+#include <cstring>
 #include <string.h>
 #include <unistd.h>
 #include <atomic>
@@ -42,13 +42,9 @@ int DoGetAttr(const char *path, struct stat *stbuf)
         char middle_component_flag = *(lastSlash + 2);
 
         FalconStats::GetInstance().stats[META_LOOKUP].fetch_add(1);
-        errno_t err = memmove_s((char *)(lastSlash + 1),
-                                strlen(lastSlash + 1) + 1,
-                                (char *)(lastSlash + 3),
-                                strlen(lastSlash + 3) + 1);
-        if (err != 0) {
-            return -err;
-        }
+        (void)memmove((char *)(lastSlash + 1),
+                      (char *)(lastSlash + 3),
+                      strlen(lastSlash + 3) + 1);
         if (middle_component_flag == '1') {
             stbuf->st_mode = 040777;
             return 0;
@@ -83,10 +79,7 @@ int DoOpen(const char *path, struct fuse_file_info *fi)
     int oflags = fi->flags;
     uint64_t fd = -1;
     struct stat st;
-    errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-    if (err != 0) {
-        return -err;
-    }
+    (void)memset(&st, 0, sizeof(st));
     int ret = FalconOpen(path, oflags, fd, &st);
     fi->fh = fd;
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
@@ -152,10 +145,7 @@ int DoCreate(const char *path, mode_t /*mode*/, struct fuse_file_info *fi)
     uint64_t fd = 0;
     int oflags = fi->flags;
     struct stat st;
-    errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-    if (err != 0) {
-        return -err;
-    }
+    (void)memset(&st, 0, sizeof(st));
     int ret = FalconCreate(path, fd, oflags, &st);
     fi->fh = fd;
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;

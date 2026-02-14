@@ -401,11 +401,7 @@ int FalconReadDir(const std::string &path, void *buf, FalconFuseFiller filler, o
     }
     for (size_t i = dirOpenInstance->offset; i < dirOpenInstance->partialEntryVec.size(); i++) {
         struct stat st;
-        errno_t err = memset_s(&st, sizeof(st), 0, sizeof(st));
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return PROGRAM_ERROR;
-        }
+        (void)memset(&st, 0, sizeof(st));
 
         st.st_mode = static_cast<mode_t>(dirOpenInstance->fileModes[i]);
         if (filler(buf, dirOpenInstance->partialEntryVec[i].c_str(), &st, idx++)) {
@@ -542,11 +538,7 @@ int FalconRename(const std::string &srcName, const std::string &dstName)
 int FalconRenamePersist(const std::string &srcName, const std::string &dstName)
 {
     struct stat stbuf;
-    errno_t err = memset_s(&stbuf, sizeof(stbuf), 0, sizeof(stbuf));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return PROGRAM_ERROR;
-    }
+    (void)memset(&stbuf, 0, sizeof(stbuf));
 
     int ret = 0;
     ret = FalconGetStat(srcName, &stbuf);
