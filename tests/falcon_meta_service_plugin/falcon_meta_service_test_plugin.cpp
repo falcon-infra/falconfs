@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-#include "hcom_comm_adapter/hcom_meta_service.h"
+#include "hcom_comm_adapter/falcon_meta_service.h"
 #include "plugin/falcon_plugin_framework.h"
 #include "plugin/falcon_plugin_loader.h"
 
@@ -26,7 +26,7 @@ static const int TEST_TIMEOUT_MS = 10000;
 
 // ==================== 全局状态 ====================
 
-static HcomMetaService *g_meta_service = nullptr;
+static FalconMetaService *g_meta_service = nullptr;
 static int g_test_passed = 0;
 static int g_test_failed = 0;
 static int g_test_skipped = 0;
@@ -2342,8 +2342,8 @@ int plugin_work(FalconPluginData *data)
     printf("\n[FalconMetaServiceTestPlugin] plugin_work() called\n");
     fflush(stdout);
 
-    g_meta_service = HcomMetaService::Instance();
-    printf("[FalconMetaServiceTestPlugin] HcomMetaService instance ready\n");
+    g_meta_service = FalconMetaService::Instance();
+    printf("[FalconMetaServiceTestPlugin] FalconMetaService instance ready\n");
     fflush(stdout);
 
     // 运行所有测试
