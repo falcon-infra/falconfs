@@ -4,6 +4,8 @@
 
 #pragma once
 
+#ifdef WITH_OBS_STORAGE
+
 #include <atomic>
 #include <cstdlib>
 
@@ -60,3 +62,5 @@ class OBSStorage : public Storage {
     int CopyObject(const std::string &fromPath, const std::string &toPath) override;
     int StatFs(struct statvfs *vfsbuf) override;
 };
+
+#endif

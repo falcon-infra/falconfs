@@ -96,11 +96,7 @@ void PrintStats(std::string_view mountPath, std::stop_token stoken)
     std::remove(statPath.c_str());
     std::ofstream outFile;
     size_t currentStats[STATS_END];
-    errno_t err = memset_s(currentStats, sizeof(size_t) * STATS_END, 0, sizeof(size_t) * STATS_END);
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return;
-    }
+    (void)memset(currentStats, 0, sizeof(size_t) * STATS_END);
 
     while (!stoken.stop_requested()) {
         for (int i = 0; i < STATS_END; i++) {

@@ -2,11 +2,13 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 
+#ifdef WITH_OBS_STORAGE
+
 #include "storage/obs_storage.h"
 
 #include <fcntl.h>
 #include <math.h>
-#include <securec.h>
+#include <cstring>
 #include <time.h>
 #include <unistd.h>
 
@@ -235,11 +237,7 @@ int PutBufCallBack(int bufferSize, char *buffer, void *callbackData)
     if (data->bufferSize) {
         toRead = ((data->bufferSize > (unsigned)bufferSize) ? (unsigned)bufferSize : data->bufferSize);
 
-        errno_t err = memcpy_s(buffer, bufferSize, data->putBuffer + data->curOffset, toRead);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return OBS_STATUS_AbortedByCallback;
-        }
+        (void)memcpy(buffer, data->putBuffer + data->curOffset, toRead);
         FalconStats::GetInstance().stats[OBJ_PUT] += toRead;
     }
     data->bufferSize -= toRead;
@@ -268,12 +266,7 @@ obs_status GetObjectDataCallback(int bufferSize, const char *buffer, void *callb
 
     if (data->destBuffer != nullptr) {
         FalconStats::GetInstance().stats[OBJ_GET] += bufferSize;
-        ssize_t destMax = data->destBuffSize - data->offset;
-        errno_t err = memcpy_s(data->destBuffer + data->offset, destMax < 0 ? 0 : destMax, buffer, bufferSize);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return OBS_STATUS_AbortedByCallback;
-        }
+        (void)memcpy(data->destBuffer + data->offset, buffer, bufferSize);
     }
     if (data->fd != -1) {
         FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] += bufferSize;
@@ -291,11 +284,7 @@ ssize_t OBSStorage::ReadObject(const std::string &objectKey, uint64_t offset, ui
     InitObsOptions(option);
 
     obs_object_info objectInfo;
-    errno_t err = memset_s(&objectInfo, sizeof(objectInfo), 0, sizeof(objectInfo));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return -1;
-    }
+    (void)memset(&objectInfo, 0, sizeof(objectInfo));
 
     objectInfo.key = const_cast<char *>(objectKey.c_str());
     objectInfo.version_id = nullptr;
@@ -308,11 +297,7 @@ ssize_t OBSStorage::ReadObject(const std::string &objectKey, uint64_t offset, ui
     data.destBuffSize = size;
 
     obs_get_conditions getcondition;
-    err = memset_s(&getcondition, sizeof(getcondition), 0, sizeof(getcondition));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return -1;
-    }
+    (void)memset(&getcondition, 0, sizeof(getcondition));
 
     init_get_properties(&getcondition);
     // The starting position of the reading
@@ -475,12 +460,7 @@ obs_status OBSStorage::ObsUploadFile(const std::string &objectKey, const std::st
     InitObsOptions(option);
 
     obs_upload_file_configuration uploadFileInfo;
-    errno_t err =
-        memset_s(&uploadFileInfo, sizeof(obs_upload_file_configuration), 0, sizeof(obs_upload_file_configuration));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return OBS_STATUS_OutOfMemory;
-    }
+    (void)memset(&uploadFileInfo, 0, sizeof(obs_upload_file_configuration));
     uploadFileInfo.check_point_file = nullptr;
     uploadFileInfo.enable_check_point = 1;
     uploadFileInfo.part_size = UPLOAD_SLICE_SIZE;
@@ -524,11 +504,7 @@ int OBSStorage::DeleteObject(const std::string &objectKey)
     InitObsOptions(option);
 
     obs_object_info objectInfo;
-    errno_t err = memset_s(&objectInfo, sizeof(obs_object_info), 0, sizeof(obs_object_info));
-    if (err != 0) {
-        FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-        return -1;
-    }
+    (void)memset(&objectInfo, 0, sizeof(obs_object_info));
     objectInfo.key = const_cast<char *>(objectKey.c_str());
     obs_response_handler responseHandler = {&NormalPropertiesCallback, &NormalCompleteCallback};
     NormalBackType attrBackData;
@@ -712,3 +688,5 @@ void OBSStorage::InitObsOptions(obs_options &option)
     FALCON_LOG(LOG_DEBUG) << "InitObsOptions done";
     FALCON_LOG(LOG_DEBUG) << "host is " << hostName;
 }
+
+#endif

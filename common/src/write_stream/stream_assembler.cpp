@@ -26,14 +26,8 @@ int WriteStream::Push(FalconWriteBuffer buf, off_t offset, uint64_t currentSize)
                 FALCON_LOG(LOG_ERROR) << "aligned_alloc failed: " << strerror(errno);
                 return -ENOMEM;
             }
-            int err = memcpy_s(alignedBuf, 512 * alignedNum, buf.ptr, buf.size);
-            int ret = 0;
-            if (err != 0) {
-                FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                ret = -EIO;
-            } else {
-                ret = PersistToFile(alignedBuf, buf.size, offset, currentSize);
-            }
+            (void)memcpy(alignedBuf, buf.ptr, buf.size);
+            int ret = PersistToFile(alignedBuf, buf.size, offset, currentSize);
             free(alignedBuf);
             return ret;
         }

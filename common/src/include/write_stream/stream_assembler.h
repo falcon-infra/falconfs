@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <securec.h>
+
 #include <unistd.h>
 #include <algorithm>
 #include <memory>
@@ -35,11 +35,7 @@ class ExpandableMemory {
         if (!Expand(appendSize)) {
             return false;
         }
-        errno_t err = memcpy_s(ptr.get() + size, capacity - size, buf, appendSize);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return false;
-        }
+        (void)memcpy(ptr.get() + size, buf, appendSize);
         size += appendSize;
         return true;
     }
@@ -49,11 +45,7 @@ class ExpandableMemory {
             return false;
         }
 
-        errno_t err = memcpy_s(ptr.get() + offset, capacity - offset, fromReplace.Get().get(), size);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return false;
-        }
+        (void)memcpy(ptr.get() + offset, fromReplace.Get().get(), size);
         size = std::max(size, offset + size);
         return true;
     }
@@ -68,12 +60,7 @@ class ExpandableMemory {
             }
 
             if (ptr.get()) {
-                errno_t err = memcpy_s(tmpBuf, capacity, ptr.get(), size);
-                if (err != 0) {
-                    FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                    free(tmpBuf);
-                    return false;
-                }
+                (void)memcpy(tmpBuf, ptr.get(), size);
             }
 
             ptr = std::shared_ptr<char>(tmpBuf, free);
@@ -91,12 +78,7 @@ class ExpandableMemory {
             }
 
             if (ptr.get()) {
-                errno_t err = memcpy_s(tmpBuf, capacity, ptr.get(), size);
-                if (err != 0) {
-                    FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-                    free(tmpBuf);
-                    return false;
-                }
+                (void)memcpy(tmpBuf, ptr.get(), size);
             }
             ptr = std::shared_ptr<char>(tmpBuf, free);
         }
@@ -139,11 +121,7 @@ class FixMemory {
             FALCON_LOG(LOG_ERROR) << "FixMemory append data too large";
             return false;
         }
-        errno_t err = memcpy_s(mem + size, capacity - size, buf, appendSize);
-        if (err != 0) {
-            FALCON_LOG(LOG_ERROR) << "Secure func failed: " << err;
-            return false;
-        }
+        (void)memcpy(mem + size, buf, appendSize);
         size += appendSize;
         return true;
     }

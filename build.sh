@@ -8,6 +8,7 @@ WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
 WITH_RDMA=false
 WITH_PROMETHEUS=false
+WITH_OBS_STORAGE=false
 COMM_PLUGIN="brpc"
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
@@ -92,7 +93,7 @@ build_comm_plugin() {
         ;;
     hcom)
         echo "Building hcom communication plugin..."
-        cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom
+        cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom WITH_OBS_STORAGE=$WITH_OBS_STORAGE
         echo "hcom communication plugin build complete."
 
         # Copy test plugins to plugins directory for hcom
@@ -136,6 +137,7 @@ build_falconfs() {
         -DWITH_ZK_INIT="$WITH_ZK_INIT" \
         -DWITH_RDMA="$WITH_RDMA" \
         -DWITH_PROMETHEUS="$WITH_PROMETHEUS" \
+        -DWITH_OBS_STORAGE="$WITH_OBS_STORAGE" \
         -DBUILD_TEST=$BUILD_TEST &&
         cd "$BUILD_DIR" && ninja
 
@@ -496,6 +498,9 @@ build)
             --with-prometheus)
                 WITH_PROMETHEUS=true
                 ;;
+            --with-obs-storage)
+                WITH_OBS_STORAGE=true
+                ;;
             --comm-plugin)
                 if [[ -z "${2:-}" ]]; then
                     echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
@@ -521,6 +526,7 @@ build)
                 echo "  --with-zk-init       Enable Zookeeper initialization for containerized deployment"
                 echo "  --with-rdma          Enable RDMA support"
                 echo "  --with-prometheus    Enable Prometheus metrics"
+                echo "  --with-obs-storage   Enable OBS storage"
                 exit 0
                 ;;
             *)

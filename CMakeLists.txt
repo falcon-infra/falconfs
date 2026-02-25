@@ -29,6 +29,11 @@ if(WITH_PROMETHEUS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_PROMETHEUS")
 endif()
 
+option(WITH_OBS_STORAGE "Enable OBS storage" OFF)
+if(WITH_OBS_STORAGE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_OBS_STORAGE")
+endif()
+
 add_compile_options(
     -Wno-deprecated
     -Wno-deprecated-declarations
@@ -114,8 +119,11 @@ set(BRPC_SRC ${CMAKE_BINARY_DIR}/brpc_io.pb.cc)
 set(BRPC_HEADER ${CMAKE_BINARY_DIR}/brpc_io.pb.h)
 
 include(${CMAKE_SOURCE_DIR}/cmake/Flatbuffers.cmake)
-include_directories(${FLATBUFFERS_GENERATED_DIR} ${CMAKE_BINARY_DIR} /usr/local/obs/include)
+include_directories(${FLATBUFFERS_GENERATED_DIR} ${CMAKE_BINARY_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/remote_connection_def)
+if(WITH_OBS_STORAGE)
+    include_directories(/usr/local/obs/include)
+endif()
 
 # ==================== Common Sources =================
 set(COMMON_SRC_PATH "${PROJECT_SOURCE_DIR}/common/src")
