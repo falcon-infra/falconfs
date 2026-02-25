@@ -1,9 +1,9 @@
 {
   "main": {
-    "falcon_log_dir": "/opt/log",
+    "falcon_log_dir": "/usr/local/falconfs/falcon_store/log",
     "falcon_log_level": "WARNING",
     "falcon_log_max_size_mb": 10,
-    "falcon_cache_root": "/opt/falcon",
+    "falcon_cache_root": "/usr/local/falconfs/falcon_store/cache",
     "falcon_dir_num": 101,
     "falcon_block_size": 524288,
     "falcon_read_big_file_size": 2097152,

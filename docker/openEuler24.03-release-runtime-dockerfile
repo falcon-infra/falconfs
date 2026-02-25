@@ -3,77 +3,47 @@ FROM openeuler/openeuler:24.03-lts-sp2
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
 
 RUN rm -f /etc/yum.repos.d/*.repo
+COPY openEuler.repo /etc/yum.repos.d/openEuler.repo
 
 RUN dnf clean all && \
     dnf makecache && \
     dnf groupinstall "Development Tools" -y && \
     dnf reinstall -y glibc-common && \
     dnf install -y \
+    pcre \
     readline-devel gflags-devel glog-devel leveldb-devel \
-    openssl-devel fuse-devel \
+    openssl-devel postgresql-devel fuse-devel \
     fmt-devel fio libcurl-devel jq \
     snappy-devel gperftools-devel libunwind-devel gtest-devel gmock-devel \
     rdma-core-devel ninja-build cmake python3-devel \
-    libzstd-devel xz-devel libxml2-devel expat-devel jansson-devel \
+    zstd-devel xz-devel libxml2-devel expat-devel jansson-devel \
     systemd-devel libffi-devel \
     autoconf automake libtool cppunit-devel \
-    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks && \
+    protobuf-devel protobuf-compiler flatbuffers-devel flatbuffers-compiler jsoncpp-devel thrift-devel \
+    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks \
+    python3-requests python3-psycopg2 python3-kazoo && \
     dnf clean all
-
-# 从源码编译安装 PostgreSQL 17
-ARG PG_VERSION=17.2
-ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
-
-RUN wget --no-check-certificate -O- "${PG_DOWNLOAD_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/postgresql-${PG_VERSION}" && \
-    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/postgresql-${PG_VERSION}"
-
-# 设置 PostgreSQL 环境变量
-ENV PATH=/usr/local/pgsql/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/pgsql/lib:$LD_LIBRARY_PATH \
-    PGDATA=/usr/local/pgsql/data
 
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && \
-    echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local.conf && \
-    echo "/usr/local/obs/lib" > /etc/ld.so.conf.d/obs.conf
+    echo "/usr/local/lib64" >> /etc/ld.so.conf.d/local.conf
 
-ARG THRIFT_VERSION=0.19.0
-ARG THRIFT_URL=https://archive.apache.org/dist/thrift/${THRIFT_VERSION}/thrift-${THRIFT_VERSION}.tar.gz
+# Fast-fail check: validate release RPM install before long source builds.
+ARG RPM_PRECHECK=1
+COPY falconfs-rpm-release.rpm /tmp/falconfs-rpm-release.rpm
+RUN if [ "${RPM_PRECHECK}" = "1" ]; then \
+        export PATH=/usr/sbin:/usr/bin:/sbin:/bin && \
+        unset LD_LIBRARY_PATH && \
+        rm -f /etc/ld.so.conf.d/obs.conf && \
+        dnf install -y /tmp/falconfs-rpm-release.rpm && \
+        dnf remove -y falconfs-release && \
+        dnf clean all; \
+    fi && \
+    rm -f /tmp/falconfs-rpm-release.rpm
 
-RUN wget --no-check-certificate -O- "${THRIFT_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/thrift-${THRIFT_VERSION}" && \
-    ./configure --with-cpp \
-                --without-python \
-                --without-java \
-                --without-go \
-                --without-lua \
-                --without-nodejs \
-                --without-erlang && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/thrift-${THRIFT_VERSION}"
-
-ARG PROTOBUF_VERSION=3.12.4
-ARG PROTOBUF_URL=https://github.com/protocolbuffers/protobuf/archive/refs/tags/v${PROTOBUF_VERSION}.tar.gz
-
-RUN wget --no-check-certificate -O- "${PROTOBUF_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/protobuf-${PROTOBUF_VERSION}" && \
-    ./autogen.sh && \
-    CXXFLAGS="-fPIC" ./configure && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/protobuf-${PROTOBUF_VERSION}"
-
-ARG BRPC_VERSION=1.12.1
+ARG BRPC_VERSION=1.14.1
 ARG BRPC_URL=https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz
 
 RUN wget --no-check-certificate -O- "${BRPC_URL}" | tar -xz -C /tmp && \
@@ -84,6 +54,7 @@ RUN wget --no-check-certificate -O- "${BRPC_URL}" | tar -xz -C /tmp && \
           -DWITH_RDMA=ON \
           -DCMAKE_INSTALL_PREFIX=/usr/local \
           -DCMAKE_PREFIX_PATH=/usr/local \
+          -DCMAKE_CXX_FLAGS="-Wno-error -Wno-deprecated-declarations" \
           .. && \
     ninja && \
     ninja install && \
@@ -105,39 +76,39 @@ RUN wget --no-check-certificate -O- "${PROMETHEUS_URL}" | tar -xz -C /tmp && \
     ldconfig && \
     rm -rf "/tmp/prometheus-cpp-with-submodules"
 
-ARG FLATBUFFERS_VERSION=25.2.10
-ARG FLATBUFFERS_URL=https://github.com/google/flatbuffers/archive/refs/tags/v${FLATBUFFERS_VERSION}.tar.gz
-RUN wget --no-check-certificate -O- "${FLATBUFFERS_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/flatbuffers-${FLATBUFFERS_VERSION}" && \
-    mkdir build && cd build && \
-    cmake -GNinja .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    ninja && \
-    ninja install && \
-    ldconfig && \
-    rm -rf "/tmp/flatbuffers-${FLATBUFFERS_VERSION}"
-
-ARG JSONCPP_VERSION=1.9.6
-ARG JSONCPP_URL=https://github.com/open-source-parsers/jsoncpp/archive/refs/tags/${JSONCPP_VERSION}.tar.gz
-
-RUN wget --no-check-certificate -O- "${JSONCPP_URL}" | tar -xz -C /tmp && \
-    cd "/tmp/jsoncpp-${JSONCPP_VERSION}" && \
-    sed -i 's/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD 17)/' CMakeLists.txt && \
-    mkdir build && cd build && \
-    cmake .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    rm -rf "/tmp/jsoncpp-${JSONCPP_VERSION}"
-
 ARG ZK_VERSION=3.9.1
 ARG ZK_URL=https://archive.apache.org/dist/zookeeper/zookeeper-${ZK_VERSION}/apache-zookeeper-${ZK_VERSION}.tar.gz
+ARG HTTP_PROXY_HOST=""
+ARG HTTP_PROXY_PORT=""
+ARG HTTP_PROXY_USER=""
+ARG HTTP_PROXY_PASS=""
 
 RUN wget --no-check-certificate -O- "${ZK_URL}" | tar -xz -C /tmp && \
     cd "/tmp/apache-zookeeper-${ZK_VERSION}" && \
+    (which hostname || (echo 'echo localhost' > /usr/bin/hostname && chmod +x /usr/bin/hostname)) && \
+    if [ -n "$HTTP_PROXY_HOST" ]; then \
+        mkdir -p ~/.m2 && \
+        printf '<?xml version="1.0" encoding="UTF-8"?>\n\
+<settings>\n\
+  <mirrors>\n\
+    <mirror>\n\
+      <id>huaweicloud</id>\n\
+      <mirrorOf>central</mirrorOf>\n\
+      <url>https://repo.huaweicloud.com/repository/maven/</url>\n\
+    </mirror>\n\
+  </mirrors>\n\
+  <proxies>\n\
+    <proxy>\n\
+      <active>true</active>\n\
+      <protocol>http</protocol>\n\
+      <host>%s</host>\n\
+      <port>%s</port>\n\
+      <username>%s</username>\n\
+      <password>%s</password>\n\
+    </proxy>\n\
+  </proxies>\n\
+</settings>' "$HTTP_PROXY_HOST" "$HTTP_PROXY_PORT" "$HTTP_PROXY_USER" "$HTTP_PROXY_PASS" > ~/.m2/settings.xml; \
+    fi && \
     mvn compile -DskipTests -pl zookeeper-jute -T 1C && \
     cd zookeeper-client/zookeeper-client-c && \
     autoreconf -if && \
@@ -145,7 +116,7 @@ RUN wget --no-check-certificate -O- "${ZK_URL}" | tar -xz -C /tmp && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
-    rm -rf "/tmp/apache-zookeeper-${ZK_VERSION}"
+    rm -rf ~/.m2/settings.xml "/tmp/apache-zookeeper-${ZK_VERSION}"
 
 ARG OBS_VERSION=3.24.12
 ARG SPDLOG_VERSION=1.12.0
@@ -169,10 +140,31 @@ RUN wget --no-check-certificate -O- "${OBS_DOWNLOAD_URL}" | tar -xz -C /tmp && \
     rm -f /usr/local/obs/lib/libcurl.so* && \
     ldconfig && \
     rm -rf "/tmp/huaweicloud-sdk-c-obs-${OBS_VERSION}"
-    
+
+# Build and install PostgreSQL from source to /usr/local/pgsql for FalconFS runtime scripts.
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
+RUN wget --no-check-certificate -O- "${PG_DOWNLOAD_URL}" | tar -xz -C /tmp && \
+    cd "/tmp/postgresql-${PG_VERSION}" && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/postgresql-${PG_VERSION}"
+
 ENV OBS_INSTALL_PREFIX=/usr/local/obs
 ENV CPLUS_INCLUDE_PATH=${OBS_INSTALL_PREFIX}/include:/usr/local/include:${CPLUS_INCLUDE_PATH}
 ENV C_INCLUDE_PATH=${OBS_INSTALL_PREFIX}/include:/usr/local/include:${C_INCLUDE_PATH}
-ENV LD_LIBRARY_PATH=${OBS_INSTALL_PREFIX}/lib:${LD_LIBRARY_PATH}
-ENV PATH=/usr/local/bin:/usr/local/sbin:${PATH}
+ENV PATH=/usr/local/pgsql/bin:/usr/local/bin:/usr/local/sbin:${PATH}
 ENV USER=root
+
+# Install release rpm built from falconfs.source.spec
+COPY falconfs-rpm-release.rpm /tmp/falconfs-rpm-release.rpm
+RUN export PATH=/usr/sbin:/usr/bin:/sbin:/bin && \
+    unset LD_LIBRARY_PATH && \
+    rm -f /etc/ld.so.conf.d/obs.conf && \
+    dnf install -y /tmp/falconfs-rpm-release.rpm && \
+    rm -f /tmp/falconfs-rpm-release.rpm && \
+    dnf clean all && \
+    /usr/bin/mkdir -p /usr/local/falconfs/data && \
+    /usr/bin/chown -R falconMeta:falconMeta /usr/local/falconfs/data

@@ -15,7 +15,8 @@ Router::Router(const ServerIdentifier &coordinator)
 {
     int succeed = FetchShardTable(coordinatorConn);
     if (succeed != 0)
-        throw std::runtime_error("FetchShardTable failed. Error code = " + std::to_string(succeed));
+        throw std::runtime_error("FetchShardTable failed. Error code = " + std::to_string(succeed) +
+                                 ", coordinator info:" + coordinator.ip + ":" + std::to_string(coordinator.port));
 }
 
 int Router::FetchShardTable(std::shared_ptr<Connection> conn)

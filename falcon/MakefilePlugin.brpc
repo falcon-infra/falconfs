@@ -16,7 +16,7 @@ PROTO_SRC = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.proto, $(BRPC_COMM_ADAPTER
 PROTO_HEAD = $(patsubst %.cc, %.h, $(PROTO_SRC))
 PROTO_OBJS = $(patsubst %.cc, %.o, $(PROTO_SRC))
 
-BRPC_LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf 
+BRPC_LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf
 BPRC_LDFLAGS_BRPC = -lbrpc
 BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog
 
@@ -36,10 +36,10 @@ ${BRPC_PLUGIN_LIB_NAME}:$(BRPC_PLUGIN_CXX_OBJS) $(PROTO_OBJS)
 	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(BRPC_PLUGIN_LINK_LIB)
 
 $(BRPC_PLUGIN_CXX_OBJS):%.o:%.cpp $(PROTO_SRC)
-	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
 $(PROTO_OBJS):%o:%cc $(PROTO_SRC)
-	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
 $(PROTO_SRC): $(PROTO_FILE)
 	mkdir -p $(BRPC_COMM_ADAPTER)/proto

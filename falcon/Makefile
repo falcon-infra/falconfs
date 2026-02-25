@@ -56,6 +56,17 @@ ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
+
+# 覆盖 install 规则，安装到 FALCONFS 目录
+ifdef FALCONFS_INSTALL_DIR
+.PHONY: install-falconfs
+install-falconfs: all
+	$(MKDIR_P) '$(FALCONFS_INSTALL_DIR)/falcon_meta/lib/postgresql'
+	$(MKDIR_P) '$(FALCONFS_INSTALL_DIR)/falcon_meta/share/extension'
+	$(INSTALL_SHLIB) $(shlib) '$(FALCONFS_INSTALL_DIR)/falcon_meta/lib/postgresql/$(shlib)'
+	$(INSTALL_DATA) $(EXTENSION).control '$(FALCONFS_INSTALL_DIR)/falcon_meta/share/extension/'
+	$(INSTALL_DATA) $(DATA) '$(FALCONFS_INSTALL_DIR)/falcon_meta/share/extension/'
+endif
 else
 subdir = contrib/falcon
 top_builddir = ../..

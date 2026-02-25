@@ -39,6 +39,6 @@ fi
 [ -d "$CACHE_PATH" ] && rm -rf "$CACHE_PATH"
 
 # 4. Clean log (idempotent)
-[ -f "${FALCONFS_HOME}/build/falcon_client.log" ] && rm -f "${FALCONFS_HOME}/build/falcon_client.log"
+[ -f "${DIR}/falcon_client.log" ] && rm -f "${DIR}/falcon_client.log"
 
 exit 0

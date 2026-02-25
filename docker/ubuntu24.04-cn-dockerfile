@@ -1,50 +1,63 @@
-FROM ghcr.io/falcon-infra/falconfs-base-builder:v0.1.0-alpha-ubuntu24.04 AS builder
+# 第一阶段：构建阶段
+ARG BASE_BUILDER_IMAGE=127.0.0.1:5000/falconfs-base-builder:latest
+FROM ${BASE_BUILDER_IMAGE} AS builder
 
-# 运行时镜像
-FROM ubuntu:24.04
-RUN apt update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
-    apt install -y locales && locale-gen en_US.UTF-8
+# 复制本地源码
+COPY . /root/code/falconfs/
+
+# 使用 docker_build.sh 构建 FalconFS
+WORKDIR /root/code/falconfs/cloud_native/docker_build
+RUN ./docker_build.sh
+
+# 第二阶段：运行时
+FROM 127.0.0.1:5000/ubuntu:24.04
+RUN apt-get update && echo -e "Asia\nShanghai" | apt-get install -y tzdata && \
+    apt-get install -y locales && locale-gen en_US.UTF-8
 
 ENV TZ=Asia/Shanghai \
     LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     LC_ALL=en_US.UTF-8
-RUN apt update && apt install -y gdb vim tar python3 python3-pip libreadline-dev liblz4-dev libzstd-dev libssl-dev
 
-# 创建非root用户
-ARG USER_NAME=falconMeta
-RUN useradd -m -s /bin/bash $USER_NAME
-USER $USER_NAME
+RUN apt-get update && apt-get install -y gdb vim tar python3 python3-pip \
+    libreadline-dev liblz4-dev libzstd-dev libssl-dev numactl
 
-# 复制文件到用户目录
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/metadb/ /home/falconMeta/metadb/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /output/cn/falcon_cm/ /home/falconMeta/falcon_cm/
+# 从 builder 复制 PostgreSQL（需要 pg_config 来安装 psycopg2）
+COPY --from=builder /usr/local/pgsql /usr/local/pgsql
 
-# 复制脚本文件
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/docker-entrypoint.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/start.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/stop.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/check_liveness.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/rm_logs.sh /home/falconMeta/
-COPY --chown=$USER_NAME:$USER_NAME --from=builder /root/code/falconfs/cloud_native/docker_build/cn/postgresql_falcon.conf /home/falconMeta/
+# 设置 PostgreSQL 路径以便 pg_config 可用
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib
 
-# 创建必要的目录
-RUN mkdir -p /home/falconMeta/readiness/ /home/falconMeta/data/
-
-# 环境变量
-ENV PATH=/home/falconMeta/metadb/bin/:$PATH
-ENV LD_LIBRARY_PATH=/home/falconMeta/metadb/lib/
-ENV TMOUT=0
-RUN echo PATH=$PATH >> ~/.bashrc
-
-# 安装Python依赖
+# 安装 Python 依赖
 RUN pip3 install --break-system-packages psycopg2 && \
     pip3 install --break-system-packages kazoo && \
     pip3 install --break-system-packages requests
 
-# 设置脚本权限
-RUN chmod +x /home/falconMeta/docker-entrypoint.sh
+# 创建非root用户
+ARG USER_NAME=falconMeta
+RUN useradd -m -s /bin/bash $USER_NAME
 
-# 设置工作目录和入口点
-WORKDIR /home/falconMeta
-ENTRYPOINT ["/home/falconMeta/docker-entrypoint.sh"]
+# 从 builder 复制完整的 falconfs 安装包到 /usr/local/falconfs/
+COPY --from=builder --chown=$USER_NAME:$USER_NAME /root/code/falconfs/cloud_native/docker_build/falconfs /usr/local/falconfs/
+
+# 创建必要的目录
+RUN mkdir -p /usr/local/falconfs/readiness/ /usr/local/falconfs/data/
+
+# 设置环境变量（使用源码编译的 PostgreSQL 路径）
+ENV PATH=/usr/local/pgsql/bin:/usr/local/falconfs/falcon_meta/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib:/usr/local/falconfs/falcon_meta/lib \
+    FALCONFS_INSTALL_DIR=/usr/local/falconfs \
+    NODE_TYPE=cn \
+    TMOUT=0
+
+# 设置脚本权限
+RUN chmod +x /usr/local/falconfs/falcon_cn/docker-entrypoint.sh && \
+    chmod +x /usr/local/falconfs/falcon_cn/start.sh && \
+    chmod +x /usr/local/falconfs/falcon_cn/rm_logs.sh && \
+    chmod +x /usr/local/falconfs/falcon_cn/check_liveness.sh
+
+USER $USER_NAME
+WORKDIR /usr/local/falconfs
+EXPOSE 5432
+ENTRYPOINT ["/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]

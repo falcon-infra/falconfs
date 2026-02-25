@@ -16,6 +16,7 @@ FALCON_ZK_NUM=3
 FALCON_STORE_NUM=1
 
 function uninstall_cluster() {
+    cd "${DIR}"
     # unmount fuse filesystem before reinstall
     for ((idx = 1; idx <= FALCON_STORE_NUM; idx++)); do
         # do umount
@@ -72,48 +73,55 @@ function clean_run_data() {
 
 function rebuild_falcon() {
     # rebuild falconfs using "cloud_native/docker_build/docker_build.sh" manually.
-    cd "${FALCON_CODE_PATH}"/third_party/postgres
-    git restore .
-    cd "${FALCON_CODE_PATH}"
-    #git pull --rebase
+    # cd "${FALCON_CODE_PATH}"/third_party/postgres
+    # git restore .
+    # cd "${FALCON_CODE_PATH}"
+    # #git pull --rebase
 
-    up_flag=$(docker ps -a --filter "name=falcon-dev" --format "{{.Names}}\t{{.Status}}" | awk "/Up/" | wc -l)
-    if [ "$up_flag" -eq 0 ]; then
-        docker start falcon-dev 
-    fi
-    docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
-        /root/code/falconfs/cloud_native/docker_build/docker_build.sh
+    # up_flag=$(docker ps -a --filter "name=falcon-dev" --format "{{.Names}}\t{{.Status}}" | awk "/Up/" | wc -l)
+    # if [ "$up_flag" -eq 0 ]; then
+    #     docker start falcon-dev
+    # fi
+    # docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
+    #     /root/code/falconfs/cloud_native/docker_build/docker_build.sh
+    # Build FalconFS directly from repository scripts.
+    # Some environments do not provide falconenv.sh.
+    "${FALCON_CODE_PATH}"/cloud_native/docker_build/docker_build.sh
+    return 0
 }
 
 function rebuild_images() {
-    # rebuild cn image
-    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build/cn
-    docker buildx build --platform linux/amd64 \
+    # rebuild cn image (构建上下文是 docker_build/)
+    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build
+    docker build --platform linux/amd64 \
+        --build-arg CACHE_BUST=$(date +%s) \
         -t localhost:5000/falconfs-cn:ubuntu24.04 \
-        -f Dockerfile \
+        -f Dockerfile.cn \
         . \
         --push
+
     # rebuild dn image
-    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build/dn
-    docker buildx build --platform linux/amd64 \
+    docker build --platform linux/amd64 \
+        --build-arg CACHE_BUST=$(date +%s) \
         -t localhost:5000/falconfs-dn:ubuntu24.04 \
-        -f Dockerfile \
+        -f Dockerfile.dn \
         . \
         --push
 
     # rebuild store image
-    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build/store
-    docker buildx build --platform linux/amd64 \
+    docker build --platform linux/amd64 \
+        --build-arg CACHE_BUST=$(date +%s) \
         -t localhost:5000/falconfs-store:ubuntu24.04 \
-        -f Dockerfile \
+        -f Dockerfile.store \
         . \
         --push
 
     # rebuild regress image
-    cd "${FALCON_CODE_PATH}"/tests/regress/
-    docker buildx build --platform linux/amd64 \
+    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build/
+    docker build --platform linux/amd64 \
+        --build-arg CACHE_BUST=$(date +%s) \
         -t localhost:5000/falconfs-regress:ubuntu24.04 \
-        -f Dockerfile \
+        -f Dockerfile.regress \
         . \
         --push
 }
@@ -134,6 +142,7 @@ function clear_images() {
 }
 
 function run_regress() {
+    cd "${DIR}"
     # restart containers
     docker-compose -f "${1}" up -d
 
@@ -163,7 +172,7 @@ function run_regress() {
 
     # mount fuse.falcon_client filesystem in store container
     for ((idx = 1; idx <= FALCON_STORE_NUM; idx++)); do
-        docker exec -d falcon-store-${idx} /root/start.sh
+        docker exec -d falcon-store-${idx} /usr/local/falconfs/falcon_store/start.sh
     done
 
     # wait for filesystem of falcon store mounted
@@ -178,7 +187,7 @@ function run_regress() {
     done
     echo "fuse.falcon_client file system ready, cost ${waited_times} second."
     META_SERVER_IP=$(docker exec falcon-zk-1 zkCli.sh -server localhost:2181 get /falcon/leaders/cn | grep ":5432" | sed 's/:5432//')
-    docker exec -e META_SERVER_IP="${META_SERVER_IP}" falcon-regress-1 /root/falconfs/start.sh
+    docker exec -e META_SERVER_IP="${META_SERVER_IP}" falcon-regress-1 /usr/local/falconfs/falcon_regress/start.sh
 }
 
 # check input parameter
@@ -197,7 +206,7 @@ rebuild_falcon
 rebuild_images
 
 # uninstall cluster, avoid clear_images failed
-uninstall_cluster docker-compose-triple.yaml
+uninstall_cluster docker-compose-single.yaml
 clear_images
 
 compose_files=('docker-compose-single.yaml' 'docker-compose-dual.yaml' 'docker-compose-triple.yaml')

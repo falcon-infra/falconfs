@@ -149,24 +149,25 @@ dockerd &
 ```
 
 2. Build FalconFS images
-The dockerfile in the path ```cd cloud_native/docker_build/```
+The dockerfiles are in the `cloud_native/docker_build/` directory.
+Build from this directory using `-f` to specify the Dockerfile.
 
 - build the CN image
 ```
-cd cn
-docker build -t falcon-cn .
+cd cloud_native/docker_build
+docker build -t falcon-cn -f Dockerfile.cn .
 ```
 
 - build the DN image
 ```
-cd dn
-docker build -t falcon-dn .
+cd cloud_native/docker_build
+docker build -t falcon-dn -f Dockerfile.dn .
 ```
 
-- build the store iamge
+- build the store image
 ```
-cd store
-docker build -t falcon-store .
+cd cloud_native/docker_build
+docker build -t falcon-store -f Dockerfile.store .
 ```
 
 3. Push images to docker registry

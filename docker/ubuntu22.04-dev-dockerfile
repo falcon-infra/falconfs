@@ -2,7 +2,22 @@ FROM ghcr.io/falcon-infra/dev:ubuntu22.04
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
-RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev libpq-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev libboost-system-dev libboost-thread-dev
+RUN apt update && apt install -y libreadline-dev bison flex libgflags-dev libgoogle-glog-dev libleveldb-dev libssl-dev libthrift-dev fuse libfuse-dev libzookeeper-mt-dev libfmt-dev fio git libcurl4-openssl-dev rsync
+
+# 从源码编译安装 PostgreSQL 17
+ARG PG_VERSION=17.2
+ARG PG_DOWNLOAD_URL=https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz
+
+RUN wget -O- "${PG_DOWNLOAD_URL}" | tar -xzvf - -C /tmp && \
+    cd /tmp/postgresql-${PG_VERSION} && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j$(nproc) && make install && \
+    rm -rf /tmp/postgresql-${PG_VERSION}
+
+# 设置 PostgreSQL 环境变量
+ENV PATH=/usr/local/pgsql/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/pgsql/lib:$LD_LIBRARY_PATH \
+    PGDATA=/usr/local/pgsql/data
 
 # brpc
 RUN apt install -y libgflags-dev libssl-dev libsnappy-dev libgoogle-glog-dev libgoogle-perftools-dev libunwind-dev libgtest-dev libgmock-dev autoconf libtool libibverbs-dev
