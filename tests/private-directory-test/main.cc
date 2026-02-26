@@ -1,6 +1,8 @@
 #include "dfs.h"
 #include "DBarrier.h"
 
+#include "log/logging.h"
+
 using namespace std;
 
 string root_dir;
@@ -55,7 +57,8 @@ void print_stat() {
   double throughput = (double)(op_done - last_op_done) / (elapsed_time - last_elapsed_time);
   double avg_latency = (double)(latency_done - last_latency_done) / (op_done - last_op_done);
 
-  cout << fmt::format("Round {}, Time {}, OPs {}, Current Throughput {}, Current Average Latency {}", round_idx, elapsed_time, op_done, throughput, avg_latency) << std::endl;
+  FALCON_LOG(LOG_INFO) << fmt::format("Round {}, Time {}, OPs {}, Current Throughput {}, Current Average Latency {}",
+                                      round_idx, elapsed_time, op_done, throughput, avg_latency);
 
   last_elapsed_time = elapsed_time;
   last_op_done = op_done;
@@ -73,7 +76,8 @@ void print_final_stat() {
 
   double elapsed_time = (end_time.tv_sec - start_time.tv_sec) + (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
   double avg_latency = (double)latency_done / op_done;
-  cout << fmt::format("[FINISH] Round {}, Time {}, OPs {}, Throughput {}, Average Latency {}", round_idx, elapsed_time, op_done, (double)op_done / elapsed_time, avg_latency) << std::endl;
+  FALCON_LOG(LOG_INFO) << fmt::format("[FINISH] Round {}, Time {}, OPs {}, Throughput {}, Average Latency {}",
+                                      round_idx, elapsed_time, op_done, (double)op_done / elapsed_time, avg_latency);
 }
 
 auto thread_func = [](int thread_id) {
@@ -84,7 +88,7 @@ auto thread_func = [](int thread_id) {
   
   if(sched_setaffinity(0, sizeof(cpu_set_t), &cpus) == -1)
   {
-      printf("warning: could not set CPU affinity, continuing...\n");
+      FALCON_LOG(LOG_WARNING) << "warning: could not set CPU affinity, continuing...";
   }
 
   string new_path = fmt::format("{}client_{}_{}/", root_dir, client_id, wait_port);
@@ -103,18 +107,20 @@ auto thread_func = [](int thread_id) {
 int main(int argc, char **argv) {
 
   if (argc != 11) {
-    cerr << "Usage: " << argv[0] << " <ROOT DIR (end with /)> <FILES PER DIR> <THREAD NUMBER> <ROUND INDEX> <CLIENT ID> <MOUNT_PER_CLIENT> <CLIENT CACHE SIZE> <WAIT PORT> <FILE SIZE> <CLIENT NUMBER>" << std::endl;
+    FALCON_LOG(LOG_ERROR) << "Usage: " << argv[0]
+                          << " <ROOT DIR (end with /)> <FILES PER DIR> <THREAD NUMBER> <ROUND INDEX> <CLIENT ID>"
+                          << " <MOUNT_PER_CLIENT> <CLIENT CACHE SIZE> <WAIT PORT> <FILE SIZE> <CLIENT NUMBER>";
     return -1;
   }
 
-  cout << "Warning: integer overflows if directory tree is too large (more than 2 billion directories)" << std::endl;
+  FALCON_LOG(LOG_WARNING) << "Warning: integer overflows if directory tree is too large (more than 2 billion directories)";
 
   cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
   if (cpu_count < 1) {
     perror("sysconf");
     exit(EXIT_FAILURE);
   }
-  cout << "CPU count: " << cpu_count << std::endl;
+  FALCON_LOG(LOG_INFO) << "CPU count: " << cpu_count;
 
   root_dir = argv[1];
   files_per_dir = atoi(argv[2]);
@@ -143,10 +149,10 @@ int main(int argc, char **argv) {
     return ret;
   }
 
-  cout << "Start opening files" << std::endl;
-  cout << "Thread number * client number: " << thread_num << std::endl;
-  cout << "Wait time: " << wait_time << "s" << std::endl;
-  cout << "File num: " << file_num << std::endl;
+  FALCON_LOG(LOG_INFO) << "Start opening files";
+  FALCON_LOG(LOG_INFO) << "Thread number * client number: " << thread_num;
+  FALCON_LOG(LOG_INFO) << "Wait time: " << wait_time << "s";
+  FALCON_LOG(LOG_INFO) << "File num: " << file_num;
 
   memset((void *)op_count, 0, sizeof(op_count));
   memset((void *)latency_count, 0, sizeof(latency_count));

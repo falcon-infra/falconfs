@@ -3,6 +3,10 @@ include(GoogleTest)
 enable_testing()
 link_directories(${POSTGRES_LIB_DIR})
 
+include_directories(
+    ${PROJECT_SOURCE_DIR}/common/src/include
+)
+
 # ==================== FalconStoreUT =================
 add_executable(FalconStoreUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_store/test_falcon_store.cpp
@@ -44,10 +48,12 @@ gtest_discover_tests(FalconStoreThreadedUT)
 # ==================== FileLockUT =================
 add_executable(FileLockUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_store/test_file_lock.cpp
+    ${PROJECT_SOURCE_DIR}/common/src/log/logging.cpp
 )
 target_link_libraries(FileLockUT
     FalconStore
     gtest
+    ${DYNAMIC_LIB}
 )
 
 gtest_discover_tests(FileLockUT)
@@ -96,10 +102,12 @@ gtest_discover_tests(NodeUT)
 
 add_executable(DiskCacheUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_store/test_disk_cache.cpp
+    ${PROJECT_SOURCE_DIR}/common/src/log/logging.cpp
 )
 target_link_libraries(DiskCacheUT
     FalconStore
     gtest
+    ${DYNAMIC_LIB}
 )
 
 gtest_discover_tests(DiskCacheUT)

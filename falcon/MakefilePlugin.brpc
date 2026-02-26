@@ -7,8 +7,17 @@ BRPC_PLUGIN_CXX_OBJS += \
 BRPC_PLUGIN_C_OBJS += \
 	$(patsubst $(brpc_plugin_srcdir)/%.c,$(brpc_plugin_srcdir)/%.o,$(wildcard $(brpc_plugin_srcdir)/*.c))
 
+COMMON_LOG_SRC = $(falcon_srcdir)/../common/src/log/logging.cpp
+COMMON_INIT_SRC = $(falcon_srcdir)/../common/src/init/falcon_init.cpp
+COMMON_CONF_SRCS = $(falcon_srcdir)/../common/src/conf/falcon_config.cpp \
+		   $(falcon_srcdir)/../common/src/conf/property_key.cpp
+BRPC_PLUGIN_CXX_OBJS += $(patsubst %.cpp,%.o,$(COMMON_LOG_SRC) $(COMMON_INIT_SRC) $(COMMON_CONF_SRCS))
+
 REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
 BRPC_COMM_ADAPTER = $(falcon_srcdir)/brpc_comm_adapter
+
+PG_CONFIG ?= pg_config
+PG_INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
 
 PROTO_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/proto$$')
 PROTO_FILE = $(wildcard $(PROTO_DIR)/*.proto)
@@ -18,17 +27,19 @@ PROTO_OBJS = $(patsubst %.cc, %.o, $(PROTO_SRC))
 
 BRPC_LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf
 BPRC_LDFLAGS_BRPC = -lbrpc
-BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog
+BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog -ljsoncpp
 
 BRPC_PLUGIN_CPPFLAGS = -I./include -I./brpc_comm_adapter/proto  \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I$(PG_INCLUDEDIR_SERVER) \
+			  -I$(falcon_srcdir)/../common/src/include \
 			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include
 
 BRPC_PLUGIN_LINK_LIB = $(BPRC_LDFLAGS_BRPC) $(BRPC_LDFLAGS_PROTO) $(BRPC_LDFLAGS_DEPENDENCIES)
 
 BRPC_PLUGIN_LIB_NAME = libbrpcplugin.so
 
-CXXFLAGS=-Wall -Wextra -O2 -fPIC
+CXXFLAGS=-Wall -Wextra -O2 -fPIC -std=c++20
 
 all: ${BRPC_PLUGIN_LIB_NAME}
 

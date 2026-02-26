@@ -17,6 +17,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
+#include "log/logging.h"
+
 #define MAXLINE 1024
 
 using std::mutex;
@@ -33,7 +35,7 @@ public:
 	int wait_on_port(int port)
 	{
 		// https://www.geeksforgeeks.org/udp-server-client-implementation-c/
-        printf("Waiting on port %d\n", port);
+        FALCON_LOG_PRINTF(LOG_INFO, "Waiting on port %d\n", port);
 
 		int sockfd;
 		char buffer[MAXLINE];
@@ -130,7 +132,7 @@ public:
 		// The first waiter needs to listen to UDP.
 		if (myfirst) {
 			udp.wait_on_port(port);
-			printf("receive signal\n");
+			FALCON_LOG_PRINTF(LOG_INFO, "receive signal\n");
 			runnable = true;
 			return;
 		}

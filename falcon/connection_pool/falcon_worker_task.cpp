@@ -11,6 +11,7 @@
 
 extern "C" {
 #include "utils/error_code.h"
+#include "utils/error_log.h"
 #include "utils/utils_standalone.h"
 }
 
@@ -39,11 +40,11 @@ void SingleWorkerTask::DoWork(PGconn *conn,
     int requestServiceCount = m_job->GetReqServiceCnt();
     uint64_t sharedParamDataAddrShift = FalconShmemAllocatorMalloc(m_allocator, requestParamSize);
     if (sharedParamDataAddrShift == 0) {
-        printf("Shmem of connection pool is exhausted, requestParamSize: %zu. There may be "
-               "several reasons, 1) shmem size is too small, 2) allocate too much memory "
-               "once exceed FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE.",
-               requestParamSize);
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED(
+            "Shmem of connection pool is exhausted, requestParamSize: %zu. There may be "
+            "several reasons, 1) shmem size is too small, 2) allocate too much memory "
+            "once exceed FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE.",
+            requestParamSize);
         throw std::runtime_error("memory exceed limit.");
     }
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(m_allocator, sharedParamDataAddrShift);
@@ -230,11 +231,11 @@ void BatchWorkerTask::DoWork(PGconn *conn,
     int64_t signature = FalconShmemAllocatorGetUniqueSignature(m_allocator);
     uint64_t sharedParamDataAddrShift = FalconShmemAllocatorMalloc(m_allocator, totalRequestParamDataSize);
     if (sharedParamDataAddrShift == 0) {
-        printf("Shmem of connection pool is exhausted, totalParamSize: %u. There may be "
-               "several reasons, 1) shmem size is too small, 2) allocate too much memory "
-               "once exceed FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE.",
-               totalRequestParamDataSize);
-        fflush(stdout);
+        FALCON_ELOG_THREAD_SAFE_EXTENDED(
+            "Shmem of connection pool is exhausted, totalParamSize: %u. There may be "
+            "several reasons, 1) shmem size is too small, 2) allocate too much memory "
+            "once exceed FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE.",
+            totalRequestParamDataSize);
         throw std::runtime_error("memory exceed limit.");
     }
 

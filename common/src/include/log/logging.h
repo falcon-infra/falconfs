@@ -6,6 +6,8 @@
 
 #include <iostream>
 #include <ostream>
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -167,3 +169,32 @@ class FalconLog {
     uint32_t reservedTime; // unit : h
     std::jthread cleanLogfileThread;
 };
+
+inline void FalconLogPrintfInternal(const char *file, int line, FalconLogLevel level, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int len = std::vsnprintf(nullptr, 0, fmt, args_copy);
+    va_end(args_copy);
+    if (len < 0) {
+        va_end(args);
+        FALCON_LOG_CM(file, line, level) << "printf format error: " << fmt;
+        return;
+    }
+    std::string buf;
+    buf.resize(static_cast<size_t>(len) + 1);
+    std::vsnprintf(buf.data(), buf.size(), fmt, args);
+    va_end(args);
+    if (!buf.empty() && buf.back() == '\0') {
+        buf.pop_back();
+    }
+    while (!buf.empty() && (buf.back() == '\n' || buf.back() == '\r')) {
+        buf.pop_back();
+    }
+    FALCON_LOG_CM(file, line, level) << buf;
+}
+
+#define FALCON_LOG_PRINTF(level, fmt, ...) \
+    FalconLogPrintfInternal(FILENAME_, __LINE__, FalconLogLevel::level, (fmt), ##__VA_ARGS__)

@@ -6,6 +6,8 @@
 #include <vector>
 #include <filesystem>
 
+#include "log/logging.h"
+
 extern "C" {
 #include "plugin/falcon_plugin_framework.h"
 }
@@ -14,7 +16,7 @@ class PluginFrameworkUT : public testing::Test {
 public:
     static void SetUpTestSuite()
     {
-        std::cout << "Calling PluginFrameworkUT SetUpTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling PluginFrameworkUT SetUpTestSuite!";
 
         // Initialize test plugin paths - try multiple possible locations
         std::vector<std::string> possible_paths = {
@@ -38,7 +40,7 @@ public:
 
     static void TearDownTestSuite()
     {
-        std::cout << "Calling PluginFrameworkUT TearDownTestSuite!" << std::endl;
+        FALCON_LOG(LOG_INFO) << "Calling PluginFrameworkUT TearDownTestSuite!";
     }
 
     void SetUp() override {}

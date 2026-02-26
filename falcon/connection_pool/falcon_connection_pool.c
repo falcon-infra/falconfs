@@ -60,8 +60,8 @@ void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg)
                                                  ALLOCSET_DEFAULT_MINSIZE,
                                                  ALLOCSET_DEFAULT_INITSIZE,
                                                  ALLOCSET_DEFAULT_MAXSIZE);
-    elog(LOG, "FalconDaemonConnectionPoolProcessMain: pid = %d", getpid());
-    elog(LOG, "FalconDaemonConnectionPoolProcessMain: wait init.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemonConnectionPoolProcessMain: pid = %d", getpid());
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemonConnectionPoolProcessMain: wait init.");
     bool falconHasBeenLoad = false;
     while (true) {
         StartTransactionCommand();
@@ -75,12 +75,12 @@ void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg)
     do {
         sleep(1);
     } while (RecoveryInProgress());
-    elog(LOG, "FalconDaemonConnectionPoolProcessMain: init finished.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemonConnectionPoolProcessMain: init finished.");
 
     // PostPortNumber need using both here and falcon_run_pooler_server_func, so set to global variable FalconPGPort
     FalconPGPort = PostPortNumber;
     RunConnectionPoolServer();
-    elog(LOG, "FalconDaemonConnectionPoolProcessMain: connection pool server stopped.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemonConnectionPoolProcessMain: connection pool server stopped.");
     return;
 }
 
@@ -88,7 +88,7 @@ static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS)
 {
     int save_errno = errno;
 
-    elog(LOG, "FalconDaemonConnectionPoolProcessSigTermHandler: get sigterm.");
+    FALCON_ELOG_LOG_EXTENDED("FalconDaemonConnectionPoolProcessSigTermHandler: get sigterm.");
     got_SIGTERM = true;
 
     DestroyPGConnectionPool();
@@ -130,27 +130,29 @@ static void StartCommunicationSever()
 {
     /* Load communication plugin */
     if (FalconCommunicationPluginPath == NULL) {
-        elog(
-            ERROR,
-            "Communication plugin not provide, please check the falcon_communication.plugin_path in postgresql.conf. ");
+        FALCON_ELOG_ERROR_EXTENDED(
+            PROGRAM_ERROR,
+            "Communication plugin not provide, please check the falcon_communication.plugin_path in postgresql.conf.");
         return;
     }
-    elog(LOG, "Using plugin %s start CommunicationSever.", FalconCommunicationPluginPath);
-// MARK:Use RTLD_GLOBAL so symbols from the comm plugin are visible
-// to secodary plugins loaded later by the comm plugin
+    FALCON_ELOG_LOG_EXTENDED("Using plugin %s start CommunicationSever.", FalconCommunicationPluginPath);
+    /* Use RTLD_GLOBAL so symbols from the comm plugin are visible
+    to secodary plugins loaded later by the comm plugin */
     falcon_comm_dl_handle = dlopen(FalconCommunicationPluginPath, RTLD_LAZY | RTLD_GLOBAL);
     if (!falcon_comm_dl_handle) {
-        elog(ERROR,
-             "Failed to load plugin in background worker: %s, error: %s",
-             FalconCommunicationPluginPath,
-             dlerror());
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR,
+                                   "Failed to load plugin in background worker: %s, error: %s",
+                                   FalconCommunicationPluginPath,
+                                   dlerror());
         return;
     }
 
     comm_work_func = (falcon_plugin_start_comm_func_t)dlsym(falcon_comm_dl_handle, FALCON_PLUGIN_START_COMM_FUNC_NAME);
     comm_cleanup_func = (falcon_plugin_stop_comm_func_t)dlsym(falcon_comm_dl_handle, FALCON_PLUGIN_STOP_COMM_FUNC_NAME);
     if (!comm_work_func || !comm_cleanup_func) {
-        elog(ERROR, "Plugin %s missing required functions (work/cleanup)", FalconCommunicationPluginPath);
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR,
+                                   "Plugin %s missing required functions (work/cleanup)",
+                                   FalconCommunicationPluginPath);
         dlclose(falcon_comm_dl_handle);
         return;
     }
@@ -159,12 +161,15 @@ static void StartCommunicationSever()
     int ret =
         comm_work_func(FalconDispatchMetaJob2PGConnectionPool, FalconCommunicationServerIp, FalconConnectionPoolPort);
     if (ret != 0) {
-        elog(ERROR, "Plugin work function returned %d: %s", ret, FalconCommunicationPluginPath);
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR,
+                                   "Plugin work function returned %d: %s",
+                                   ret,
+                                   FalconCommunicationPluginPath);
         dlclose(falcon_comm_dl_handle);
         return;
     }
     /* Cleanup */
-    elog(LOG, "Background worker stopping: %s", FalconCommunicationPluginPath);
+    FALCON_ELOG_LOG_EXTENDED("Background worker stopping: %s", FalconCommunicationPluginPath);
     comm_cleanup_func();
 
     dlclose(falcon_comm_dl_handle);
@@ -175,7 +180,7 @@ void RunConnectionPoolServer(void)
     // start PGConnectionPool wait for dispatch jobs
     bool ret = StartPGConnectionPool();
     if (!ret) {
-        elog(ERROR, "RunConnectionPoolServer: StartPGConnectionPool failed.");
+        FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "RunConnectionPoolServer: StartPGConnectionPool failed.");
     }
 
     // start Communication Server receive jobs and dispatch jobs to PGConnectionPool

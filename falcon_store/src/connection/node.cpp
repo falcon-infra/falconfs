@@ -20,7 +20,7 @@ int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
 {
     std::unique_lock<std::shared_mutex> nodeLock(nodeMutex);
     nodeId = initNodeId;
-    std::cout << "falcon_store nodeId = " << nodeId << std::endl;  
+    FALCON_LOG(LOG_INFO) << "falcon_store nodeId = " << nodeId;
     initStatus = 0;
     int i = 0;
     for (auto&& rpcEndPoint : clusterView | std::views::split(',') | std::views::transform([](auto &&rng) {
