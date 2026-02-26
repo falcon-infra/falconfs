@@ -136,21 +136,21 @@ void OBSStorage::DoRetry(obs_status status, int &retry)
 void common_error_handle(const obs_error_details *error)
 {
     if (error && error->message) {
-        printf("Error Message: \n  %s\n", error->message);
+        FALCON_LOG_PRINTF(LOG_ERROR, "Error Message: \n  %s\n", error->message);
     }
     if (error && error->resource) {
-        printf("Error resource: \n  %s\n", error->resource);
+        FALCON_LOG_PRINTF(LOG_ERROR, "Error resource: \n  %s\n", error->resource);
     }
     if (error && error->further_details) {
-        printf("Error further_details: \n  %s\n", error->further_details);
+        FALCON_LOG_PRINTF(LOG_ERROR, "Error further_details: \n  %s\n", error->further_details);
     }
     if (error && error->extra_details_count) {
         int i;
         for (i = 0; i < error->extra_details_count; i++) {
-            printf("Error Extra Detail(%d):\n  %s:%s\n",
-                   i,
-                   error->extra_details[i].name,
-                   error->extra_details[i].value);
+            FALCON_LOG_PRINTF(LOG_ERROR, "Error Extra Detail(%d):\n  %s:%s\n",
+                              i,
+                              error->extra_details[i].name,
+                              error->extra_details[i].value);
         }
     }
 }

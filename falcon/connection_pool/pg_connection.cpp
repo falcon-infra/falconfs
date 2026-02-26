@@ -3,10 +3,10 @@
  */
 
 #include "connection_pool/pg_connection.h"
-#include <iostream>
 #include <sstream>
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
+#include "utils/error_log.h"
 
 PGConnection::PGConnection(PGConnectionWorkFinishNotifyFunc func, const char *ip, const int port, const char *userName)
 {

@@ -11,6 +11,7 @@
 
 #include "hcom_comm_adapter/falcon_meta_service_internal.h"
 #include "remote_connection_utils/error_code_def.h"
+#include "log/logging.h"
 
 namespace falcon {
 namespace meta_service {
@@ -146,10 +147,10 @@ FalconMetaServiceJob::FalconMetaServiceJob(const FalconMetaServiceRequest &reque
 {
     FalconErrorCode err = FalconMetaServiceSerializer::SerializeRequestToSerializedData(m_request, m_request_buffer);
     if (err != SUCCESS) {
-        fprintf(stderr,
-                "[WARNING] [FalconMetaService] Serialize request failed: opcode=%d, error=%d\n",
-                static_cast<int>(m_request.operation),
-                static_cast<int>(err));
+        FALCON_LOG_PRINTF(LOG_WARNING,
+                          "[FalconMetaService] Serialize request failed: opcode=%d, error=%d",
+                          static_cast<int>(m_request.operation),
+                          static_cast<int>(err));
         m_response.status = err;
     }
 }
@@ -202,17 +203,17 @@ size_t FalconMetaServiceJob::CopyOutData(void *dst, size_t dstSize)
 FalconMetaServiceType FalconMetaServiceJob::GetFalconMetaServiceType(int index)
 {
     if (index != 0) {
-        fprintf(stderr,
-                "[WARNING] [FalconMetaService] invalid service index: %d\n",
-                index);
+        FALCON_LOG_PRINTF(LOG_WARNING,
+                          "[FalconMetaService] invalid service index: %d",
+                          index);
         throw std::runtime_error("input index out of range.");
     }
 
     FalconMetaServiceType type = ConvertOperationToServiceType(m_request.operation);
     if (type == FalconMetaServiceType::NOT_SUPPORTED) {
-        fprintf(stderr,
-                "[WARNING] [FalconMetaService] unsupported service type: %d\n",
-                static_cast<int>(m_request.operation));
+        FALCON_LOG_PRINTF(LOG_WARNING,
+                          "[FalconMetaService] unsupported service type: %d",
+                          static_cast<int>(m_request.operation));
         throw std::runtime_error("got unsupported serviceType.");
     }
     return type;
@@ -231,9 +232,9 @@ void FalconMetaServiceJob::ProcessResponse(void *data, size_t size, FalDataDelet
     }
 
     if (!FalconMetaServiceSerializer::DeserializeResponseFromSerializedData(data, size, &m_response, m_request.operation)) {
-        fprintf(stderr,
-                "[WARNING] [FalconMetaService] Failed to deserialize response for opcode=%d\n",
-                static_cast<int>(m_request.operation));
+        FALCON_LOG_PRINTF(LOG_WARNING,
+                          "[FalconMetaService] Failed to deserialize response for opcode=%d",
+                          static_cast<int>(m_request.operation));
         m_response.status = -1;
     }
 
