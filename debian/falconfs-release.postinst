@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+configure|abort-upgrade|abort-deconfigure|abort-remove)
+    if ! /usr/bin/mkdir -p /usr/local/falconfs/data; then
+        echo "Warning: Failed to create /usr/local/falconfs/data" >&2
+    fi
+    if ! /usr/bin/chown -R falconMeta:falconMeta /usr/local/falconfs/data; then
+        echo "Warning: Failed to chown /usr/local/falconfs/data" >&2
+    fi
+    if ! /usr/sbin/usermod -d /home/falconMeta falconMeta; then
+        echo "Warning: Failed to set falconMeta home to /home/falconMeta" >&2
+    fi
+    if ! /usr/bin/mkdir -p /home/falconMeta; then
+        echo "Warning: Failed to create /home/falconMeta" >&2
+    fi
+    if ! /usr/bin/chown -R falconMeta:falconMeta /home/falconMeta; then
+        echo "Warning: Failed to chown /home/falconMeta" >&2
+    fi
+    ;;
+esac
+
+exit 0

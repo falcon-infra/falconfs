@@ -1,0 +1,5 @@
+debian/tmp/usr/local/falconfs/falcon_meta/ usr/local/falconfs/
+debian/tmp/usr/local/falconfs/falcon_cm/ usr/local/falconfs/
+debian/tmp/usr/local/falconfs/falcon_cn/ usr/local/falconfs/
+debian/tmp/usr/local/falconfs/falcon_dn/ usr/local/falconfs/
+debian/tmp/etc/profile.d/falconfs.sh etc/profile.d/
