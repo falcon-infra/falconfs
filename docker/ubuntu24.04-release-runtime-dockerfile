@@ -1,0 +1,129 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    curl \
+    gdb \
+    vim \
+    tar \
+    python3 \
+    python3-pip \
+    python3-requests \
+    python3-psycopg2 \
+    python3-kazoo \
+    locales \
+    tzdata \
+    build-essential \
+    cmake \
+    ninja-build \
+    autoconf \
+    automake \
+    libtool \
+    bison \
+    flex \
+    libreadline-dev \
+    liblz4-dev \
+    libzstd-dev \
+    libssl-dev \
+    libgflags-dev \
+    libgoogle-glog-dev \
+    libleveldb-dev \
+    libsnappy-dev \
+    libboost-thread-dev \
+    libboost-system-dev \
+    libfmt-dev \
+    libunwind-dev \
+    libibverbs-dev \
+    fuse \
+    libfuse-dev \
+    libcurl4-openssl-dev \
+    jq \
+    moreutils \
+    libjansson-dev \
+    libffi-dev \
+    libxml2-dev \
+    libprotoc-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    libflatbuffers-dev \
+    flatbuffers-compiler \
+    libjsoncpp-dev \
+    libthrift-dev \
+    libcppunit-dev \
+    libgtest-dev \
+    libgmock-dev \
+    python3-dev \
+    default-jdk \
+    maven && \
+    locale-gen en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# Fast-fail check: validate release deb install before long source builds.
+ARG DEB_PRECHECK=1
+COPY falconfs-deb-release.deb /tmp/falconfs-deb-release.deb
+RUN if [ "${DEB_PRECHECK}" = "1" ]; then \
+        apt-get update && \
+        apt-get install -y /tmp/falconfs-deb-release.deb && \
+        apt-get remove -y falconfs-release && \
+        apt-get autoremove -y && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+ARG BRPC_VERSION=1.12.1
+RUN wget -O- "https://github.com/apache/brpc/archive/refs/tags/${BRPC_VERSION}.tar.gz" | tar -xz -C /tmp && \
+    cd "/tmp/brpc-${BRPC_VERSION}" && \
+    mkdir build && cd build && \
+    cmake -GNinja -DWITH_GLOG=ON -DWITH_RDMA=ON .. && \
+    ninja && \
+    ninja install && \
+    ldconfig && \
+    rm -rf "/tmp/brpc-${BRPC_VERSION}"
+
+ARG PROMETHEUS_VERSION=1.3.0
+RUN wget -O- "https://github.com/jupp0r/prometheus-cpp/releases/download/v${PROMETHEUS_VERSION}/prometheus-cpp-with-submodules.tar.gz" | tar -xz -C /tmp && \
+    cd /tmp/prometheus-cpp-with-submodules && \
+    mkdir build && cd build && \
+    cmake .. -DBUILD_SHARED_LIBS=ON -DENABLE_PULL=ON -DENABLE_COMPRESSION=OFF && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/prometheus-cpp-with-submodules
+
+ARG ZK_VERSION=3.9.1
+RUN wget -O- "https://archive.apache.org/dist/zookeeper/zookeeper-${ZK_VERSION}/apache-zookeeper-${ZK_VERSION}.tar.gz" | tar -xz -C /tmp && \
+    cd "/tmp/apache-zookeeper-${ZK_VERSION}" && \
+    mvn compile -DskipTests -pl zookeeper-jute -T 1C && \
+    cd zookeeper-client/zookeeper-client-c && \
+    autoreconf -if && \
+    ./configure --prefix=/usr/local && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/apache-zookeeper-${ZK_VERSION}"
+
+ARG PG_VERSION=17.2
+RUN wget -O- "https://ftp.postgresql.org/pub/source/v${PG_VERSION}/postgresql-${PG_VERSION}.tar.gz" | tar -xz -C /tmp && \
+    cd "/tmp/postgresql-${PG_VERSION}" && \
+    ./configure --prefix=/usr/local/pgsql --without-icu --enable-debug && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    rm -rf "/tmp/postgresql-${PG_VERSION}"
+
+ENV PATH=/usr/local/pgsql/bin:/usr/local/bin:/usr/local/sbin:${PATH}
+
+# Install release deb built from debian/ packaging.
+RUN apt-get update && \
+    apt-get install -y /tmp/falconfs-deb-release.deb && \
+    rm -f /tmp/falconfs-deb-release.deb && \
+    rm -rf /var/lib/apt/lists/* && \
+    /usr/bin/mkdir -p /usr/local/falconfs/data && \
+    /usr/bin/chown -R falconMeta:falconMeta /usr/local/falconfs/data
