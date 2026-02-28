@@ -13,6 +13,7 @@
 #include "perf_counter/perf_macros.h"
 #include "utils/error_log.h"
 #include "utils/falcon_shmem_allocator.h"
+#include "utils/snapmgr.h"
 
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_shmem_internal);
 PG_FUNCTION_INFO_V1(falcon_meta_call_by_serialized_data);
@@ -259,7 +260,9 @@ Datum falcon_meta_call_by_serialized_shmem_internal(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "paramShmemShift is invalid.");
     char *paramBuffer = FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator, paramShmemShift);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     SerializedData response = MetaProcess(metaService, count, paramBuffer);
+    PopActiveSnapshot();
 
     PERF_LATENCY_BEGIN(shmem_alloc, perf ? &perf->shmemAllocLatency : NULL);
     uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response.size);
@@ -282,7 +285,9 @@ Datum falcon_meta_call_by_serialized_data(PG_FUNCTION_ARGS)
     FalconMetaServiceType metaService = (FalconMetaServiceType)type;
     char *paramBuffer = VARDATA_ANY(param);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     SerializedData response = MetaProcess(metaService, count, paramBuffer);
+    PopActiveSnapshot();
 
     bytea *reply = (bytea *)palloc(VARHDRSZ + response.size);
     memcpy(VARDATA_4B(reply), response.buffer, response.size);
