@@ -255,3 +255,147 @@ void workload_open_write_close_nocreate(string root_dir, int thread_id)
         latency_count[thread_id] += elapsed_time;
     }
 }
+
+void workload_kv_put(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string key = fmt::format("{}thread_{}_key_{}", root_dir, thread_id, i);
+
+        uint64_t value_key[2] = {(uint64_t)(thread_id * 10000 + i), (uint64_t)(thread_id * 10000 + i + 1)};
+        uint64_t location[2] = {0, 2048};
+        uint32_t size[2] = {2048, 2048};
+        uint32_t value_len = 4096;
+        uint16_t slice_num = 2;
+
+        int ret = dfs_kv_put(key.c_str(), value_len, slice_num, value_key, location, size);
+        if (ret != 0) {
+            cerr << "Failed to kv_put: " << key << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
+
+void workload_kv_get(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string key = fmt::format("{}thread_{}_key_{}", root_dir, thread_id, i);
+
+        uint32_t value_len = 0;
+        uint16_t slice_num = 0;
+        int ret = dfs_kv_get(key.c_str(), &value_len, &slice_num);
+        if (ret != 0) {
+            cerr << "Failed to kv_get: " << key << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
+
+void workload_kv_del(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string key = fmt::format("{}thread_{}_key_{}", root_dir, thread_id, i);
+
+        int ret = dfs_kv_del(key.c_str());
+        if (ret != 0) {
+            cerr << "Failed to kv_del: " << key << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
+
+// Slice workloads
+void workload_slice_put(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    string thread_dir = fmt::format("{}thread_{}/", root_dir, thread_id);
+
+    uint64_t start_slice_id = 0, end_slice_id = 0;
+    int fetch_ret = dfs_fetch_slice_id(files_per_dir, &start_slice_id, &end_slice_id);
+    if (fetch_ret != 0) {
+        cerr << "Failed to fetch slice id, ret = " << fetch_ret << std::endl;
+        return;
+    }
+
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string filename = fmt::format("{}file_{}", thread_dir, i);
+
+        uint64_t inode_id = thread_id * 100000 + i;
+        uint32_t chunk_id = 0;
+        uint64_t slice_id = start_slice_id + i;
+        uint32_t slice_size = 4096;
+        uint32_t slice_offset = 0;
+        uint32_t slice_len = 4096;
+
+        int ret = dfs_slice_put(filename.c_str(), inode_id, chunk_id, slice_id, slice_size, slice_offset, slice_len);
+        if (ret != 0) {
+            cerr << "Failed to slice_put: " << filename << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
+
+void workload_slice_get(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    string thread_dir = fmt::format("{}thread_{}/", root_dir, thread_id);
+
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string filename = fmt::format("{}file_{}", thread_dir, i);
+
+        uint64_t inode_id = thread_id * 100000 + i;
+        uint32_t chunk_id = 0;
+        uint32_t slice_num = 0;
+
+        int ret = dfs_slice_get(filename.c_str(), inode_id, chunk_id, &slice_num);
+        if (ret != 0) {
+            cerr << "Failed to slice_get: " << filename << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
+
+void workload_slice_del(string root_dir, int thread_id)
+{
+    struct timespec start_time, end_time;
+    string thread_dir = fmt::format("{}thread_{}/", root_dir, thread_id);
+
+    for (int i = 0; i < files_per_dir; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+        string filename = fmt::format("{}file_{}", thread_dir, i);
+
+        uint64_t inode_id = thread_id * 100000 + i;
+        uint32_t chunk_id = 0;
+
+        int ret = dfs_slice_del(filename.c_str(), inode_id, chunk_id);
+        if (ret != 0) {
+            cerr << "Failed to slice_del: " << filename << ", ret = " << ret << std::endl;
+        }
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        op_count[thread_id]++;
+        uint64_t elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000000 + (end_time.tv_nsec - start_time.tv_nsec);
+        latency_count[thread_id] += elapsed_time;
+    }
+}
