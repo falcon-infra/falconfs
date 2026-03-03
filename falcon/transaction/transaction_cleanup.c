@@ -56,7 +56,9 @@ Datum falcon_transaction_cleanup_trigger(PG_FUNCTION_ARGS)
     while (!CheckFalconBackgroundServiceStarted())
         sleep(1);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     int count = Cleanup2PC();
+    PopActiveSnapshot();
 
     PG_RETURN_INT16(count);
 }
@@ -114,7 +116,9 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
             MemoryContext oldContext = MemoryContextSwitchTo(myContext);
 
             StartTransactionCommand();
+            PushActiveSnapshot(GetTransactionSnapshot());
             int count = Cleanup2PC();
+            PopActiveSnapshot();
             CommitTransactionCommand();
 
             if (count != 0) {
@@ -173,6 +177,7 @@ void Write2PCRecord(int serverId, char *gid)
     values[Anum_falcon_distributed_transaction_nodeid - 1] = Int32GetDatum(serverId);
     values[Anum_falcon_distributed_transaction_gid - 1] = CStringGetTextDatum(gid);
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(FalconDistributedTransactionRelationId(), RowExclusiveLock);
 
     TupleDesc tupleDescriptor = RelationGetDescr(rel);
@@ -181,6 +186,7 @@ void Write2PCRecord(int serverId, char *gid)
     CatalogTupleInsert(rel, heapTuple);
 
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
 }
 
 static int Cleanup2PC(void)
