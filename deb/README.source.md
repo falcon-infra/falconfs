@@ -59,6 +59,13 @@ sudo apt-get install -y ../falconfs_0.1.0-1_*.deb
 
 安装后会生成：`/etc/profile.d/falconfs.sh`
 
+主要包含：
+
+- `FALCONFS_INSTALL_DIR=/usr/local/falconfs`
+- `PATH` 追加 `/usr/local/pgsql/bin` 与 falcon client bin
+
+FalconFS 运行时动态库路径由启动脚本按进程设置，不在 profile 中全局导出。
+
 ```bash
 source /etc/profile.d/falconfs.sh
 ```

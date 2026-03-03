@@ -8,7 +8,7 @@ data:
   STORAGE_THRESHOLD: "0.9"
   BRPC_PORT: "50039"
   wait_replica_time: "600"
-  data_dir: "/home/falconMeta/data"
+  data_dir: "/usr/local/falconfs/data"
   cn_num: "3"
   cn_sup_num: "0" #number of cn supplement
   # (dn_num - dn_sup_num) / 3 is the number of primary dn in our cluster

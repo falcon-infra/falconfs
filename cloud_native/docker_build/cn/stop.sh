@@ -1,5 +1,13 @@
 #! /bin/bash
-killall python3
-psql -d postgres -c "CHECKPOINT;"
+
+FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
+DATA_DIR=${FALCONFS_INSTALL_DIR}/data
+METADATA_DIR=${DATA_DIR}/metadata
+
+killall python3 || true
+psql -d postgres -c "CHECKPOINT;" || true
 sleep 1
-pg_ctl stop -m immediate -D /home/falconMeta/data/metadata
+
+if [ -f "${METADATA_DIR}/postmaster.pid" ]; then
+    pg_ctl stop -m immediate -D "${METADATA_DIR}" || true
+fi

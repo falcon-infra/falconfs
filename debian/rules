@@ -31,23 +31,10 @@ override_dh_auto_install:
 	./build.sh install falcon; \
 	mkdir -p "$(CURDIR)/debian/tmp"; \
 	cp -a "$$STAGE_ROOT/"* "$(CURDIR)/debian/tmp/"; \
-	for lib_dir in \
-	    "$(CURDIR)/debian/tmp/usr/local/falconfs/falcon_meta/lib" \
-	    "$(CURDIR)/debian/tmp/usr/local/falconfs/falcon_client/lib" \
-	    "$(CURDIR)/debian/tmp/usr/local/falconfs/private-directory-test/lib"; do \
-	    if [ -d "$$lib_dir" ]; then \
-	        find "$$lib_dir" -maxdepth 1 \
-	            \( -name 'libc.so*' -o -name 'libm.so*' -o -name 'libpthread.so*' -o \
-	               -name 'libdl.so*' -o -name 'librt.so*' -o -name 'libresolv.so*' -o \
-	               -name 'libcrypt.so*' -o -name 'ld-linux*.so*' \) \
-	            -print -delete; \
-	    fi; \
-	done; \
 	mkdir -p "$(CURDIR)/debian/tmp/etc/profile.d"; \
 	printf '%s\n' \
 	    'export FALCONFS_INSTALL_DIR=/usr/local/falconfs' \
 	    'export PATH=/usr/local/pgsql/bin:/usr/local/falconfs/falcon_client/bin:$$PATH' \
-	    'export LD_LIBRARY_PATH=/usr/local/falconfs/falcon_meta/lib:/usr/local/falconfs/falcon_client/lib:$$LD_LIBRARY_PATH' \
 	    > "$(CURDIR)/debian/tmp/etc/profile.d/falconfs.sh"
 
 override_dh_missing:
