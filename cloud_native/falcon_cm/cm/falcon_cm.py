@@ -57,7 +57,7 @@ class FalconCM:
         self._dn_supplement_num = int(os.environ.get("dn_sup_num"))
         self._cn_supplement_num = int(os.environ.get("cn_sup_num"))
         self._wait_replica_time = int(os.environ.get("wait_replica_time", "600"))
-        self._data_dir = os.environ.get("data_dir", "/home/falconMeta/data")
+        self._data_dir = os.environ.get("data_dir", "/usr/local/falconfs/data")
         self._check_meta_period = int(os.environ.get("CHECK_META_PERIOD", "2")) * 3600
         self._send_msg_dst = os.environ.get("REPORT_DST", "None")
         self._use_error_report = int(os.environ.get("USE_ERROR_REPORT", "0"))

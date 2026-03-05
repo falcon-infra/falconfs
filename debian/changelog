@@ -1,0 +1,7 @@
+falconfs (0.1.0-1) noble; urgency=medium
+
+  * Add Debian packaging for Ubuntu 24.04 with dual binary outputs:
+    - falconfs (full package)
+    - falconfs-release (runtime-focused package)
+
+ -- liuwei <liuwei984@huawei.com>  Tue, 24 Feb 2026 16:25:00 +0800
