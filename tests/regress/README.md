@@ -79,6 +79,38 @@
   docker push localhost:5000/zookeeper:3.8.3
   ```
 
+- Prepare full Debian package and place it at repository root:
+
+  ```bash
+  cd ~/code/falconfs
+  dpkg-buildpackage -b -us -uc
+  cp ../falconfs_0.1.0-1_amd64.deb ./falconfs-deb-full.deb
+  ```
+
+- The regress script builds one unified image for cn/dn/store/regress:
+
+  ```bash
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  ```
+
+- Build behavior options of `start_regress_test.sh`:
+
+  1. `SKIP_IMAGE_BUILD=0` (default)
+     - The script builds and pushes `${FALCON_FULL_IMAGE}` automatically.
+     - Prerequisite: `falconfs-deb-full.deb` must exist at repository root.
+
+  2. `SKIP_IMAGE_BUILD=1`
+     - The script skips image build and directly runs `docker-compose up`.
+     - Prerequisite: `${FALCON_FULL_IMAGE}` must already exist locally or be pullable from registry.
+
+- Recommended usage when image is already built:
+
+  ```bash
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  export SKIP_IMAGE_BUILD=1
+  bash tests/regress/start_regress_test.sh "$PWD/tests/regress/verify_data_full_unified"
+  ```
+
 - Run regress test using the command bellow
   
    ``` bash

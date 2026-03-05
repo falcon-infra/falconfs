@@ -17,7 +17,7 @@ override_dh_auto_configure:
 override_dh_auto_build:
 	set -euo pipefail; \
 	$(set_env); \
-	./build.sh build falcon
+	./build.sh build falcon --with-zk-init --with-prometheus
 
 override_dh_auto_test:
 	# Tests are not executed during package build; run them in dedicated CI jobs.

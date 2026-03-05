@@ -6,6 +6,8 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 # director of falcon code, used for gdb in contain
 FALCON_CODE_PATH=$(realpath "$DIR/../../")
 export FALCON_CODE_PATH
+export FALCON_FULL_IMAGE=${FALCON_FULL_IMAGE:-localhost:5000/falconfs-full-ubuntu24.04:v0.1.0}
+export SKIP_IMAGE_BUILD=${SKIP_IMAGE_BUILD:-0}
 
 # Change value of FALCON_CN_DN_NUM or FALCON_STORE_NUM need change compose yaml too.
 FALCON_CN_NUM=3
@@ -71,74 +73,49 @@ function clean_run_data() {
     done
 }
 
-function rebuild_falcon() {
-    # rebuild falconfs using "cloud_native/docker_build/docker_build.sh" manually.
-    # cd "${FALCON_CODE_PATH}"/third_party/postgres
-    # git restore .
-    # cd "${FALCON_CODE_PATH}"
-    # #git pull --rebase
+function build_unified_image() {
+    local deb_path="${FALCON_CODE_PATH}/falconfs-deb-full.deb"
+    local dockerfile_path="${FALCON_CODE_PATH}/docker/ubuntu24.04-full-runtime-dockerfile"
 
-    # up_flag=$(docker ps -a --filter "name=falcon-dev" --format "{{.Names}}\t{{.Status}}" | awk "/Up/" | wc -l)
-    # if [ "$up_flag" -eq 0 ]; then
-    #     docker start falcon-dev
-    # fi
-    # docker exec -e LD_LIBRARY_PATH=/usr/local/obs/lib -e CPLUS_INCLUDE_PATH=/usr/local/obs/include falcon-dev \
-    #     /root/code/falconfs/cloud_native/docker_build/docker_build.sh
-    # Build FalconFS directly from repository scripts.
-    # Some environments do not provide falconenv.sh.
-    "${FALCON_CODE_PATH}"/cloud_native/docker_build/docker_build.sh
-    return 0
-}
+    if [ "${SKIP_IMAGE_BUILD}" = "1" ]; then
+        echo "skip unified image build because SKIP_IMAGE_BUILD=1"
+        return 0
+    fi
 
-function rebuild_images() {
-    # rebuild cn image (构建上下文是 docker_build/)
-    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build
+    if [ ! -f "${deb_path}" ]; then
+        echo "ERROR: full deb package not found: ${deb_path}"
+        echo "Please copy the package first, for example:"
+        echo "  cp ../falconfs_0.1.0-1_amd64.deb ${deb_path}"
+        exit 1
+    fi
+
+    if [ ! -f "${dockerfile_path}" ]; then
+        echo "ERROR: dockerfile not found: ${dockerfile_path}"
+        exit 1
+    fi
+
+    cd "${FALCON_CODE_PATH}"
     docker build --platform linux/amd64 \
         --build-arg CACHE_BUST=$(date +%s) \
-        -t localhost:5000/falconfs-cn:ubuntu24.04 \
-        -f Dockerfile.cn \
-        . \
-        --push
-
-    # rebuild dn image
-    docker build --platform linux/amd64 \
-        --build-arg CACHE_BUST=$(date +%s) \
-        -t localhost:5000/falconfs-dn:ubuntu24.04 \
-        -f Dockerfile.dn \
-        . \
-        --push
-
-    # rebuild store image
-    docker build --platform linux/amd64 \
-        --build-arg CACHE_BUST=$(date +%s) \
-        -t localhost:5000/falconfs-store:ubuntu24.04 \
-        -f Dockerfile.store \
-        . \
-        --push
-
-    # rebuild regress image
-    cd "${FALCON_CODE_PATH}"/cloud_native/docker_build/
-    docker build --platform linux/amd64 \
-        --build-arg CACHE_BUST=$(date +%s) \
-        -t localhost:5000/falconfs-regress:ubuntu24.04 \
-        -f Dockerfile.regress \
+        --build-arg DEB_PRECHECK=0 \
+        -t "${FALCON_FULL_IMAGE}" \
+        -f "${dockerfile_path}" \
         . \
         --push
 }
 
 function clear_one_image() {
-    rep_info=$(docker images --format " {{.Repository}}" "$1")
-    if [ "${rep_info}" == "$1" ]; then
+    if docker image inspect "$1" >/dev/null 2>&1; then
         docker image rm "$1"
     fi
 }
 
 function clear_images() {
+    if [ "${SKIP_IMAGE_BUILD}" = "1" ]; then
+        return 0
+    fi
     # clear pre images of docker before rebuild
-    clear_one_image "localhost:5000/falconfs-cn:ubuntu24.04"
-    clear_one_image "localhost:5000/falconfs-dn:ubuntu24.04"
-    clear_one_image "localhost:5000/falconfs-store:ubuntu24.04"
-    clear_one_image "localhost:5000/falconfs-regress:ubuntu24.04"
+    clear_one_image "${FALCON_FULL_IMAGE}"
 }
 
 function run_regress() {
@@ -191,7 +168,8 @@ function run_regress() {
 }
 
 # check input parameter
-if [ $# -eq 1 ] && [ -d "$1" ]; then
+if [ $# -eq 1 ]; then
+    mkdir -p "$1"
     echo "run regress test:$0 $1"
     export FALCON_DATA_PATH=$1
 else
@@ -199,11 +177,8 @@ else
     exit 1
 fi
 
-# down load code and rebuild falcon
-rebuild_falcon
-
-# rebuild falcon images
-rebuild_images
+# build one unified image from full deb package
+build_unified_image
 
 # uninstall cluster, avoid clear_images failed
 uninstall_cluster docker-compose-single.yaml
