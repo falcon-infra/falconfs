@@ -161,9 +161,6 @@ FalconMetaServiceJob::~FalconMetaServiceJob()
 
 void FalconMetaServiceJob::Done()
 {
-    LatencyData* e2eData = GetOpcodeE2ELatencyData(static_cast<int>(opcodeForE2E));
-    e2eTimer.End(e2eData);
-
     if (m_callback) {
         m_callback(m_response, m_user_context);
         CleanupResponseData(m_response);
