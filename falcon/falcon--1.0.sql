@@ -293,11 +293,11 @@ COMMENT ON FUNCTION pg_catalog.falcon_plain_readdir(path cstring) IS 'falcon pla
 ----------------------------------------------------------------
 -- falcon_serialize_interface
 ----------------------------------------------------------------
-CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type int, count int, shmem_shift bigint, signature bigint)
+CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type int, count int, shmem_shift bigint, signature bigint, stat_indices_shift bigint)
     RETURNS bigint
     LANGUAGE C STRICT
     AS 'MODULE_PATHNAME', $$falcon_meta_call_by_serialized_shmem_internal$$;
-COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type int, count int, shmem_shift bigint, signature bigint) IS 'falcon meta func by serialized shmem internal';
+COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_shmem_internal(type int, count int, shmem_shift bigint, signature bigint, stat_indices_shift bigint) IS 'falcon meta func by serialized shmem internal';
 
 CREATE FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, count int, param bytea)
     RETURNS bytea

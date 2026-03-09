@@ -5,21 +5,24 @@
 #ifndef BASE_META_SERVICE_JOB_H
 #define BASE_META_SERVICE_JOB_H
 
+#include <cstdint>
 #include <functional>
-#include "perf_counter/perf_stat.h"
 #include "utils/falcon_meta_service_def.h"
 
 class BaseMetaServiceJob {
   public:
-    LatencyTimer stageTimer;
-    LatencyTimer e2eTimer;                        // End-to-end latency timer (from queue entry to Done())
     FalconMetaServiceType opcodeForE2E;           // Opcode stored for e2e reporting in Done()
+    int32_t statArrayIndex = -1;                  // Index into per-request stat array (-1 = disabled)
 
     BaseMetaServiceJob() : opcodeForE2E(NOT_SUPPORTED) {}
     virtual ~BaseMetaServiceJob() = default;
 
     // Call this function after Job finished to send response and release resource
     virtual void Done() = 0;
+
+    // Mark the job as failed before Done() on abnormal exit.
+    // HCOM overrides this to set m_response.status; BRPC relies on empty attachment.
+    virtual void MarkFailed() {}
 
     // check where batch is allowed by send msg
     virtual bool IsAllowBatchProcess() = 0;
