@@ -49,6 +49,18 @@ inline falcon::meta_fbs::AnyMetaParam ToFlatBuffersType(falcon::meta_proto::Meta
         return falcon::meta_fbs::AnyMetaParam_ChownParam;
     case falcon::meta_proto::CHMOD:
         return falcon::meta_fbs::AnyMetaParam_ChmodParam;
+    case falcon::meta_proto::KV_PUT:
+        return falcon::meta_fbs::AnyMetaParam_KVParam;
+    case falcon::meta_proto::KV_GET:
+    case falcon::meta_proto::KV_DEL:
+        return falcon::meta_fbs::AnyMetaParam_KeyOnlyParam;
+    case falcon::meta_proto::SLICE_PUT:
+        return falcon::meta_fbs::AnyMetaParam_SliceInfoParam;
+    case falcon::meta_proto::SLICE_GET:
+    case falcon::meta_proto::SLICE_DEL:
+        return falcon::meta_fbs::AnyMetaParam_SliceIndexParam;
+    case falcon::meta_proto::FETCH_SLICE_ID:
+        return falcon::meta_fbs::AnyMetaParam_SliceIdParam;
     default:
         throw std::runtime_error("Unknown service type");
     }
@@ -457,4 +469,184 @@ FalconErrorCode Connection::Chmod(const char *path, uint32_t mode, ConnectionCac
     };
 
     return ProcessRequest(falcon::meta_proto::CHMOD, paramBuilder, responseHandler, cache);
+}
+
+// KV Operations
+FalconErrorCode Connection::KvPut(const char *key,
+                                  uint32_t valueLen,
+                                  uint16_t sliceNum,
+                                  const std::vector<uint64_t> &valueKey,
+                                  const std::vector<uint64_t> &location,
+                                  const std::vector<uint32_t> &size,
+                                  ConnectionCache *cache)
+{
+    auto paramBuilder = [key, valueLen, sliceNum, &valueKey, &location, &size](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateKVParamDirect(builder, key, valueLen, sliceNum, &valueKey, &location, &size);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        return metaResponse->error_code() < LAST_FALCON_ERROR_CODE
+                   ? static_cast<FalconErrorCode>(metaResponse->error_code())
+                   : PROGRAM_ERROR;
+    };
+
+    return ProcessRequest(falcon::meta_proto::KV_PUT, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::KvGet(const char *key, KvGetResult &result, ConnectionCache *cache)
+{
+    auto paramBuilder = [key](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateKeyOnlyParamDirect(builder, key);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, KvGetResult *result) {
+        if (metaResponse->response_type() != falcon::meta_fbs::AnyMetaResponse_GetKVMetaResponse) {
+            return PROGRAM_ERROR;
+        }
+
+        auto kvResponse = metaResponse->response_as_GetKVMetaResponse();
+        result->valueLen = kvResponse->value_len();
+        result->sliceNum = kvResponse->slice_num();
+
+        if (kvResponse->value_key() && kvResponse->location() && kvResponse->size()) {
+            size_t count = std::min({kvResponse->value_key()->size(),
+                                     kvResponse->location()->size(),
+                                     kvResponse->size()->size()});
+            result->slices.resize(count);
+            for (size_t i = 0; i < count; ++i) {
+                result->slices[i].valueKey = kvResponse->value_key()->Get(i);
+                result->slices[i].location = kvResponse->location()->Get(i);
+                result->slices[i].size = kvResponse->size()->Get(i);
+            }
+        }
+
+        return static_cast<FalconErrorCode>(metaResponse->error_code());
+    };
+
+    return ProcessRequest(falcon::meta_proto::KV_GET, paramBuilder, responseHandler, cache, &result);
+}
+
+FalconErrorCode Connection::KvDel(const char *key, ConnectionCache *cache)
+{
+    auto paramBuilder = [key](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateKeyOnlyParamDirect(builder, key);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        return metaResponse->error_code() < LAST_FALCON_ERROR_CODE
+                   ? static_cast<FalconErrorCode>(metaResponse->error_code())
+                   : PROGRAM_ERROR;
+    };
+
+    return ProcessRequest(falcon::meta_proto::KV_DEL, paramBuilder, responseHandler, cache);
+}
+
+// Slice Operations
+FalconErrorCode Connection::SlicePut(const char *filename,
+                                     uint32_t sliceNum,
+                                     const std::vector<uint64_t> &inodeId,
+                                     const std::vector<uint32_t> &chunkId,
+                                     const std::vector<uint64_t> &sliceId,
+                                     const std::vector<uint32_t> &sliceSize,
+                                     const std::vector<uint32_t> &sliceOffset,
+                                     const std::vector<uint32_t> &sliceLen,
+                                     const std::vector<uint32_t> &sliceLoc1,
+                                     const std::vector<uint32_t> &sliceLoc2,
+                                     ConnectionCache *cache)
+{
+    auto paramBuilder = [filename, sliceNum, &inodeId, &chunkId, &sliceId, &sliceSize, &sliceOffset, &sliceLen,
+                         &sliceLoc1, &sliceLoc2](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceInfoParamDirect(builder,
+                                                            filename,
+                                                            sliceNum,
+                                                            &inodeId,
+                                                            &chunkId,
+                                                            &sliceId,
+                                                            &sliceSize,
+                                                            &sliceOffset,
+                                                            &sliceLen,
+                                                            &sliceLoc1,
+                                                            &sliceLoc2);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        return metaResponse->error_code() < LAST_FALCON_ERROR_CODE
+                   ? static_cast<FalconErrorCode>(metaResponse->error_code())
+                   : PROGRAM_ERROR;
+    };
+
+    return ProcessRequest(falcon::meta_proto::SLICE_PUT, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::SliceGet(const char *filename, uint64_t inodeId, uint32_t chunkId,
+                                     SliceGetResult &result, ConnectionCache *cache)
+{
+    auto paramBuilder = [filename, inodeId, chunkId](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceIndexParamDirect(builder, filename, inodeId, chunkId);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, SliceGetResult *result) {
+        if (metaResponse->response_type() != falcon::meta_fbs::AnyMetaResponse_SliceInfoResponse) {
+            return PROGRAM_ERROR;
+        }
+
+        auto sliceResponse = metaResponse->response_as_SliceInfoResponse();
+        result->sliceNum = sliceResponse->slicenum();
+
+        auto copyVector = [](auto *fbsVec, auto &stdVec) {
+            if (fbsVec) {
+                stdVec.assign(fbsVec->begin(), fbsVec->end());
+            }
+        };
+
+        copyVector(sliceResponse->inodeid(), result->inodeId);
+        copyVector(sliceResponse->chunkid(), result->chunkId);
+        copyVector(sliceResponse->sliceid(), result->sliceId);
+        copyVector(sliceResponse->slicesize(), result->sliceSize);
+        copyVector(sliceResponse->sliceoffset(), result->sliceOffset);
+        copyVector(sliceResponse->slicelen(), result->sliceLen);
+        copyVector(sliceResponse->sliceloc1(), result->sliceLoc1);
+        copyVector(sliceResponse->sliceloc2(), result->sliceLoc2);
+
+        return static_cast<FalconErrorCode>(metaResponse->error_code());
+    };
+
+    return ProcessRequest(falcon::meta_proto::SLICE_GET, paramBuilder, responseHandler, cache, &result);
+}
+
+FalconErrorCode Connection::SliceDel(const char *filename, uint64_t inodeId, uint32_t chunkId, ConnectionCache *cache)
+{
+    auto paramBuilder = [filename, inodeId, chunkId](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceIndexParamDirect(builder, filename, inodeId, chunkId);
+    };
+
+    auto responseHandler = [](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        return metaResponse->error_code() < LAST_FALCON_ERROR_CODE
+                   ? static_cast<FalconErrorCode>(metaResponse->error_code())
+                   : PROGRAM_ERROR;
+    };
+
+    return ProcessRequest(falcon::meta_proto::SLICE_DEL, paramBuilder, responseHandler, cache);
+}
+
+FalconErrorCode Connection::FetchSliceId(uint32_t count, uint8_t type, uint64_t &startId,
+                                         uint64_t &endId, ConnectionCache *cache)
+{
+    auto paramBuilder = [count, type](flatbuffers::FlatBufferBuilder &builder) {
+        return falcon::meta_fbs::CreateSliceIdParam(builder, count, type);
+    };
+
+    auto responseHandler = [&startId, &endId](const falcon::meta_fbs::MetaResponse *metaResponse, void *) {
+        if (metaResponse->response_type() != falcon::meta_fbs::AnyMetaResponse_SliceIdResponse) {
+            return PROGRAM_ERROR;
+        }
+
+        auto sliceIdResponse = metaResponse->response_as_SliceIdResponse();
+        startId = sliceIdResponse->startid();
+        endId = sliceIdResponse->endid();
+
+        return static_cast<FalconErrorCode>(metaResponse->error_code());
+    };
+
+    return ProcessRequest(falcon::meta_proto::FETCH_SLICE_ID, paramBuilder, responseHandler, cache);
 }

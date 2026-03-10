@@ -151,3 +151,125 @@ void dfs_shutdown()
 {
     return;
 }
+
+int dfs_kv_put(const char *key, uint32_t value_len, uint16_t slice_num,
+               const uint64_t *value_key, const uint64_t *location, const uint32_t *size)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(key));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    std::vector<uint64_t> valueKeyVec(value_key, value_key + slice_num);
+    std::vector<uint64_t> locationVec(location, location + slice_num);
+    std::vector<uint32_t> sizeVec(size, size + slice_num);
+
+    int errorCode = conn->KvPut(key, value_len, slice_num, valueKeyVec, locationVec, sizeVec);
+    return errorCode;
+}
+
+int dfs_kv_get(const char *key, uint32_t *value_len, uint16_t *slice_num)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(key));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    Connection::KvGetResult result;
+    int errorCode = conn->KvGet(key, result);
+    if (errorCode == 0) {
+        if (value_len) *value_len = result.valueLen;
+        if (slice_num) *slice_num = result.sliceNum;
+    }
+    return errorCode;
+}
+
+int dfs_kv_del(const char *key)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(key));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    int errorCode = conn->KvDel(key);
+    return errorCode;
+}
+
+// Slice operations
+int dfs_slice_put(const char *filename, uint64_t inode_id, uint32_t chunk_id,
+                  uint64_t slice_id, uint32_t slice_size, uint32_t slice_offset, uint32_t slice_len)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(filename));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    std::vector<uint64_t> inodeIdVec = {inode_id};
+    std::vector<uint32_t> chunkIdVec = {chunk_id};
+    std::vector<uint64_t> sliceIdVec = {slice_id};
+    std::vector<uint32_t> sliceSizeVec = {slice_size};
+    std::vector<uint32_t> sliceOffsetVec = {slice_offset};
+    std::vector<uint32_t> sliceLenVec = {slice_len};
+    std::vector<uint32_t> sliceLoc1Vec = {1};
+    std::vector<uint32_t> sliceLoc2Vec = {2};
+
+    int errorCode = conn->SlicePut(filename, 1, inodeIdVec, chunkIdVec, sliceIdVec,
+                                   sliceSizeVec, sliceOffsetVec, sliceLenVec, sliceLoc1Vec, sliceLoc2Vec);
+    return errorCode;
+}
+
+int dfs_slice_get(const char *filename, uint64_t inode_id, uint32_t chunk_id, uint32_t *slice_num)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(filename));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    Connection::SliceGetResult result;
+    int errorCode = conn->SliceGet(filename, inode_id, chunk_id, result);
+    if (errorCode == 0 && slice_num) {
+        *slice_num = result.sliceNum;
+    }
+    return errorCode;
+}
+
+int dfs_slice_del(const char *filename, uint64_t inode_id, uint32_t chunk_id)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(filename));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    int errorCode = conn->SliceDel(filename, inode_id, chunk_id);
+    return errorCode;
+}
+
+int dfs_fetch_slice_id(uint32_t count, uint64_t *start_id, uint64_t *end_id)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    uint64_t startId = 0, endId = 0;
+    int errorCode = conn->FetchSliceId(count, 0, startId, endId);
+    if (errorCode == 0) {
+        if (start_id) *start_id = startId;
+        if (end_id) *end_id = endId;
+    }
+    return errorCode;
+}
