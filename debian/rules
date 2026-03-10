@@ -1,0 +1,72 @@
+#!/usr/bin/make -f
+
+SHELL := /bin/bash
+
+set_env = export PATH=/usr/local/pgsql/bin:$$PATH; \
+          export LD_LIBRARY_PATH=/usr/local/pgsql/lib:/usr/local/lib:$${LD_LIBRARY_PATH:-}; \
+          export STAGE_ROOT="$(CURDIR)/debian/falconfs-stage"; \
+          export FALCONFS_INSTALL_DIR="$$STAGE_ROOT/usr/local/falconfs"
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	# FalconFS uses ./build.sh instead of debhelper default cmake flow.
+	true
+
+override_dh_auto_build:
+	set -euo pipefail; \
+	$(set_env); \
+	./build.sh build falcon
+
+override_dh_auto_test:
+	# Tests are not executed during package build; run them in dedicated CI jobs.
+	true
+
+override_dh_auto_install:
+	set -euo pipefail; \
+	$(set_env); \
+	rm -rf "$$STAGE_ROOT" "$(CURDIR)/debian/tmp"; \
+	mkdir -p "$$STAGE_ROOT"; \
+	./build.sh install falcon; \
+	mkdir -p "$(CURDIR)/debian/tmp"; \
+	cp -a "$$STAGE_ROOT/"* "$(CURDIR)/debian/tmp/"; \
+	for lib_dir in \
+	    "$(CURDIR)/debian/tmp/usr/local/falconfs/falcon_meta/lib" \
+	    "$(CURDIR)/debian/tmp/usr/local/falconfs/falcon_client/lib" \
+	    "$(CURDIR)/debian/tmp/usr/local/falconfs/private-directory-test/lib"; do \
+	    if [ -d "$$lib_dir" ]; then \
+	        find "$$lib_dir" -maxdepth 1 \
+	            \( -name 'libc.so*' -o -name 'libm.so*' -o -name 'libpthread.so*' -o \
+	               -name 'libdl.so*' -o -name 'librt.so*' -o -name 'libresolv.so*' -o \
+	               -name 'libcrypt.so*' -o -name 'ld-linux*.so*' \) \
+	            -print -delete; \
+	    fi; \
+	done; \
+	mkdir -p "$(CURDIR)/debian/tmp/etc/profile.d"; \
+	printf '%s\n' \
+	    'export FALCONFS_INSTALL_DIR=/usr/local/falconfs' \
+	    'export PATH=/usr/local/pgsql/bin:/usr/local/falconfs/falcon_client/bin:$$PATH' \
+	    'export LD_LIBRARY_PATH=/usr/local/falconfs/falcon_meta/lib:/usr/local/falconfs/falcon_client/lib:$$LD_LIBRARY_PATH' \
+	    > "$(CURDIR)/debian/tmp/etc/profile.d/falconfs.sh"
+
+override_dh_missing:
+	dh_missing --fail-missing
+
+override_dh_shlibdeps:
+	# FalconFS ships private libraries under /usr/local/falconfs.
+	# Runtime dependencies are managed as environment preconditions.
+	true
+
+override_dh_usrlocal:
+	# FalconFS intentionally packages under /usr/local/falconfs.
+	true
+
+override_dh_strip_nondeterminism:
+	find "$(CURDIR)/debian/tmp" -type f -print0 | xargs -0 -r chrpath -d 2>/dev/null || true
+	dh_strip_nondeterminism
+
+override_dh_auto_clean:
+	set -euo pipefail; \
+	./build.sh clean falcon || true; \
+	rm -rf "$(CURDIR)/debian/falconfs-stage" "$(CURDIR)/debian/tmp"
