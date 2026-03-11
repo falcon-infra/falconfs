@@ -48,6 +48,7 @@ class FalconCM:
         self._root_path = os.environ.get("cluster_name", "/falcon")
         self._user_name = os.environ.get("user_name", "falconMeta")
         self._pod_ip = os.environ.get("POD_IP")
+        self._node_ip = os.environ.get("NODE_IP", self._pod_ip)
         self._host_node_name = os.environ.get("NODE_NAME")
         self._meta_port = int(os.environ.get("meta_port", "5432"))
         self._timeout = float(os.environ.get("timeout", "10.0"))
@@ -279,6 +280,8 @@ class FalconCM:
                         self._meta_port,
                         self._user_name,
                         self._host_node_name,
+                        self._node_ip,
+                        self._pod_ip,
                     )
                     self._zk_client.set(host_path, value=str.encode(""))
                     self._zk_client.create(membership_path)
@@ -296,6 +299,8 @@ class FalconCM:
                             self._pod_ip,
                             self._meta_port,
                             self._host_node_name,
+                            self._node_ip,
+                            self._pod_ip,
                         )
                         self._zk_client.create(membership_path)
                     else:
@@ -307,6 +312,8 @@ class FalconCM:
                             self._pod_ip,
                             self._meta_port,
                             self._host_node_name,
+                            self._node_ip,
+                            self._pod_ip,
                         )
         else:
             postgresql.demote_for_start(
@@ -315,6 +322,8 @@ class FalconCM:
                 self._meta_port,
                 self._user_name,
                 self._host_node_name,
+                self._node_ip,
+                self._pod_ip,
             )
         self._zk_client.create(replica_path, ephemeral=True)
         self.watch_leader_and_candidates()
@@ -499,7 +508,12 @@ class FalconCM:
             self.watch_replicas()
             if postgresql.is_standby(self._pgdata_dir):
                 postgresql.do_promote(
-                    self._pgdata_dir, self._pod_ip, self._meta_port, self._user_name
+                    self._pgdata_dir,
+                    self._pod_ip,
+                    self._meta_port,
+                    self._user_name,
+                    self._node_ip,
+                    self._pod_ip,
                 )
 
             ret = False
@@ -550,6 +564,8 @@ class FalconCM:
                     self._pod_ip,
                     self._meta_port,
                     self._host_node_name,
+                    self._node_ip,
+                    self._pod_ip,
                 )
             else:
                 postgresql.do_demote(
@@ -560,6 +576,8 @@ class FalconCM:
                     self._pod_ip,
                     self._meta_port,
                     self._host_node_name,
+                    self._node_ip,
+                    self._pod_ip,
                 )
             self._zk_client.create(
                 "{}/{}/membership/{}".format(

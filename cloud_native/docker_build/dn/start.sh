@@ -3,6 +3,14 @@
 # 设置默认的安装目录
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
 
+# Default: disable core dump. Enable with FALCON_ALLOW_CORE_DUMP=1.
+if [ "${FALCON_ALLOW_CORE_DUMP:-0}" = "1" ]; then
+    # unit: KB blocks; default 1GB
+    ulimit -c "${FALCON_CORE_LIMIT:-1048576}" || true
+else
+    ulimit -c 0 || true
+fi
+
 export PATH=/usr/local/pgsql/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/pgsql/lib:${FALCONFS_INSTALL_DIR}/falcon_meta/lib:/usr/local/obs/lib
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data

@@ -371,11 +371,32 @@ PY
 }
 
 mounted_fuse_count() {
-    docker exec falcon-store-1 bash -lc "mount -t fuse.falcon_client | awk '/ on \/mnt\/data /' | wc -l" 2>/dev/null | tr -d ' '
+    local host_target="${DATA_PATH}/falcon-data/store-1/data"
+    docker exec falcon-store-1 bash -lc "mount -t fuse.falcon_client | awk '\$3==\"/mnt/data\" || \$3==\"${host_target}\" {n++} END {print n+0}'" 2>/dev/null | tr -d ' '
 }
 
 start_store_client() {
-    docker exec -d falcon-store-1 /usr/local/falconfs/falcon_store/start.sh >/dev/null 2>&1 || true
+    docker exec falcon-store-1 bash -lc '
+        has_proc=0
+        has_mount=0
+        if pgrep -x falcon_client >/dev/null 2>&1; then
+            has_proc=1
+        fi
+        if mount -t fuse.falcon_client | awk "\$3==\"/mnt/data\" {found=1} END {exit found?0:1}" >/dev/null 2>&1; then
+            has_mount=1
+        fi
+
+        if [ "$has_proc" -eq 1 ] && [ "$has_mount" -eq 1 ]; then
+            exit 0
+        fi
+
+        if [ "$has_proc" -eq 1 ] && [ "$has_mount" -eq 0 ]; then
+            pkill -x falcon_client >/dev/null 2>&1 || true
+            sleep 1
+        fi
+
+        nohup /usr/local/falconfs/falcon_store/start.sh >/dev/null 2>&1 &
+    ' >/dev/null 2>&1 || true
 }
 
 wait_cluster_ready() {
