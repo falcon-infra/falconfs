@@ -15,7 +15,6 @@
 
 #include "dir_path_shmem/dir_path_hash.h"
 #include "distributed_backend/remote_comm.h"
-#include "perf_counter/perf_macros.h"
 #include "utils/error_log.h"
 #include "utils/utils.h"
 
@@ -118,8 +117,6 @@ FalconErrorCode PathParseTreeInsert(PathParseTree root,
         return PATH_IS_ROOT;
     }
 
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(path_parse_timer, perf ? &perf->pathParseLatency : NULL);
 
     if (root == NULL) {
         if (TransactionLevelPathParseRoot == NULL) {
@@ -341,8 +338,6 @@ FalconErrorCode PathParseTreeInsert(PathParseTree root,
 
 FalconErrorCode VerifyPathValidity(const char *path, int32_t requirement, int32_t *property)
 {
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(path_verify_timer, perf ? &perf->pathVerifyLatency : NULL);
 
     *property = 0;
 

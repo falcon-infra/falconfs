@@ -16,7 +16,6 @@
 #include "metadb/meta_handle.h"
 #include "metadb/meta_serialize_interface_helper.h"
 #include "metadb/shard_table.h"
-#include "perf_counter/perf_macros.h"
 #include "transaction/transaction.h"
 #include "transaction/transaction_cleanup.h"
 #include "utils/error_log.h"
@@ -187,8 +186,6 @@ static bool inline ClearPGresultInPGconn(PGconn *conn)
 
 MultipleServerRemoteCommandResult FalconSendCommandAndWaitForResult()
 {
-    FalconPerfLatencyShmem *perf = g_FalconPerfLatencyShmem;
-    PERF_SCOPED_TIMER(remote_call_timer, perf ? &perf->remoteCallLatency : NULL);
 
     List *workerIdList = NIL;
     List *remoteConnectionCommandDataList = NIL;

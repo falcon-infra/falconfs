@@ -58,7 +58,7 @@ wget -O- "${PROMETHEUS_DOWNLOAD_URL}" | tar -xzvf - -C /tmp &&
 sudo apt-get install -y fio rsync
 # mdtest
 sudo apt-get install -y openmpi-bin libopenmpi-dev
-git clone https://github.com/hpc/ior.git
+git clone --branch 4.0.0 https://github.com/hpc/ior.git
 cd ior
 ./bootstrap
 ./configure --prefix=/usr/local
