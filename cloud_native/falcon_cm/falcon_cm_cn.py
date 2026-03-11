@@ -6,7 +6,7 @@ from cm.falcon_cm import *
 
 
 def main():
-    data_dir = os.environ.get("data_dir", "/home/falconMeta/data")
+    data_dir = os.environ.get("data_dir", "/usr/local/falconfs/data")
     log_level = os.environ.get("cm_log_level", "INFO")
     has_falcon_stor = bool(os.environ.get("has_falcon_stor", "True"))
     cm_log_data_dir = os.path.join(data_dir, "cmlog")

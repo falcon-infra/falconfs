@@ -13,7 +13,7 @@ COMM_PLUGIN="brpc"
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
 export FALCONFS_INSTALL_DIR=$FALCONFS_INSTALL_DIR
-export PATH=$FALCONFS_INSTALL_DIR/bin:$FALCONFS_INSTALL_DIR/python/bin:${PATH:-}
+export PATH=/usr/local/pgsql/bin:$FALCONFS_INSTALL_DIR/bin:$FALCONFS_INSTALL_DIR/python/bin:${PATH:-}
 export LD_LIBRARY_PATH=$FALCONFS_INSTALL_DIR/lib64:$FALCONFS_INSTALL_DIR/lib:$FALCONFS_INSTALL_DIR/python/lib:${LD_LIBRARY_PATH:-}
 
 # Default command is build
@@ -189,13 +189,6 @@ install_falcon_meta() {
     fi
     echo "copy ${COMM_PLUGIN} communication plugin to $FALCON_META_INSTALL_DIR/lib/postgresql..."
     cp "$plugin_src" "$FALCON_META_INSTALL_DIR/lib/postgresql/"
-    # 复制依赖库
-    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
-        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
-            -b "$plugin_src" \
-            -t "$FALCON_META_INSTALL_DIR/lib"
-    fi
-
     echo "${COMM_PLUGIN} communication plugin copied."
 
     # 安装测试插件 (如果存在)
@@ -214,13 +207,6 @@ install_falcon_client() {
     # 复制配置文件
     mkdir -p "$FALCON_CLIENT_INSTALL_DIR/config"
     cp -r "$FALCONFS_DIR/config"/* "$FALCON_CLIENT_INSTALL_DIR/config/"
-
-    # 复制依赖库
-    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
-        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
-            -b "$FALCON_CLIENT_INSTALL_DIR/bin/falcon_client" \
-            -t "$FALCON_CLIENT_INSTALL_DIR/lib"
-    fi
 
     echo "FalconFS client installed to $FALCON_CLIENT_INSTALL_DIR"
 }
@@ -336,22 +322,6 @@ install_private_directory_test() {
     if [[ -f "$FALCONFS_DIR/build/tests/common/FalconCMIT" ]]; then
         cp "$FALCONFS_DIR/build/tests/common/FalconCMIT" \
            "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
-    fi
-
-    # 复制依赖库
-    if [[ -f "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" ]]; then
-        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
-            -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/test_falcon" \
-            -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
-        "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
-            -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/test_posix" \
-            -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
-        # 复制 FalconCMIT 依赖
-        if [[ -f "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/FalconCMIT" ]]; then
-            "$FALCONFS_DIR/cloud_native/docker_build/ldd_copy.sh" \
-                -b "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/FalconCMIT" \
-                -t "$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/lib"
-        fi
     fi
 
     # 复制脚本文件（排除 C++ 源码）

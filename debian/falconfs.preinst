@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if ! getent group falconMeta >/dev/null 2>&1; then
+    groupadd -r falconMeta
+fi
+
+if ! getent passwd falconMeta >/dev/null 2>&1; then
+    useradd -r -g falconMeta -d /home/falconMeta -s /usr/sbin/nologin falconMeta
+fi
+
+exit 0

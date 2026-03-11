@@ -241,7 +241,71 @@ def create_physical_replication_slot(leader_host, leader_port, user, slot_name):
     logging.getLogger("logger").info("create physical replication slot: {}".format(slot_name))
 
 
-def pg_rewind(data_dir, host, port, user, slot_name):
+def _auto_conf_line(config_name, config_val):
+    safe_val = str(config_val).replace("'", "''")
+    return "{} = '{}'".format(config_name, safe_val)
+
+
+def rewrite_postgresql_conf_local_bind(data_dir, local_ip, server_ip):
+    conf_path = os.path.join(data_dir, "postgresql.conf")
+    if not os.path.exists(conf_path):
+        return
+
+    local_line = _auto_conf_line("falcon.local_ip", local_ip)
+    server_line = _auto_conf_line("falcon_communication.server_ip", server_ip)
+
+    with open(conf_path, "r") as f:
+        lines = f.read().splitlines()
+
+    found_local = False
+    found_server = False
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("falcon.local_ip"):
+            new_lines.append(local_line)
+            found_local = True
+            continue
+        if stripped.startswith("falcon_communication.server_ip"):
+            new_lines.append(server_line)
+            found_server = True
+            continue
+        new_lines.append(line)
+
+    if not found_local:
+        new_lines.append(local_line)
+    if not found_server:
+        new_lines.append(server_line)
+
+    with open(conf_path, "w") as f:
+        f.write("\n".join(new_lines) + "\n")
+
+    logging.getLogger("logger").info(
+        "Rewrite postgresql.conf local bind with local_ip=%s, server_ip=%s",
+        local_ip,
+        server_ip,
+    )
+
+
+def rewrite_standby_auto_conf(data_dir, connection_string, slot_name, local_ip, server_ip):
+    auto_conf_path = os.path.join(data_dir, "postgresql.auto.conf")
+    lines = [
+        _auto_conf_line("primary_conninfo", connection_string),
+        _auto_conf_line("primary_slot_name", slot_name),
+        _auto_conf_line("falcon.local_ip", local_ip),
+        _auto_conf_line("falcon_communication.server_ip", server_ip),
+    ]
+    with open(auto_conf_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    logging.getLogger("logger").info(
+        "Rewrite postgresql.auto.conf for standby with local_ip=%s, server_ip=%s",
+        local_ip,
+        server_ip,
+    )
+    rewrite_postgresql_conf_local_bind(data_dir, local_ip, server_ip)
+
+
+def pg_rewind(data_dir, host, port, user, slot_name, local_ip, server_ip):
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
@@ -250,16 +314,8 @@ def pg_rewind(data_dir, host, port, user, slot_name):
         "pg_rewind -D {} --source-server='{}'".format(data_dir, connection_string)
     )
     shell.exec_cmd("touch {}".format(os.path.join(data_dir, "standby.signal")))
-    shell.exec_cmd("> {}".format(os.path.join(data_dir, "postgresql.auto.conf")))
-    shell.exec_cmd(
-        "echo \"primary_conninfo = '{}'\" >> {}".format(
-            connection_string, os.path.join(data_dir, "postgresql.auto.conf")
-        )
-    )
-    shell.exec_cmd(
-        "echo \"primary_slot_name = '{}'\" >> {}".format(
-            slot_name, os.path.join(data_dir, "postgresql.auto.conf")
-        )
+    rewrite_standby_auto_conf(
+        data_dir, connection_string, slot_name, local_ip, server_ip
     )
 
 
@@ -319,7 +375,17 @@ def is_wal_receiver_working(connection_string):
     return False
     
 
-def do_demote(data_dir, host, port, user, local_host, local_port, local_host_node):
+def do_demote(
+    data_dir,
+    host,
+    port,
+    user,
+    local_host,
+    local_port,
+    local_host_node,
+    local_ip,
+    server_ip,
+):
     logging.getLogger("logger").info("Demote the DB to standby using pg_rewind")
     clear_liveness_file()
     clear_all_replication_slot(local_host, local_port, user)
@@ -327,7 +393,7 @@ def do_demote(data_dir, host, port, user, local_host, local_port, local_host_nod
     pg_stop(data_dir)
     slot_name = local_host_node.replace(".", "_").replace("-", "_")
     create_physical_replication_slot(host, port, user, slot_name)
-    pg_rewind(data_dir, host, port, user, slot_name)
+    pg_rewind(data_dir, host, port, user, slot_name, local_ip, server_ip)
     pg_start(data_dir, "~/logfile")
     logging.getLogger("logger").info("Check if the DB is ready")
     local_port = str(local_port)
@@ -344,6 +410,16 @@ def do_demote(data_dir, host, port, user, local_host, local_port, local_host_nod
         pg_stop(data_dir)
         shell.exec_cmd("rm -rf {}/*".format(data_dir))
         pg_basebackup(data_dir, host, port, user, slot_name)
+        leader_connection_string = "host={} port={} user={} dbname=postgres".format(
+            host, str(port), user
+        )
+        rewrite_standby_auto_conf(
+            data_dir,
+            leader_connection_string,
+            slot_name,
+            local_ip,
+            server_ip,
+        )
         pg_start(data_dir, "~/logfile")
         time.sleep(10)
         ready = is_standby_ready(connection_string)
@@ -351,7 +427,7 @@ def do_demote(data_dir, host, port, user, local_host, local_port, local_host_nod
     logging.getLogger("logger").info("Demote the DB using pg_basebackup successfully.")
 
 
-def do_promote(data_dir, host, port, user):
+def do_promote(data_dir, host, port, user, local_ip, server_ip):
     port = str(port)
     connection_string = "host={} port={} user={} dbname=postgres".format(
         host, port, user
@@ -359,12 +435,27 @@ def do_promote(data_dir, host, port, user):
     logging.getLogger("logger").info("Promote the DB to primary")
     pg_promote(data_dir)
     shell.exec_cmd("> {}".format(os.path.join(data_dir, "postgresql.auto.conf")))
+    rewrite_postgresql_conf_local_bind(data_dir, local_ip, server_ip)
+    alter_postgresql_config(connection_string, "falcon.local_ip", local_ip)
+    alter_postgresql_config(
+        connection_string, "falcon_communication.server_ip", server_ip
+    )
     alter_postgresql_config(connection_string, "synchronous_commit", "on")
     alter_postgresql_config(connection_string, "synchronous_standby_names", "*")
     logging.getLogger("logger").info("Promote the DB to primary successfully.")
 
 
-def change_following_leader(data_dir, leader_host, leader_port, user, local_host, local_port, local_host_node):
+def change_following_leader(
+    data_dir,
+    leader_host,
+    leader_port,
+    user,
+    local_host,
+    local_port,
+    local_host_node,
+    local_ip,
+    server_ip,
+):
     logging.getLogger("logger").info("Change following leader")
     slot_name = local_host_node.replace(".", "_").replace("-", "_")
     create_physical_replication_slot(leader_host, leader_port, user, slot_name)
@@ -375,16 +466,8 @@ def change_following_leader(data_dir, leader_host, leader_port, user, local_host
     logging.getLogger("logger").info(
         "Change following leader, the new leader is {}".format(leader_host)
     )
-    shell.exec_cmd("> {}".format(os.path.join(data_dir, "postgresql.auto.conf")))
-    shell.exec_cmd(
-        "echo \"primary_conninfo = '{}'\" >> {}".format(
-            connection_string, os.path.join(data_dir, "postgresql.auto.conf")
-        )
-    )
-    shell.exec_cmd(
-        "echo \"primary_slot_name = '{}'\" >> {}".format(
-            slot_name, os.path.join(data_dir, "postgresql.auto.conf")
-        )
+    rewrite_standby_auto_conf(
+        data_dir, connection_string, slot_name, local_ip, server_ip
     )
     pg_reload(data_dir)
     local_port = str(local_port)
@@ -401,6 +484,13 @@ def change_following_leader(data_dir, leader_host, leader_port, user, local_host
         pg_stop(data_dir)
         shell.exec_cmd("rm -rf {}/*".format(data_dir))
         pg_basebackup(data_dir, leader_host, leader_port, user, slot_name)
+        rewrite_standby_auto_conf(
+            data_dir,
+            connection_string,
+            slot_name,
+            local_ip,
+            server_ip,
+        )
         pg_start(data_dir, "~/logfile")
         time.sleep(10)
         ready = is_standby_ready(local_connection_string)
@@ -449,7 +539,9 @@ def get_lsn(host, port, user):
     return max_lsn
 
 
-def demote_for_start(data_dir, host, port, user, local_host_node):
+def demote_for_start(
+    data_dir, host, port, user, local_host_node, local_ip, server_ip
+):
     logging.getLogger("logger").info("Demote the DB using pg_basebackup for start")
     clear_liveness_file()
     pg_stop(data_dir)
@@ -457,6 +549,16 @@ def demote_for_start(data_dir, host, port, user, local_host_node):
     create_physical_replication_slot(host, port, user, slot_name)
     shell.exec_cmd("rm -rf {}/*".format(data_dir))
     pg_basebackup(data_dir, host, port, user, slot_name)
+    leader_connection_string = "host={} port={} user={} dbname=postgres".format(
+        host, str(port), user
+    )
+    rewrite_standby_auto_conf(
+        data_dir,
+        leader_connection_string,
+        slot_name,
+        local_ip,
+        server_ip,
+    )
     pg_start(data_dir, "~/logfile")
     restore_liveness_file()
     logging.getLogger("logger").info(
