@@ -4,8 +4,6 @@ x-falcon-env: &falcon-env
   POD_NAMESPACE: falconfs
   zk_endpoint: zk-1:2181
   cluster_name: "/falcon"
-  FALCON_ALLOW_CORE_DUMP: ${FALCON_ALLOW_CORE_DUMP:-0}
-  FALCON_CORE_LIMIT: ${FALCON_CORE_LIMIT:-1048576}
   STORAGE_THRESHOLD: "0.9"
   BRPC_PORT: "50039"
   wait_replica_time: "600"
@@ -21,11 +19,6 @@ x-falcon-common: &falcon-common
   privileged: true
   restart: unless-stopped
   stop_grace_period: 10s
-  ulimits:
-    core:
-      soft: ${FALCON_CORE_LIMIT:-0}
-      hard: ${FALCON_CORE_LIMIT:-0}
-
 x-falcon-healthcheck: &falcon-healthcheck
   test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
   interval: 10s
