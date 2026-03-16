@@ -29,7 +29,7 @@ do
         sleep 3
         total_throughput=0
         if [ -f "$BIN_DIR/result_1111" ]; then
-            last_line=$(awk "NF{line=$0} END{print line}" "$BIN_DIR/result_1111")
+            last_line=$(awk 'NF{line=$0} END{print line}' "$BIN_DIR/result_1111")
             if [[ $last_line == *"[FINISH]"* ]]; then
                 throughput=$(echo "$last_line" | awk -F', ' '{
                     for(i=1;i<=NF;i++){

@@ -15,11 +15,13 @@ Source0:        falconfs-%{version}.tar.gz
 # out-of-band under /usr/local for this package flow.
 # Disable RPM automatic ELF dependency/provides generation to avoid forcing
 # repository-provided soname packages that may not exist on openEuler.
-AutoReqProv:    no
+# AutoReqProv:    no
 
 Requires:       bash
 Requires:       python3
 Requires:       python3-requests python3-psycopg2 python3-kazoo
+Requires:       postgresql-17 postgresql-17-server
+Requires:       brpc zookeeper-c
 
 BuildRequires:  bash gcc gcc-c++ make
 BuildRequires:  cmake ninja-build
@@ -44,7 +46,9 @@ BuildRequires:  gtest-devel gmock-devel
 BuildRequires:  python3-devel
 BuildRequires:  maven java-11-openjdk-devel
 BuildRequires:  wget tar rsync
-BuildRequires:  libstdc++-static libpq-devel zstd-devel
+BuildRequires:  libstdc++-static zstd-devel
+BuildRequires:  brpc-devel zookeeper-c-devel
+BuildRequires:  postgresql-17-server-devel
 BuildRequires:  perl
 BuildRequires:  chrpath
 BuildRequires:  python3-requests python3-psycopg2 python3-kazoo
@@ -66,7 +70,6 @@ It integrates seamlessly with cloud environments.
 
 %build
 set -euo pipefail
-export PATH=/usr/local/pgsql/bin:$PATH
 export STAGE_ROOT="%{_builddir}/falconfs-stage"
 export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 mkdir -p "${STAGE_ROOT}"
@@ -76,7 +79,6 @@ pg_config --pgxs
 
 %install
 set -euo pipefail
-export PATH=/usr/local/pgsql/bin:$PATH
 export STAGE_ROOT="%{_builddir}/falconfs-stage"
 export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 rm -rf "%{buildroot}" "${STAGE_ROOT}"
@@ -95,7 +97,7 @@ rm -rf "%{buildroot}/usr/local/falconfs/private-directory-test"
 mkdir -p "%{buildroot}%{_sysconfdir}/profile.d"
 cat > "%{buildroot}%{_sysconfdir}/profile.d/falconfs.sh" <<'EOF'
 export FALCONFS_INSTALL_DIR=/usr/local/falconfs
-export PATH=/usr/local/pgsql/bin:/usr/local/falconfs/falcon_client/bin:$PATH
+export PATH=/usr/local/falconfs/falcon_client/bin:$PATH
 EOF
 
 # Strip non-standard RPATH/RUNPATH to satisfy rpmbuild checks

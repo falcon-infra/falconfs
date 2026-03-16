@@ -19,7 +19,6 @@ x-falcon-common: &falcon-common
   privileged: true
   restart: unless-stopped
   stop_grace_period: 10s
-
 x-falcon-healthcheck: &falcon-healthcheck
   test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
   interval: 10s
