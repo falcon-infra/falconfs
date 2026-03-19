@@ -10,6 +10,7 @@
 
 #include "base_comm_adapter/base_meta_service_job.h"
 #include "hcom_comm_adapter/falcon_meta_service_interface.h"
+#include "remote_connection_utils/error_code_def.h"
 
 namespace falcon {
 namespace meta_service {
@@ -22,6 +23,7 @@ class FalconMetaServiceJob : public BaseMetaServiceJob {
     ~FalconMetaServiceJob() override;
 
     void Done() override;
+    void MarkFailed() override { m_response.status = PROGRAM_ERROR; }
     bool IsAllowBatchProcess() override;
     bool IsEmptyRequest() override;
     int GetReqServiceCnt() override;

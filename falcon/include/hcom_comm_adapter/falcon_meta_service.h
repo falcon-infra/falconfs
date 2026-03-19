@@ -27,6 +27,8 @@ public:
 
     virtual ~FalconMetaService();
 
+    bool Init(int port, int pool_size);
+
     int DispatchFalconMetaServiceJob(FalconMetaServiceJob* job);
 
     int SubmitFalconMetaRequest(const FalconMetaServiceRequest& request,
