@@ -304,6 +304,7 @@ void DiskCache::Pin(uint64_t key)
     }
     inodeToCacheIter[key]->refs += 1;
     inodeToCacheIter[key]->atime = static_cast<uint64_t>(time(nullptr));
+    TransferItemToBack(key);
 }
 
 void DiskCache::Unpin(uint64_t key)
@@ -314,6 +315,23 @@ void DiskCache::Unpin(uint64_t key)
     std::lock_guard<std::mutex> lock(mutex);
     if (inodeToCacheIter.find(key) != inodeToCacheIter.end() && inodeToCacheIter[key]->refs > 0) {
         inodeToCacheIter[key]->refs -= 1;
+    }
+}
+
+/**
+ * @brief Move the CacheItem with the specified inode key to the end of the cacheItems list and mark it as recently used,
+ * it helps implement the LRU caching strategy.
+ * @param key inode key corresponding to CacheItem
+ */
+void DiskCache::TransferItemToBack(uint64_t key)
+{
+    if (stop) {
+        return;
+    }
+    if (inodeToCacheIter.find(key) != inodeToCacheIter.end()) {
+        auto it = inodeToCacheIter[key];
+        cacheItems.splice(cacheItems.end(), cacheItems, it);
+        inodeToCacheIter[key] = prev(cacheItems.end());
     }
 }
 
@@ -368,6 +386,7 @@ void DiskCache::InsertAndUpdate(uint64_t key, uint64_t size, bool needPin)
         freeCap -= static_cast<int64_t>(size - inodeToCacheIter[key]->size);
         inodeToCacheIter[key]->atime = static_cast<uint64_t>(time(nullptr));
         inodeToCacheIter[key]->size = size;
+        TransferItemToBack(key);
         //
     } else {
         // insert
@@ -375,7 +394,7 @@ void DiskCache::InsertAndUpdate(uint64_t key, uint64_t size, bool needPin)
         elem.atime = static_cast<uint64_t>(time(nullptr));
         elem.size = size;
         elem.inode = key;
-        cacheItems.emplace_back(elem);
+        cacheItems.emplace_back(elem); /* already in the back */
         inodeToCacheIter[key] = prev(cacheItems.end());
         usedCap += size;
         freeCap -= size;
@@ -401,6 +420,7 @@ bool DiskCache::Update(uint64_t key, uint64_t size)
         freeCap -= static_cast<int64_t>(size - inodeToCacheIter[key]->size);
         inodeToCacheIter[key]->atime = static_cast<uint64_t>(time(nullptr));
         inodeToCacheIter[key]->size = size;
+        TransferItemToBack(key);
         // FALCON_LOG(LOG_INFO) << "Add Cache, inode =  " << key << ", size = " << size << ", usedCap = " << usedCap;
     } else {
         FALCON_LOG(LOG_ERROR) << "In DiskCache::Add(), inode " << key << " not found";
@@ -421,6 +441,7 @@ bool DiskCache::Add(uint64_t key, uint64_t size)
         freeCap -= static_cast<int64_t>(size);
         inodeToCacheIter[key]->atime = static_cast<uint64_t>(time(nullptr));
         inodeToCacheIter[key]->size += size;
+        TransferItemToBack(key);
         // FALCON_LOG(LOG_INFO) << "Add Cache, inode =  " << key << ", size = " << size << ", usedCap = " << usedCap;
     } else {
         FALCON_LOG(LOG_ERROR) << "In DiskCache::Add(), inode " << key << " not found";

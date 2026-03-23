@@ -49,7 +49,6 @@ class DiskCache {
     int Delete(uint64_t key);
     void Evict(uint64_t size);
     void Unpin(uint64_t key);
-    void Pin(uint64_t key);
     bool PreAllocSpace(uint64_t size);
     void FreePreAllocSpace(uint64_t size);
     bool HasFreeSpace();
@@ -93,4 +92,24 @@ class DiskCache {
     int ScanCache();
     static int Walk(std::string dirPath);
     int CheckSpaceEnough();
+    void Pin(uint64_t key);
+    void TransferItemToBack(uint64_t key);
+
+    friend class DiskCacheTestHelper;
+};
+
+/* Test helper class, used to simulate insufficient disk space */
+class DiskCacheTestHelper {
+public:
+    static void MockLowDiskSpace(DiskCache& cache, uint64_t mockTotalCap, uint64_t mockFreeCap, uint64_t mockUsedCap) {
+        cache.totalCap = mockTotalCap;
+        cache.freeCap = mockFreeCap;
+        cache.blockRatio = static_cast<float>(mockFreeCap) / mockTotalCap;
+        cache.usedCap = mockUsedCap;
+    }
+
+    /*Directly call the CleanupForEvict method to bypass GetCurFreeRatio */
+    static void CleanupForEvict(DiskCache& cache, uint64_t size) {
+        cache.CleanupForEvict(size);
+    }
 };
