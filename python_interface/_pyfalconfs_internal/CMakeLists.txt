@@ -10,7 +10,11 @@ target_include_directories(_pyfalconfs_internal PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon_store/src/include
     ${PROJECT_SOURCE_DIR}/common/src/include
 )
-target_link_options(_pyfalconfs_internal PRIVATE -static-libstdc++ -static-libgcc)
+# WARNING: NEVER use -static-libstdc++ or -static-libgcc for Python modules!
+# Python modules must dynamically link libstdc++ to avoid ABI conflicts with
+# the Python interpreter. Using static linking causes dual libstdc++ instances
+# which leads to crashes in locale/codecvt operations (SIGSEGV in do_unshift).
+# See: https://github.com/pybind/pybind11/issues/2231
 target_link_libraries(_pyfalconfs_internal PUBLIC
     ${Python3_LIBRARIES}
     FalconClient

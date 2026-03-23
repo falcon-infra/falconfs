@@ -2,6 +2,14 @@
 
 PG_CFLAGS = -Wno-declaration-after-statement
 
+# AddressSanitizer support with dynamic linking
+ifdef WITH_ASAN
+ASAN_FLAGS = -fsanitize=address -fno-omit-frame-pointer
+PG_CFLAGS += $(ASAN_FLAGS)
+# For GCC, ensure dynamic libasan by adding to LDFLAGS
+SHLIB_LINK_INTERNAL += -lasan
+endif
+
 MODULE_big = falcon
 SUBDIRS = . metadb utils distributed_backend transaction control dir_path_shmem connection_pool plugin perf_counter
 
