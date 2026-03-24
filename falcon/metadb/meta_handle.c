@@ -452,7 +452,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
         info->st_atim = info->st_mtim;
         info->st_ctim = info->st_mtim;
         info->st_size = 0;
-        info->node_id = GetLocalServerId();
+        info->node_id = -1;
         info->st_nlink = 1;
         info->etag = (char *)"";
         info->st_dev = 0;
