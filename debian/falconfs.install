@@ -1,0 +1,2 @@
+debian/tmp/usr/local/falconfs/ usr/local/
+debian/tmp/etc/profile.d/falconfs.sh etc/profile.d/

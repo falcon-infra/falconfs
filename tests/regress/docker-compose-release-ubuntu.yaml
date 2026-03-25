@@ -1,5 +1,3 @@
-version: "3.8"
-
 x-falcon-env: &falcon-env
   POD_NAMESPACE: falconfs
   zk_endpoint: zk-1:2181,zk-2:2181,zk-3:2181
@@ -22,18 +20,20 @@ x-falcon-common: &falcon-common
   stop_grace_period: 10s
 
 x-falcon-healthcheck-cn: &falcon-healthcheck-cn
-  test: [ "CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh" ]
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
   interval: 10s
   timeout: 5s
   retries: 3
   start_period: 10s
 
 x-falcon-healthcheck-dn: &falcon-healthcheck-dn
-  test: [ "CMD-SHELL", "bash /usr/local/falconfs/falcon_dn/check_liveness.sh" ]
+  test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_dn/check_liveness.sh"]
   interval: 10s
   timeout: 5s
   retries: 3
   start_period: 10s
+
+x-release-image: &release-image ${FALCON_RELEASE_IMAGE:-falconfs-release-ubuntu24.04:v0.1.0}
 
 services:
   zk1:
@@ -45,7 +45,7 @@ services:
         aliases:
           - zk-1
     healthcheck:
-      test: [ "CMD", "zkServer.sh", "status" ]
+      test: ["CMD", "zkServer.sh", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -65,7 +65,7 @@ services:
         aliases:
           - zk-2
     healthcheck:
-      test: [ "CMD", "zkServer.sh", "status" ]
+      test: ["CMD", "zkServer.sh", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -85,7 +85,7 @@ services:
         aliases:
           - zk-3
     healthcheck:
-      test: [ "CMD", "zkServer.sh", "status" ]
+      test: ["CMD", "zkServer.sh", "status"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -98,10 +98,10 @@ services:
 
   cn1:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-cn-1
     hostname: cn-1
-    command: [ "bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.11
@@ -124,10 +124,10 @@ services:
 
   cn2:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-cn-2
     hostname: cn-2
-    command: [ "bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.12
@@ -150,10 +150,10 @@ services:
 
   cn3:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-cn-3
     hostname: cn-3
-    command: [ "bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.13
@@ -176,10 +176,10 @@ services:
 
   dn1:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-dn-1
     hostname: dn-1
-    command: [ "bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.21
@@ -202,10 +202,10 @@ services:
 
   dn2:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-dn-2
     hostname: dn-2
-    command: [ "bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.22
@@ -228,10 +228,10 @@ services:
 
   dn3:
     <<: *falcon-common
-    image: falconfs-release-openeuler24.03:v0.1.0
+    image: *release-image
     container_name: falcon-dn-3
     hostname: dn-3
-    command: [ "bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh" ]
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.23

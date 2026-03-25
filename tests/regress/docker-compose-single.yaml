@@ -19,7 +19,6 @@ x-falcon-common: &falcon-common
   privileged: true
   restart: unless-stopped
   stop_grace_period: 10s
-
 x-falcon-healthcheck: &falcon-healthcheck
   test: ["CMD-SHELL", "bash /usr/local/falconfs/falcon_cn/check_liveness.sh"]
   interval: 10s
@@ -33,6 +32,8 @@ x-store-healthcheck: &store-healthcheck
   timeout: 5s
   retries: 3
   start_period: 10s
+
+x-falcon-full-image: &falcon-full-image ${FALCON_FULL_IMAGE:-localhost:5000/falconfs-full-ubuntu24.04:v0.1.0}
 
 services:
   zk1:
@@ -58,9 +59,10 @@ services:
 
   cn1:
     <<: *falcon-common
-    image: localhost:5000/falconfs-cn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-cn-1
     hostname: cn-1
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.11
@@ -80,9 +82,10 @@ services:
 
   cn2:
     <<: *falcon-common
-    image: localhost:5000/falconfs-cn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-cn-2
     hostname: cn-2
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.12
@@ -102,9 +105,10 @@ services:
 
   cn3:
     <<: *falcon-common
-    image: localhost:5000/falconfs-cn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-cn-3
     hostname: cn-3
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.13
@@ -124,9 +128,10 @@ services:
 
   dn1:
     <<: *falcon-common
-    image: localhost:5000/falconfs-dn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-dn-1
     hostname: dn-1
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.21
@@ -146,9 +151,10 @@ services:
 
   dn2:
     <<: *falcon-common
-    image: localhost:5000/falconfs-dn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-dn-2
     hostname: dn-2
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.22
@@ -174,9 +180,10 @@ services:
 
   dn3:
     <<: *falcon-common
-    image: localhost:5000/falconfs-dn:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-dn-3
     hostname: dn-3
+    command: ["bash", "/usr/local/falconfs/falcon_dn/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.23
@@ -202,9 +209,10 @@ services:
 
   store1:
     <<: *falcon-common
-    image: localhost:5000/falconfs-store:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-store-1
     hostname: store-1
+    command: ["bash", "/usr/local/falconfs/falcon_store/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.31
@@ -214,6 +222,7 @@ services:
       NODE_IP: 172.18.0.31
       POD_NAME: falcon-store-1
       POD_IP: 172.18.0.31
+      CONFIG_FILE: /usr/local/falconfs/falcon_store/config.json
     volumes:
       - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/cache:/usr/local/falconfs/falcon_store/cache
       - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/store-1/log:/usr/local/falconfs/falcon_store/log
@@ -230,9 +239,10 @@ services:
 
   regress1:
     <<: *falcon-common
-    image: localhost:5000/falconfs-regress:ubuntu24.04
+    image: *falcon-full-image
     container_name: falcon-regress-1
     hostname: regress-1
+    command: ["bash", "/usr/local/falconfs/falcon_regress/docker-entrypoint.sh"]
     networks:
       falcon-net:
         ipv4_address: 172.18.0.41
