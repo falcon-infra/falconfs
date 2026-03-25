@@ -1,11 +1,33 @@
 ---
+# FalconFS Ansible Deployment Playbook
+#
+# Two build modes are supported (controlled by falcon_build_mode variable):
+#
+# Mode 1: distributed (default, for production)
+#   - install-deps and build run on ALL nodes (CN/DN) in parallel
+#   - package and distribute are skipped
+#   - Use: ansible-playbook falcontest.yml --tags "install-deps,build,start"
+#
+# Mode 2: centralized (for container testing, resource-constrained environments)
+#   - install-deps and build run ONLY on CN node
+#   - package and distribute are required to copy artifacts to DN nodes
+#   - Use: ansible-playbook falcontest.yml --tags "install-deps,build,package,distribute,start"
+#   - Set: falcon_build_mode=centralized in inventory
+
 - name: Install dependencies
   gather_facts: yes
   hosts: falconall
   tags: install-deps
   vars:
     unique_hosts: "{{ play_hosts | map('extract', hostvars) | groupby('ansible_host') | map('last') | map('first') | map(attribute='inventory_hostname') | list }}"
+    # centralized mode: only run on CN; distributed mode: run on all nodes
+    target_hosts: "{{ ['falconcn'] if falcon_build_mode | default('distributed') == 'centralized' else ['falconall'] }}"
   tasks:
+    - name: Skip task in centralized mode if not CN
+      meta: end_host
+      when:
+        - falcon_build_mode | default('distributed') == 'centralized'
+        - inventory_hostname not in groups['falconcn']
     - name: Allow Write To /etc/sudoers
       become: yes
       become_method: sudo
@@ -26,7 +48,10 @@
         src: "{{ item }}"
         dest: "{{ ansible_user_dir }}/{{ item | basename }}"
         mode: 0755
-      loop: "{{ lookup('fileglob', './*.sh').split(',') }}"
+      loop:
+        - install-ubuntu24.04.sh
+        - install-ubuntu22.04.sh
+      when: inventory_hostname in unique_hosts
     - name: Run installation dependencies script for Ubuntu
       become: yes
       become_method: sudo
@@ -57,19 +82,46 @@
   vars:
     unique_hosts: "{{ play_hosts | map('extract', hostvars) | groupby('ansible_host') | map('last') | map('first') | map(attribute='inventory_hostname') | list }}"
   tasks:
+    - name: Skip task in centralized mode if not CN
+      meta: end_host
+      when:
+        - falcon_build_mode | default('distributed') == 'centralized'
+        - inventory_hostname not in groups['falconcn']
     - name: Ensure parent directory exists
       file:
         path: "{{ remote_src_dir | dirname }}"
         state: directory
         mode: 0755
-    - name: Clone Code
+    - name: Clone Code (try git first)
       git:
         repo: "{{ falcon_repo_url }}"
         version: "{{ falcon_repo_version }}"
         dest: "{{ remote_src_dir }}"
         update: yes
         force: yes
-        recursive: yes
+        recursive: no
+      when: inventory_hostname in unique_hosts
+      register: git_clone_result
+      ignore_errors: yes
+    - name: Download Code as tarball (fallback if git fails)
+      shell: |
+        set -e
+        rm -rf "{{ remote_src_dir }}"
+        mkdir -p "{{ remote_src_dir }}"
+        cd /tmp
+        wget --no-check-certificate -O falconfs.tar.gz "{{ falcon_repo_url | replace('.git', '/archive/refs/heads/' + falcon_repo_version + '.tar.gz') }}"
+        tar -xzf falconfs.tar.gz -C "{{ remote_src_dir }}" --strip-components=1
+        rm -f falconfs.tar.gz
+      when: 
+        - inventory_hostname in unique_hosts
+        - git_clone_result is failed
+    - name: Clean previous build
+      shell: ./build.sh clean
+      args:
+        chdir: "{{ remote_src_dir }}"
+      environment:
+        LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
+        PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
       when: inventory_hostname in unique_hosts
     - name: Build and install
       shell: ./build.sh && ./build.sh install
@@ -79,6 +131,69 @@
         LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
         PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
       when: inventory_hostname in unique_hosts
+
+
+- name: Package FalconFS (centralized mode only)
+  gather_facts: yes
+  hosts: falconcn
+  tags: package
+  tasks:
+    - name: Check if centralized mode
+      debug:
+        msg: "Package task is only needed in 'centralized' mode. Current mode: {{ falcon_build_mode | default('distributed') }}"
+      when: falcon_build_mode | default('distributed') != 'centralized'
+    - name: Create package directory
+      file:
+        path: "{{ ansible_user_dir }}/falconfs_packages"
+        state: directory
+        mode: 0755
+      when: falcon_build_mode | default('distributed') == 'centralized'
+    - name: Package FalconFS install directory
+      community.general.archive:
+        path: "{{ falconfs_install_dir }}"
+        dest: "{{ ansible_user_dir }}/falconfs_packages/falconfs.tar.gz"
+        format: gz
+        force_archive: yes
+      when: falcon_build_mode | default('distributed') == 'centralized'
+
+
+- name: Distribute FalconFS (centralized mode only)
+  gather_facts: yes
+  hosts: falcondn
+  tags: distribute
+  tasks:
+    - name: Check if centralized mode
+      debug:
+        msg: "Distribute task is only needed in 'centralized' mode. Current mode: {{ falcon_build_mode | default('distributed') }}"
+      when: falcon_build_mode | default('distributed') != 'centralized'
+      run_once: true
+      delegate_to: localhost
+    - name: Create parent directory for install on DN nodes
+      become: yes
+      become_method: sudo
+      file:
+        path: "{{ falconfs_install_dir | dirname }}"
+        state: directory
+        mode: 0755
+      when: falcon_build_mode | default('distributed') == 'centralized'
+    - name: Copy package to DN nodes
+      synchronize:
+        src: "/home/falcon/falconfs_packages/falconfs.tar.gz"
+        dest: "/tmp/falconfs.tar.gz"
+        mode: push
+        archive: no
+        recursive: yes
+        times: yes
+      when: falcon_build_mode | default('distributed') == 'centralized'
+    - name: Extract FalconFS package on DN nodes
+      become: yes
+      become_method: sudo
+      unarchive:
+        src: "/tmp/falconfs.tar.gz"
+        dest: "{{ falconfs_install_dir | dirname }}"
+        remote_src: yes
+        creates: "{{ falconfs_install_dir }}"
+      when: falcon_build_mode | default('distributed') == 'centralized'
 
 
 - name: Start metadata server
@@ -97,38 +212,57 @@
         line: "{{ item.line }}"
         backrefs: yes
       loop:
-        - dest: "{{ remote_src_dir }}/deploy/meta/falcon_meta_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/meta/falcon_meta_config.sh"
           regexp: '^localIp='
           line: "localIp='{{ localip }}'"
-        - dest: "{{ remote_src_dir }}/deploy/meta/falcon_meta_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/meta/falcon_meta_config.sh"
           regexp: '^cnIp='
           line: "cnIp='{{ cn_localip }}'"
-        - dest: "{{ remote_src_dir }}/deploy/meta/falcon_meta_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/meta/falcon_meta_config.sh"
           regexp: '^workerIpList='
           line: "workerIpList=({{ dn_localip }})"
-        - dest: "{{ remote_src_dir }}/deploy/meta/falcon_meta_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/meta/falcon_meta_config.sh"
           regexp: '^workerNumList='
           line: "workerNumList=({{ dn_worker_num }})"
-        - dest: "{{ remote_src_dir }}/deploy/meta/falcon_meta_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/meta/falcon_meta_config.sh"
           regexp: '^uniquePortPrefix='
           line: "uniquePortPrefix={{ falcon_server_port_prefix }}"
       when: inventory_hostname in groups['falconmeta']
+    - name: Clean stale PostgreSQL lock files before start
+      shell: |
+        for lock_file in /tmp/.s.PGSQL.*.lock; do
+          if [ -f "$lock_file" ]; then
+            port=${lock_file#.s.PGSQL.}
+            port=${port%.lock}
+            if ! ss -tlnp 2>/dev/null | grep -q ":$port " && \
+               ! netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+              rm -f "$lock_file"
+              echo "Cleaned stale lock: $lock_file"
+            fi
+          fi
+        done
+      ignore_errors: yes
+      changed_when: false
+      when: inventory_hostname in groups['falconmeta']
     - name: Start Dn
-      shell: /bin/bash -c ". ./falcon_env.sh && ./meta/falcon_meta_start.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./meta/falcon_meta_start.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
-        LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
-        PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
+        LD_LIBRARY_PATH: "/usr/local/pgsql/lib:{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
+        PATH: "/usr/local/pgsql/bin:{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
+        FALCONFS_INSTALL_DIR: "{{ falconfs_install_dir }}"
       when: inventory_hostname in groups['falcondn']
     - name: Start Cn
-      shell: /bin/bash -c ". ./falcon_env.sh && ./meta/falcon_meta_start.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./meta/falcon_meta_start.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
-        LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
-        PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
+        LD_LIBRARY_PATH: "/usr/local/pgsql/lib:{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
+        PATH: "/usr/local/pgsql/bin:{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
+        FALCONFS_INSTALL_DIR: "{{ falconfs_install_dir }}"
       when: inventory_hostname in groups['falconcn']
+
 
 - name: Start client
   gather_facts: yes
@@ -146,46 +280,52 @@
         dest: "{{ item.dest }}"
         regexp: "{{ item.regexp }}"
         line: "{{ item.line }}"
+      loop:
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_log_dir"\s*:'
+          line: '        "falcon_log_dir": "{{ falcon_client_log_path }}",'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_cache_root"\s*:'
+          line: '        "falcon_cache_root": "{{ falcon_client_cache_path }}_{{ ansible_user }}",'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_server_ip"\s*:'
+          line: '        "falcon_server_ip": "{{ cn_server_ip }}",'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_server_port"\s*:'
+          line: '        "falcon_server_port": "{{ falcon_server_port_prefix }}10",'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_node_id"\s*:'
+          line: '        "falcon_node_id": {{ node_id }},'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_cluster_view"\s*:'
+          line: '        "falcon_cluster_view": [{{ all_client_ips_ports }}],'
+        - dest: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
+          regexp: '^\s*"falcon_mount_path"\s*:'
+          line: '        "falcon_mount_path": "{{ mount_path }}",'
+    - name: Set Client shell script Configuration
+      lineinfile:
+        dest: "{{ item.dest }}"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
         backrefs: yes
       loop:
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_log_dir": '
-          line: "        \"falcon_log_dir\": \"{{ falcon_client_log_path }}\","
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_cache_root": '
-          line: "        \"falcon_cache_root\": \"{{ falcon_client_cache_path }}_{{ ansible_user }}\","
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_server_ip": '
-          line: "        \"falcon_server_ip\": \"{{ cn_server_ip }}\","
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_server_port": '
-          line: "        \"falcon_server_port\": \"{{ falcon_server_port_prefix }}10\","
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_node_id": '
-          line: "        \"falcon_node_id\": {{ node_id }},"
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_cluster_view": '
-          line: "        \"falcon_cluster_view\": [{{ all_client_ips_ports }}],"
-        - dest: "{{ remote_src_dir }}/config/config.json"
-          regexp: '^        "falcon_mount_path": '
-          line: "        \"falcon_mount_path\": \"{{ mount_path }}\","
-        - dest: "{{ remote_src_dir }}/deploy/client/falcon_client_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/client/falcon_client_config.sh"
           regexp: '^CACHE_PATH='
           line: "CACHE_PATH=/tmp/falcon_cache_{{ ansible_user }}"
-        - dest: "{{ remote_src_dir }}/deploy/client/falcon_client_config.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/client/falcon_client_config.sh"
           regexp: '^MNT_PATH='
           line: "MNT_PATH={{ mount_path }}"
-        - dest: "{{ remote_src_dir }}/deploy/client/falcon_client_start.sh"
+        - dest: "{{ falconfs_install_dir }}/deploy/client/falcon_client_start.sh"
           regexp: '-rpc_endpoint="0\.0\.0\.0:\d+"'
           line: '-rpc_endpoint="0.0.0.0:{{ falcon_client_port }}"'
     - name: Start client
-      shell: /bin/bash -c ". ./falcon_env.sh && ./client/falcon_client_start.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./client/falcon_client_start.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
         LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
         PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
-        CONFIG_FILE: "{{ remote_src_dir }}/config/config.json"
+        CONFIG_FILE: "{{ falconfs_install_dir }}/falcon_client/config/config.json"
 
 
 - name: Stop metadata and client
@@ -194,26 +334,88 @@
   tags: stop
   tasks:
     - name: Stop Client
-      shell: /bin/bash -c ". ./falcon_env.sh && ./client/falcon_client_stop.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./client/falcon_client_stop.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
         LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
         PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
       when: inventory_hostname in groups['falconclient']
     - name: Stop Cn
-      shell: /bin/bash -c ". ./falcon_env.sh && ./meta/falcon_meta_stop.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./meta/falcon_meta_stop.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
         LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
         PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
       when: inventory_hostname in groups['falconcn']
     - name: Stop Dn
-      shell: /bin/bash -c ". ./falcon_env.sh && ./meta/falcon_meta_stop.sh"
+      shell: /bin/bash -c "source falcon_env.sh && ./meta/falcon_meta_stop.sh"
       args:
-        chdir: "{{ [remote_src_dir, 'deploy'] | path_join }}"
+        chdir: "{{ falconfs_install_dir }}/deploy"
       environment:
         LD_LIBRARY_PATH: "{{ extra_ld_library_path }}:{{ ansible_env.LD_LIBRARY_PATH | default('') }}"
         PATH: "{{ extra_path }}:{{ ansible_env.PATH | default('') }}"
       when: inventory_hostname in groups['falcondn']
+
+
+- name: Verify startup status
+  gather_facts: yes
+  hosts: falconall
+  tags: verify
+  tasks:
+    - name: Wait for metadata server to start (CN pooler port)
+      wait_for:
+        port: "{{ falcon_server_port_prefix }}10"
+        host: "{{ localip }}"
+        delay: 5
+        timeout: 60
+        state: started
+      when: inventory_hostname in groups['falconcn']
+      ignore_errors: yes
+      register: cn_port_check
+    - name: Wait for DN worker port
+      wait_for:
+        port: "{{ falcon_server_port_prefix }}20"
+        host: "{{ localip }}"
+        delay: 5
+        timeout: 60
+        state: started
+      when: inventory_hostname in groups['falcondn']
+      ignore_errors: yes
+      register: dn_port_check
+    - name: Check PostgreSQL process for metadata
+      shell: pgrep -f "postgres.*falcon" || echo "not found"
+      register: pg_process_check
+      when: inventory_hostname in groups['falconmeta']
+      changed_when: false
+    - name: Verify CN started successfully
+      debug:
+        msg: "CN {{ inventory_hostname }}: PostgreSQL process={{ pg_process_check.stdout }}, Port {{ falcon_server_port_prefix }}10={{ 'listening' if cn_port_check.state | default('') == 'started' else 'not listening' }}"
+      when: inventory_hostname in groups['falconcn']
+    - name: Verify DN started successfully
+      debug:
+        msg: "DN {{ inventory_hostname }}: PostgreSQL process={{ pg_process_check.stdout }}, Port {{ falcon_server_port_prefix }}20={{ 'listening' if dn_port_check.state | default('') == 'started' else 'not listening' }}"
+      when: inventory_hostname in groups['falcondn']
+    - name: Check FUSE mount for client
+      shell: mountpoint -q {{ mount_path }} && echo "mounted" || echo "not mounted"
+      register: fuse_mount_check
+      when: inventory_hostname in groups['falconclient']
+      changed_when: false
+    - name: Check client process
+      shell: pgrep -f "falcon_client" || echo "not found"
+      register: client_process_check
+      when: inventory_hostname in groups['falconclient']
+      changed_when: false
+    - name: Verify Client started successfully
+      debug:
+        msg: "Client {{ inventory_hostname }}: FUSE mount={{ fuse_mount_check.stdout }}, Process={{ client_process_check.stdout }}"
+      when: inventory_hostname in groups['falconclient']
+    - name: Summary of all nodes status
+      debug:
+        msg: |
+          ====== FalconFS Cluster Status ======
+          {% for host in groups['falconall'] %}
+          {{ host }}: {{ 'OK' if hostvars[host].get('cn_port_check', {}).get('state', '') == 'started' or hostvars[host].get('dn_port_check', {}).get('state', '') == 'started' or hostvars[host].get('fuse_mount_check', {}).get('stdout', '') == 'mounted' else 'CHECK' }}
+          {% endfor %}
+          =====================================

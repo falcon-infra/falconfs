@@ -1,0 +1,69 @@
+# FalconFS Ansible 测试中间镜像
+# 包含所有编译和运行依赖，加速后续测试
+#
+# 构建方法（从项目根目录执行）:
+#   docker build -f .claude/skills/test-ansible-deploy/Dockerfile.intermediate \
+#     -t 127.0.0.1:5000/falconfs-ansible-test:latest .
+#
+# 或使用 SKILL.md 中的脚本
+
+FROM 127.0.0.1:5000/ubuntu:24.04
+
+# 避免交互式提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install locales first (required for PostgreSQL)
+RUN apt-get update && \
+    apt-get install -y locales && \
+    locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+# Install basic dependencies
+RUN apt-get update && \
+    apt-get install -y openssh-server make rsync xz-utils sudo
+
+# Clean up apt cache to reduce image size
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure SSH server
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    mkdir -p /run/sshd
+
+# Create falcon user with sudo privileges
+RUN useradd -m -s /bin/bash falcon && \
+    echo 'falcon:falcon' | chpasswd && \
+    usermod -aG sudo falcon && \
+    echo 'falcon ALL=(ALL:ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+# Setup SSH directory for falcon user
+RUN mkdir -p /home/falcon/.ssh && \
+    chmod 700 /home/falcon/.ssh && \
+    chown -R falcon:falcon /home/falcon/.ssh
+
+# Create working directories
+RUN mkdir -p /home/falcon/code/ansible && \
+    mkdir -p /usr/local/falconfs && \
+    chown -R falcon:falcon /home/falcon/code /usr/local/falconfs
+
+# Copy and run install script (includes PostgreSQL 17, boost, etc.)
+COPY deploy/ansible/install-ubuntu24.04.sh /tmp/install-ubuntu24.04.sh
+RUN chmod +x /tmp/install-ubuntu24.04.sh && \
+    bash /tmp/install-ubuntu24.04.sh && \
+    rm -rf /tmp/*
+
+# Configure git safe directory (after git is installed by install script)
+RUN git config --global --add safe.directory '*'
+
+# Set working directory
+WORKDIR /home/falcon
+
+# Expose SSH port (for testing)
+EXPOSE 22
+
+# Default command - start sshd and keep container running
+CMD ["/usr/sbin/sshd", "-D", "-e"]
