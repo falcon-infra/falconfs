@@ -6,9 +6,9 @@ x-falcon-env: &falcon-env
   cluster_name: "/falcon"
   STORAGE_THRESHOLD: "0.9"
   BRPC_PORT: "50039"
-  wait_replica_time: "600"
+  wait_replica_time: "60"
   data_dir: "/usr/local/falconfs/data/"
-  cn_num: "3"
+  cn_num: "4"
   cn_sup_num: "0"
   dn_num: "3"
   dn_sup_num: "0"
@@ -178,6 +178,33 @@ services:
         condition: service_healthy
     healthcheck: *falcon-healthcheck
 
+  cn4:
+    <<: *falcon-common
+    image: *falcon-full-image
+    container_name: falcon-cn-4
+    hostname: cn-4
+    command: ["bash", "/usr/local/falconfs/falcon_cn/docker-entrypoint.sh"]
+    networks:
+      falcon-net:
+        ipv4_address: 172.18.0.14
+    environment:
+      <<: *falcon-env
+      NODE_NAME: cn-4
+      NODE_IP: 172.18.0.14
+      POD_NAME: falcon-cn-4
+      POD_IP: 172.18.0.14
+    volumes:
+      - ${FALCON_DATA_PATH:?"please set env FALCON_DATA_PATH for regress test"}/falcon-data/cn-4/data:/usr/local/falconfs/data/
+      - ${FALCON_CODE_PATH:?"please set env FALCON_CODE_PATH for falcon gdb"}:/home/falconMeta/falconfs
+    depends_on:
+      zk1:
+        condition: service_healthy
+      zk2:
+        condition: service_healthy
+      zk3:
+        condition: service_healthy
+    healthcheck: *falcon-healthcheck
+
   dn1:
     <<: *falcon-common
     image: *falcon-full-image
@@ -202,6 +229,8 @@ services:
       cn2:
         condition: service_started
       cn3:
+        condition: service_started
+      cn4:
         condition: service_started
     healthcheck: *falcon-healthcheck
 
@@ -230,6 +259,8 @@ services:
         condition: service_started
       cn3:
         condition: service_started
+      cn4:
+        condition: service_started
     healthcheck: *falcon-healthcheck
 
   dn3:
@@ -256,6 +287,8 @@ services:
       cn2:
         condition: service_started
       cn3:
+        condition: service_started
+      cn4:
         condition: service_started
     healthcheck: *falcon-healthcheck
 

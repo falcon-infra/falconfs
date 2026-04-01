@@ -122,23 +122,61 @@
 ## Chaos fault injection (P0)
 
 - `tests/regress/chaos_run.sh` provides automated fault injection with recovery checks.
-- Current P0 scenarios include `S01~S05` (without `S06`):
+- Current chaos scenarios include `S01~S07`:
   - `S01`: restart cn leader
   - `S01C2`: restart `falcon-cn-2` (fixed target, useful for deterministic repro)
   - `S02`: restart one dn leader
   - `S03`: restart random dn (prefer follower)
   - `S04`: restart store container
   - `S05`: kill `falcon_client` process in store
+  - `S06`: stop cn leader, hold for supplement window, then start
+  - `S07`: stop random dn, hold for supplement window, then start
 
 - Core checks after each action:
   - `/falcon/ready` exists in ZK
   - liveness scripts of CN/DN/Store pass
-  - `check_replication.py` passes
+  - metadata service probe reaches expected state (`RW` or `DEGRADED->RW` depending on topology/action)
   - `fuse.falcon_client` mount is ready
 
-- Core dump protection:
-  - regress compose sets `ulimit core=0` for services by default
-  - CN/DN startup scripts also set `ulimit -c 0`
+- Topology and probe options:
+  - `--topology auto|single|dual|triple` (default `auto`)
+    - `auto` only auto-detects acceptance policy from `replica_server_num`; it does not switch compose topology.
+  - `--probe-mode meta|meta+fuse` (default `meta`)
+  - `--probe-timeout-sec`: timeout for one metadata probe command (default `8`)
+  - `--reliability-timeout-sec`: timeout to wait replica reliability restoration for dual/triple metadata faults
+  - `--supplement-hold-sec`: hold duration for `S06/S07`, default is `wait_replica_time+30`
+  - `--strict-dual-ro-check`: require degraded-state observation (RO/RECOVERY/WRITE_BLOCKED) for dual metadata actions
+
+- Runtime prerequisites for `chaos_run.sh`:
+  - passwordless sudo is required (`sudo -n true` must pass), because the script performs mount cleanup and data cleanup
+  - by default, the script requires CN/DN container core ulimit to be `0` to avoid disk blowup
+
+- Core dump behavior and troubleshooting:
+  - if startup fails with `core ulimit inside containers: ... unlimited` and `core ulimit is not 0`, use one of these options:
+    1. set `ulimits.core.soft=0` and `ulimits.core.hard=0` for CN/DN services in compose
+    2. run with `--core-once-enable` (optionally add `--core-limit-kb <kb>`) to allow only first core capture and then auto-disable core dumps
+
+- Optional SMTP alert for core events (default disabled):
+  - `CHAOS_ALERT_ENABLE=1`: enable alerting
+  - `CHAOS_SMTP_HOST`: SMTP server host
+  - `CHAOS_SMTP_PORT`: SMTP port (common: `587` or `465`)
+  - `CHAOS_SMTP_USER` / `CHAOS_SMTP_PASS`: SMTP auth user and password (or app token)
+  - `CHAOS_ALERT_EMAIL_FROM`: sender email address
+  - `CHAOS_ALERT_EMAIL_TO`: recipient list, comma-separated
+  - `CHAOS_SMTP_TLS=1`: enable TLS (default `1`)
+
+- SMTP example:
+
+  ```bash
+  export CHAOS_ALERT_ENABLE=1
+  export CHAOS_SMTP_HOST="smtp.example.com"
+  export CHAOS_SMTP_PORT=587
+  export CHAOS_SMTP_USER="falcon-alert@example.com"
+  export CHAOS_SMTP_PASS="smtp-app-password"
+  export CHAOS_ALERT_EMAIL_FROM="falcon-alert@example.com"
+  export CHAOS_ALERT_EMAIL_TO="alice@example.com,bob@example.com"
+  export CHAOS_SMTP_TLS=1
+  ```
 
 - Example command (dual scenario, 2 hours):
 
@@ -150,8 +188,36 @@
     --compose-file tests/regress/docker-compose-dual.yaml \
     --duration-min 120 \
     --interval-sec 300 \
-    --actions S01,S02,S03,S04,S05 \
+    --actions S01,S02,S03,S04,S05,S06,S07 \
+    --topology auto \
     --fresh-start
+  ```
+
+- Run all topologies (single/dual/triple) in one suite:
+
+  ```bash
+  cd ~/code/falconfs
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  bash tests/regress/chaos_suite.sh \
+    --data-path tests/regress/verify_data_chaos_suite \
+    --single-duration-min 60 \
+    --dual-duration-min 120 \
+    --triple-duration-min 120
+  ```
+
+- Example command when container core ulimit is not `0`:
+
+  ```bash
+  cd ~/code/falconfs
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  bash tests/regress/chaos_run.sh \
+    --data-path tests/regress/verify_data_chaos \
+    --compose-file tests/regress/docker-compose-dual.yaml \
+    --duration-min 120 \
+    --interval-sec 300 \
+    --actions S01,S02,S03,S04,S05 \
+    --fresh-start \
+    --core-once-enable
   ```
 
 - Report file:
@@ -174,6 +240,15 @@
 
 - Optional compatibility switch:
   - `--skip-pg-ip-check`: skip `postgresql.conf` vs `POD_IP` consistency check (use only when comparing old behavior)
+
+- If container core ulimit is not `0`, add suite passthrough options:
+
+  ```bash
+  bash tests/regress/chaos_suite.sh \
+    --data-path tests/regress/verify_data_chaos_suite \
+    --core-once-enable \
+    --core-limit-kb 1048576
+  ```
 
 - One-core capture mode:
   - `--core-once-enable`: allow core dump and keep only first core
