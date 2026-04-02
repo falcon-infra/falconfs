@@ -54,6 +54,7 @@ Datum falcon_build_shard_table(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "no worker.");
 
     int serverRound = 0;
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(ShardRelationId(), RowExclusiveLock);
     CatalogIndexState indstate = CatalogOpenIndexes(rel);
     TupleDesc tupleDesc = RelationGetDescr(rel);
@@ -78,6 +79,7 @@ Datum falcon_build_shard_table(PG_FUNCTION_ARGS)
     CommandCounterIncrement();
     CatalogCloseIndexes(indstate);
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
     InvalidateShardTableShmemCache();
 
     PG_RETURN_INT16(0);
@@ -98,6 +100,7 @@ Datum falcon_update_shard_table(PG_FUNCTION_ARGS)
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "range_point array must be as long as server_id array.");
     int changeCount = rangePointCount;
 
+    PushActiveSnapshot(GetTransactionSnapshot());
     Relation rel = table_open(ShardRelationId(), RowExclusiveLock);
     CatalogIndexState indstate = CatalogOpenIndexes(rel);
     TupleDesc tupleDesc = RelationGetDescr(rel);
@@ -135,6 +138,7 @@ Datum falcon_update_shard_table(PG_FUNCTION_ARGS)
 
     CatalogCloseIndexes(indstate);
     table_close(rel, RowExclusiveLock);
+    PopActiveSnapshot();
     InvalidateShardTableShmemCache();
 
     PG_RETURN_INT16(0);
