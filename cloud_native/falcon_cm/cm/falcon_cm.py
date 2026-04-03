@@ -541,22 +541,10 @@ class FalconCM:
             self.logger.info(
                 "[reconcile] leader path not found epoch={}".format(epoch)
             )
-            return
+            return "stale"
         data, _ = self._zk_client.get(leader_path)
         ip_port = data.decode("utf-8")
         leader_ip, _ = ip_port.split(":", 1)
-        try:
-            self.delete_candidates()
-        except Exception:
-            pass
-        try:
-            self._zk_client.delete(
-                "{}/{}/replicas/{}".format(
-                    self._cluster_path, self._cluster_name, ip_port
-                )
-                )
-        except Exception:
-            pass
         self._cluster_leader_ip = leader_ip
         self._is_leader = leader_ip == self._pod_ip
         self.logger.info(
@@ -566,11 +554,26 @@ class FalconCM:
         self._is_changing = True
         try:
             if leader_ip == self._pod_ip:
+                if self.is_reconcile_stale(epoch):
+                    return "stale"
+                try:
+                    self.delete_candidates()
+                except Exception:
+                    pass
+                try:
+                    self._zk_client.delete(
+                        "{}/{}/replicas/{}".format(
+                            self._cluster_path, self._cluster_name, ip_port
+                        )
+                    )
+                except Exception:
+                    pass
+
                 if self._is_cn:
                     self.watch_need_supplement()
                 self.watch_replicas()
                 if self.is_reconcile_stale(epoch):
-                    return
+                    return "stale"
                 if postgresql.is_standby(self._pgdata_dir):
                     postgresql.do_promote(
                         self._pgdata_dir,
@@ -581,13 +584,13 @@ class FalconCM:
                         self._pod_ip,
                     )
                 if self.is_reconcile_stale(epoch):
-                    return
+                    return "stale"
 
                 ret = False
                 retry = 0
                 while not ret and self._thread_running:
                     if self.is_reconcile_stale(epoch):
-                        return
+                        return "stale"
                     self.logger.info(
                         "[reconcile] phase=update_background epoch={} retry={}".format(
                             epoch, retry
@@ -601,17 +604,20 @@ class FalconCM:
                         break
                     retry += 1
                     if self.is_reconcile_stale(epoch):
-                        return
+                        return "stale"
                     time.sleep(1)
 
+                if not self._thread_running:
+                    return "stale"
+
                 if self.is_reconcile_stale(epoch):
-                    return
+                    return "stale"
                 cn_leader_ip = self.get_cn_leader()
                 ret = False
                 retry = 0
                 while not ret and self._thread_running:
                     if self.is_reconcile_stale(epoch):
-                        return
+                        return "stale"
                     self.logger.info(
                         "[reconcile] phase=update_node_table epoch={} retry={}"
                         .format(epoch, retry)
@@ -632,10 +638,15 @@ class FalconCM:
                         break
                     retry += 1
                     if self.is_reconcile_stale(epoch):
-                        return
+                        return "stale"
                     cn_leader_ip = self.get_cn_leader()
                     time.sleep(1)
+
+                if not self._thread_running:
+                    return "stale"
+
                 self.logger.info("[reconcile] success epoch={}".format(epoch))
+                return "done"
             else:
                 try:
                     self._zk_client.delete(
@@ -676,6 +687,7 @@ class FalconCM:
                         self._cluster_path, self._cluster_name, self._host_node_name
                     )
                 )
+                return "done"
         finally:
             self._is_changing = False
 
@@ -691,15 +703,28 @@ class FalconCM:
                     self._leader_reconcile_event.clear()
                     self._leader_reconcile_lock.release()
                     break
-                self._leader_reconcile_handled_epoch = epoch
                 self._leader_reconcile_lock.release()
+                result = "retry"
                 try:
-                    self.run_leader_reconcile(epoch)
+                    result = self.run_leader_reconcile(epoch)
                 except Exception as ex:
                     self.logger.error(
                         "[reconcile] failed epoch={} err={} trace={}"
                         .format(epoch, ex, traceback.format_exc())
                     )
+                    result = "retry"
+
+                if result == "retry":
+                    time.sleep(1)
+                    self._leader_reconcile_event.set()
+                    continue
+
+                self._leader_reconcile_lock.acquire()
+                if epoch > self._leader_reconcile_handled_epoch:
+                    self._leader_reconcile_handled_epoch = epoch
+                if self._leader_reconcile_epoch <= self._leader_reconcile_handled_epoch:
+                    self._leader_reconcile_event.clear()
+                self._leader_reconcile_lock.release()
 
     def handle_candidate_change_event(self, candidates):
         leader_path = "{}/{}".format(self._leader_path, self._cluster_name)
