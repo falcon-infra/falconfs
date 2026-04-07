@@ -7,6 +7,8 @@
 #include <string>
 #include <random>
 
+#include "log/logging.h"
+
 std::string rootPath;
 int totalDirectory;
 uint32_t FALCON_BLOCK_SIZE;
@@ -41,13 +43,15 @@ std::optional<std::string> GetUserName()
 
 std::optional<std::string_view> SplitIp(std::string_view ipPort) { return ipPort.substr(0, ipPort.find(':')); }
 
-std::expected<std::string, std::string> GetPodIPPort()
+std::string GetPodIPPort()
 {
+    constexpr char defaultPodIPPort[] = "127.0.0.1:56039";
     if (const char *podIP = std::getenv("POD_IP")) {
         const char *brpcPort = std::getenv("BRPC_PORT");
         return std::string(podIP) + ":" + (brpcPort ? brpcPort : "56039");
     }
-    return std::unexpected("POD_IP environment variable not set");
+    FALCON_LOG(LOG_WARNING) << "POD_IP environment variable not set, use default pod IP: " << defaultPodIPPort;
+    return std::string(defaultPodIPPort);
 }
 
 float GetStorageThreshold(bool persistToStorage)
