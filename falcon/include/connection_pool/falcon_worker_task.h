@@ -41,7 +41,14 @@ class SingleWorkerTask : public BaseWorkerTask {
           m_job(job)
     {
     }
-    ~SingleWorkerTask() override {}
+    ~SingleWorkerTask() override
+    {
+        if (m_job != nullptr) {
+            m_job->MarkFailed();
+            m_job->Done();
+            delete m_job;
+        }
+    }
     // implement logic of SingleWorker process
     void DoWork(PGconn *conn, flatbuffers::FlatBufferBuilder &flatBufferBuilder, SerializedData &replyBuilder) override;
 };
@@ -56,7 +63,16 @@ class BatchWorkerTask : public BaseWorkerTask {
           m_jobList(std::move(jobList))
     {
     }
-    ~BatchWorkerTask() override {}
+    ~BatchWorkerTask() override
+    {
+        for (auto *job : m_jobList) {
+            if (job != nullptr) {
+                job->MarkFailed();
+                job->Done();
+                delete job;
+            }
+        }
+    }
     // implement logic of BatchWorker process
     void DoWork(PGconn *conn, flatbuffers::FlatBufferBuilder &flatBufferBuilder, SerializedData &replyBuilder) override;
 };

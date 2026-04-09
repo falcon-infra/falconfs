@@ -34,9 +34,6 @@ class BrpcMetaServiceJob : public BaseMetaServiceJob {
     // Call this function after Job is done to send response and release resource
     void Done() override
     {
-        LatencyData *e2eData = GetOpcodeE2ELatencyData(static_cast<int>(opcodeForE2E));
-        e2eTimer.End(e2eData);
-
         m_done->Run();
     }
 

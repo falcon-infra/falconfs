@@ -56,6 +56,7 @@ typedef struct MetaProcessInfoData
     int32_t srcLockOrder;
 
     // output
+    int32_t statArrayIndex;
     FalconErrorCode errorCode;
     char *errorMsg;
 } MetaProcessInfoData;
@@ -87,6 +88,7 @@ typedef struct SliceProcessInfoData
     uint64_t inputInodeid;
     uint32_t inputChunkid;
     uint32_t count;
+    int32_t statArrayIndex;
     FalconErrorCode errorCode;
 } SliceProcessInfoData;
 
@@ -100,6 +102,7 @@ typedef struct KvMetaProcessInfoData
     uint64_t *valuekey;
     uint64_t *location;
     uint32_t *slicelen;
+    int32_t statArrayIndex;
     FalconErrorCode errorCode;
 } KvMetaProcessInfoData;
 
@@ -111,6 +114,7 @@ typedef struct SliceIdProcessInfoData
     uint8_t type;
     uint64_t start;
     uint64_t end;
+    int32_t statArrayIndex;
     FalconErrorCode errorCode;
 } SliceIdProcessInfoData;
 

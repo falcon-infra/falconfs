@@ -34,7 +34,13 @@ void PGConnection::BackgroundWorker()
             break;
         std::shared_ptr<BaseWorkerTask> baseWorkerTaskPtr(nullptr);
         m_workerTaskQueue.pull(baseWorkerTaskPtr);
-        baseWorkerTaskPtr->DoWork(conn, flatBufferBuilder, replyBuilder);
+        try {
+            baseWorkerTaskPtr->DoWork(conn, flatBufferBuilder, replyBuilder);
+        } catch (const std::exception &) {
+            PGresult *res;
+            while ((res = PQgetResult(conn)) != NULL)
+                PQclear(res);
+        }
         // now no one handle the ptr, auto release WorkerTask
         baseWorkerTaskPtr = nullptr;
 
