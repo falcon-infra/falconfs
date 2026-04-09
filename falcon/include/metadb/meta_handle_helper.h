@@ -14,6 +14,14 @@ enum ModeCheckType
     MODE_CHECK_MUST_BE_FILE,
     MODE_CHECK_MUST_BE_DIRECTORY
 };
+
+typedef struct InodeSearchStatContext
+{
+    int32_t statArrayIndex;
+    int requestStartCheckpoint;
+    int opDoneCheckpoint;
+} InodeSearchStatContext;
+
 bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    Relation workerInodeRelation,
                                    const char *workerInodeRelationIndexName,
@@ -37,7 +45,8 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    TimestampTz *newMtime,
                                    int32_t *primaryNodeId,
                                    int32_t *newPrimaryNodeId,
-                                   int32_t *backupNodeId);
+                                   int32_t *backupNodeId,
+                                   const InodeSearchStatContext *statContext);
 
 uint16_t HashPartId(const char *fileName);
 uint64_t CombineParentIdWithPartId(uint64_t parent_id, uint16_t part_id);

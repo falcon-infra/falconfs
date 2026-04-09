@@ -36,11 +36,13 @@ bool SerializedDataMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconMetaS
                                                                      SerializedData *response);
 
 bool SerializedKvMetaParamDecode(FalconSupportMetaService metaService,
+                                 int count,
                                  SerializedData *param,
-                                 KvMetaProcessInfo infoData);
+                                 KvMetaProcessInfoData *infoArray);
 
 bool SerializedKvMetaResponseEncodeWithPerProcessFlatBufferBuilder(FalconSupportMetaService metaService,
-                                                                   KvMetaProcessInfo infoData,
+                                                                   int count,
+                                                                   KvMetaProcessInfoData *infoArray,
                                                                    SerializedData *response);
 
 bool SerializedSliceParamDecode(FalconSupportMetaService metaService,

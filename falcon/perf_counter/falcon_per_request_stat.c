@@ -71,34 +71,34 @@ const char *g_checkpointNames[NOT_SUPPORTED][STAT_MAX_CHECKPOINTS] = {
 
     /* CREATE (4) */
     {COMMON_PREFIX,
-     "handlerEntry", "pathVerify", "batchSetup", "pathParse",
-     "dirTableClose", "subTxnBegin", "indexReady",
-     "beforeInsert", "insertDone",
-     "batchDone", "shardClose",
+     "handlerEntry", "pathVerify", "batchGroup", "pathParse",
+     "dirTableClose", "subTxnBegin", "batchReady",
+     "requestStart", "insertDone",
+     "batchDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* STAT (5) */
     {COMMON_PREFIX,
-     "handlerEntry", "pathVerify", "batchSetup", "pathParse",
-     "tableClose", "shardOpen", "fetchDone",
+     "handlerEntry", "pathVerify", "batchGroup", "pathParse",
+     "groupReady", "requestStart", "fetchDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* OPEN (6) */
     {COMMON_PREFIX,
-     "handlerEntry", "pathVerify", "batchSetup", "pathParse",
-     "tableClose", "shardOpen", "fetchDone",
+     "handlerEntry", "pathVerify", "batchGroup", "pathParse",
+     "groupReady", "requestStart", "fetchDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* CLOSE (7) */
     {COMMON_PREFIX,
-     "handlerEntry", "pathVerify", "batchSetup", "pathParse",
-     "tableClose", "shardOpen", "closeModify",
+     "handlerEntry", "pathVerify", "batchGroup", "pathParse",
+     "groupReady", "requestStart", "closeModify", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* UNLINK (8) */
     {COMMON_PREFIX,
-     "handlerEntry", "pathVerify", "batchSetup", "pathParse",
-     "tableClose", "shardOpen", "unlinkModify",
+     "handlerEntry", "pathVerify", "batchGroup", "pathParse",
+     "groupReady", "requestStart", "unlinkModify", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* READDIR (9) */
@@ -172,39 +172,38 @@ const char *g_checkpointNames[NOT_SUPPORTED][STAT_MAX_CHECKPOINTS] = {
     /* KV_PUT (20) */
     {COMMON_PREFIX,
      "handlerEntry", "hashPartId", "shardResolve",
-     "kvTableOpen", "arrayBuild", "tupleInsert",
-     "done",
+     "batchReady", "requestStart", "arrayBuild",
+     "tupleInsert", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* KV_GET (21) */
     {COMMON_PREFIX,
-     "handlerEntry", "hashPartId",
-     "scanSetup", "indexScan", "arrayDecode", "done",
+     "handlerEntry", "hashPartId", "shardResolve",
+     "batchReady", "requestStart", "scanDone", "arrayDecode", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* KV_DEL (22) */
     {COMMON_PREFIX,
-     "handlerEntry", "hashPartId",
-     "scanSetup", "tupleDelete",
-     "done",
+     "handlerEntry", "hashPartId", "shardResolve",
+     "batchReady", "requestStart", "scanDone", "deleteDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* SLICE_PUT (23) */
     {COMMON_PREFIX,
      "handlerStart", "beforeShard", "shardResolve",
-     "tableOpen", "insertLoop", "done",
+     "batchReady", "requestStart", "insertDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* SLICE_GET (24) */
     {COMMON_PREFIX,
-     "handlerStart", "beforeShard",
-     "shardResolve", "scanDone", "done",
+     "handlerStart", "beforeShard", "shardResolve",
+     "batchReady", "requestStart", "scanDone", "decodeDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* SLICE_DEL (25) */
     {COMMON_PREFIX,
-     "handlerStart", "beforeShard",
-     "shardResolve", "deleteDone", "done",
+     "handlerStart", "beforeShard", "shardResolve",
+     "batchReady", "requestStart", "scanDone", "deleteDone", "handlerDone",
      COMMON_TAIL, NULL},
 
     /* FETCH_SLICE_ID (26) */

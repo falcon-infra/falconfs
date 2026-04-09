@@ -123,31 +123,36 @@ static SerializedData FileMetaProcess(FalconSupportMetaService metaService, int 
     return response;
 }
 
-static SerializedData KVMetaProcess(FalconSupportMetaService metaService, char *paramBuffer)
+static SerializedData KVMetaProcess(FalconSupportMetaService metaService, int count, char *paramBuffer)
 {
     SerializedData param;
 
     if (!SerializedDataInit(&param, paramBuffer, SD_SIZE_T_MAX, SD_SIZE_T_MAX, NULL))
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "SerializedDataInit failed.");
-    
-    KvMetaProcessInfoData infoData = {0};
-    infoData.statArrayIndex = -1;
-    if (!SerializedKvMetaParamDecode(metaService, &param, &infoData))
+
+    void *data = palloc((sizeof(KvMetaProcessInfoData) + sizeof(KvMetaProcessInfo)) * count);
+    KvMetaProcessInfoData *infoDataArray = data;
+    KvMetaProcessInfo *infoArray = (KvMetaProcessInfo *)(infoDataArray + count);
+    if (!SerializedKvMetaParamDecode(metaService, count, &param, infoDataArray))
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "serialized param is corrupt.");
-    if (g_currentStatIndicesCount > 0 && g_currentStatIndices != NULL) {
-        infoData.statArrayIndex = g_currentStatIndices[0];
-        STAT_CKPT(g_currentStatIndices[0], CKPT_PARAM_DECODE);
+    for (int i = 0; i < count; i++) {
+        infoArray[i] = infoDataArray + i;
+        infoDataArray[i].statArrayIndex = -1;
+    }
+    for (int i = 0; i < count && i < g_currentStatIndicesCount; i++) {
+        infoArray[i]->statArrayIndex = g_currentStatIndices[i];
+        STAT_CKPT(g_currentStatIndices[i], CKPT_PARAM_DECODE);
     }
 
     switch (metaService) {
         case KV_PUT:
-            FalconKvmetaPutHandle(&infoData);
+            FalconKvmetaPutHandle(infoArray, count);
             break;
         case KV_GET:
-            FalconKvmetaGetHandle(&infoData);
+            FalconKvmetaGetHandle(infoArray, count);
             break;
         case KV_DEL:
-            FalconKvmetaDelHandle(&infoData);
+            FalconKvmetaDelHandle(infoArray, count);
             break;
         default:
             FALCON_ELOG_ERROR_EXTENDED(ARGUMENT_ERROR, "unexpected metaService: %d", metaService);
@@ -155,11 +160,13 @@ static SerializedData KVMetaProcess(FalconSupportMetaService metaService, char *
 
     SerializedData response;
     SerializedDataInit(&response, NULL, 0, 0, &PgMemoryManager);
-    if (!SerializedKvMetaResponseEncodeWithPerProcessFlatBufferBuilder(metaService, &infoData, &response))
+    if (!SerializedKvMetaResponseEncodeWithPerProcessFlatBufferBuilder(metaService, count, infoDataArray, &response))
         FALCON_ELOG_ERROR(ARGUMENT_ERROR, "failed when serializing response.");
-    if (infoData.statArrayIndex >= 0 && g_FalconPerRequestStatShmem != NULL)
-        StatCheckpoint(infoData.statArrayIndex,
-                       g_FalconPerRequestStatShmem->statArray[infoData.statArrayIndex].checkpointCount);
+    for (int i = 0; i < count && i < g_currentStatIndicesCount; i++) {
+        int32_t si = g_currentStatIndices[i];
+        if (si >= 0 && g_FalconPerRequestStatShmem != NULL)
+            StatCheckpoint(si, g_FalconPerRequestStatShmem->statArray[si].checkpointCount);
+    }
 
     return response;
 }
@@ -249,7 +256,7 @@ static SerializedData MetaProcess(FalconSupportMetaService metaService, int coun
     }
 
     if (metaService >= KV_PUT && metaService <= KV_DEL) {
-        return KVMetaProcess(metaService, paramBuffer);
+        return KVMetaProcess(metaService, count, paramBuffer);
     }
 
     if (metaService >= SLICE_PUT && metaService <= SLICE_DEL) {
@@ -297,11 +304,12 @@ Datum falcon_meta_call_by_serialized_shmem_internal(PG_FUNCTION_ARGS)
     int32_t savedStatIndicesCount = g_currentStatIndicesCount;
 
     SerializedData response = MetaProcess(metaService, count, paramBuffer);
+    
     PopActiveSnapshot();
-
+    
     g_currentStatIndices = NULL;
     g_currentStatIndicesCount = 0;
-
+    
     uint64_t responseShmemShift = FalconShmemAllocatorMalloc(allocator, response.size);
     if (responseShmemShift == 0)
         FALCON_ELOG_ERROR_EXTENDED(PROGRAM_ERROR, "FalconShmemAllocMalloc failed. Size: %u.", response.size);

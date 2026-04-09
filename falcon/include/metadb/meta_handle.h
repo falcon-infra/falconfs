@@ -41,9 +41,9 @@ void FalconSlicePutHandle(SliceProcessInfo *infoArray, int count);
 void FalconSliceGetHandle(SliceProcessInfo *infoArray, int count);
 void FalconSliceDelHandle(SliceProcessInfo *infoArray, int count);
 
-void FalconKvmetaPutHandle(KvMetaProcessInfo info);
-void FalconKvmetaGetHandle(KvMetaProcessInfo info);
-void FalconKvmetaDelHandle(KvMetaProcessInfo info);
+void FalconKvmetaPutHandle(KvMetaProcessInfo *infoArray, int count);
+void FalconKvmetaGetHandle(KvMetaProcessInfo *infoArray, int count);
+void FalconKvmetaDelHandle(KvMetaProcessInfo *infoArray, int count);
 
 void FalconFetchSliceIdHandle(SliceIdProcessInfo infoData);
 
