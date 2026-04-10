@@ -1,5 +1,5 @@
 #!/bin/bash
-pg_isready -d postgres -U falconMeta --timeout=5 --quiet
+pg_isready -h 127.0.0.1 -p 5432 -d postgres -U falconMeta --timeout=5 --quiet
 if [ $? != 0 ]; then
     exit 1;
 fi

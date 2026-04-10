@@ -3,8 +3,23 @@
 # 设置默认的安装目录
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
 
-export PATH=/usr/local/pgsql/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/pgsql/lib:${FALCONFS_INSTALL_DIR}/falcon_meta/lib:/usr/local/obs/lib
+PG_BIN_DIR=${FALCON_PG_BIN_DIR:-}
+PG_LIB_DIR=${FALCON_PG_LIB_DIR:-}
+if [ -z "${PG_BIN_DIR}" ] || [ -z "${PG_LIB_DIR}" ]; then
+    if command -v pg_config >/dev/null 2>&1; then
+        [ -z "${PG_BIN_DIR}" ] && PG_BIN_DIR="$(pg_config --bindir)"
+        [ -z "${PG_LIB_DIR}" ] && PG_LIB_DIR="$(pg_config --libdir)"
+    fi
+fi
+
+PG_BIN_DIR=${PG_BIN_DIR:-/usr/local/pgsql/bin}
+PG_LIB_DIR=${PG_LIB_DIR:-/usr/local/pgsql/lib}
+
+export PATH=${PG_BIN_DIR}:$PATH
+export LD_LIBRARY_PATH=${PG_LIB_DIR}:${FALCONFS_INSTALL_DIR}/falcon_meta/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+if [ -d /usr/local/obs/lib ]; then
+    export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/obs/lib
+fi
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data
 METADATA_DIR=${DATA_DIR}/metadata
 

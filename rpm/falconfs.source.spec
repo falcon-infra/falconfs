@@ -18,6 +18,7 @@ Source0:        falconfs-%{version}.tar.gz
 # AutoReqProv:    no
 
 Requires:       bash
+Requires:       findutils
 Requires:       python3
 Requires:       python3-requests python3-psycopg2 python3-kazoo
 Requires:       postgresql-17 postgresql-17-server
