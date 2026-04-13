@@ -138,6 +138,18 @@ sudo chown -R "$USER":"$USER" /usr/local/falconfs
 
 - release 包用于容器部署
   - 建议配合 `tests/regress/docker-compose-release-openeuler.yaml` 做集群启动验证。
+  - 通信插件可通过环境变量切换（默认 `brpc`）：
+
+```bash
+export FALCON_COMM_PLUGIN=hcom
+docker compose -f tests/regress/docker-compose-release-openeuler.yaml up -d
+```
+
+  - 校验容器内生效配置：
+
+```bash
+docker exec falcon-cn-1 grep falcon_communication.plugin_path /usr/local/falconfs/data/metadata/postgresql.conf
+```
 
 - ZooKeeper 集群编号
   - 若手工部署 ZK 集群，`myid` 建议从 `1` 开始（与 compose 中 `zk1/zk2/...` 约定一致）。

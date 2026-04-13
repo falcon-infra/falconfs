@@ -2,6 +2,7 @@ version: "3.8"
 
 x-falcon-env: &falcon-env
   POD_NAMESPACE: falconfs
+  FALCON_COMM_PLUGIN: ${FALCON_COMM_PLUGIN:-brpc}
   zk_endpoint: zk-1:2181,zk-2:2181,zk-3:2181
   cluster_name: "/falcon"
   STORAGE_THRESHOLD: "0.9"

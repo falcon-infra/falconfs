@@ -2,6 +2,12 @@
 # 使用源码编译安装的 PostgreSQL 17
 # 设置默认的安装目录
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
+COMM_PLUGIN=${FALCON_COMM_PLUGIN:-brpc}
+
+if [[ "${COMM_PLUGIN}" != "brpc" && "${COMM_PLUGIN}" != "hcom" ]]; then
+    echo "ERROR: Unsupported FALCON_COMM_PLUGIN='${COMM_PLUGIN}' (use brpc or hcom)" >&2
+    exit 1
+fi
 
 PG_BIN_DIR=${FALCON_PG_BIN_DIR:-}
 PG_LIB_DIR=${FALCON_PG_LIB_DIR:-}
@@ -22,6 +28,12 @@ if [ -d /usr/local/obs/lib ]; then
 fi
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data
 METADATA_DIR=${DATA_DIR}/metadata
+COMM_PLUGIN_PATH="${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql/lib${COMM_PLUGIN}plugin.so"
+
+if [ ! -f "${COMM_PLUGIN_PATH}" ]; then
+    echo "ERROR: communication plugin not found: ${COMM_PLUGIN_PATH}" >&2
+    exit 1
+fi
 
 if [ -d "${METADATA_DIR}/pg_wal" ]; then
     pg_ctl restart -D ${METADATA_DIR}
@@ -62,7 +74,7 @@ else
     echo "falcon_connection_pool.wait_adjust = 1" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_connection_pool.wait_min = 1" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_connection_pool.wait_max = 500" >>${METADATA_DIR}/postgresql.conf
-    echo "falcon_communication.plugin_path = '${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql/libbrpcplugin.so'" >>${METADATA_DIR}/postgresql.conf
+    echo "falcon_communication.plugin_path = '${COMM_PLUGIN_PATH}'" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_communication.server_ip = '${POD_IP:-127.0.0.1}'" >>${METADATA_DIR}/postgresql.conf
     pg_ctl start -D ${METADATA_DIR}
 fi

@@ -76,7 +76,11 @@ export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 mkdir -p "${STAGE_ROOT}"
 echo "Using pg_config: $(command -v pg_config)"
 pg_config --pgxs
-./build.sh build falcon
+./build.sh build falcon --comm-plugin=brpc
+./build.sh build falcon --comm-plugin=hcom
+
+test -f ./falcon/libbrpcplugin.so
+test -f ./falcon/libhcomplugin.so
 
 %install
 set -euo pipefail
@@ -84,7 +88,14 @@ export STAGE_ROOT="%{_builddir}/falconfs-stage"
 export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 rm -rf "%{buildroot}" "${STAGE_ROOT}"
 mkdir -p "${STAGE_ROOT}"
-./build.sh install falcon
+./build.sh install falcon --comm-plugin=brpc
+
+# Keep both communication plugins in RPM so runtime can switch via config.
+install -m 0755 -D ./falcon/libhcomplugin.so \
+    "${STAGE_ROOT}/usr/local/falconfs/falcon_meta/lib/postgresql/libhcomplugin.so"
+
+test -f "${STAGE_ROOT}/usr/local/falconfs/falcon_meta/lib/postgresql/libbrpcplugin.so"
+test -f "${STAGE_ROOT}/usr/local/falconfs/falcon_meta/lib/postgresql/libhcomplugin.so"
 mkdir -p "%{buildroot}"
 cp -a "${STAGE_ROOT}/"* "%{buildroot}/"
 %if 0%{?release_pkg}
