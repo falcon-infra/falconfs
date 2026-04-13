@@ -23,7 +23,6 @@
 #include "hcom_comm_adapter/falcon_meta_service_internal.h"
 #include "hcom_comm_adapter/falcon_meta_service_job.h"
 #include "plugin/falcon_plugin_framework.h"
-#include "utils/falcon_plugin_guc.h"
 
 extern "C" {
 #include "remote_connection_utils/serialized_data.h"
@@ -33,6 +32,24 @@ namespace falcon
 {
 namespace meta_service
 {
+
+static const char *ResolvePluginDirectory()
+{
+    const char *env_plugin_dir = std::getenv("FALCON_PLUGIN_DIRECTORY");
+    if (env_plugin_dir != nullptr && env_plugin_dir[0] != '\0') {
+        return env_plugin_dir;
+    }
+
+    void *symbol = dlsym(RTLD_DEFAULT, "falcon_plugin_directory");
+    if (symbol != nullptr) {
+        char **guc_plugin_dir = reinterpret_cast<char **>(symbol);
+        if (guc_plugin_dir != nullptr && *guc_plugin_dir != nullptr && (*guc_plugin_dir)[0] != '\0') {
+            return *guc_plugin_dir;
+        }
+    }
+
+    return nullptr;
+}
 
 static falcon_meta_job_dispatch_func g_dispatchFunc = nullptr;
 FalconMetaService *FalconMetaService::instance = nullptr;
@@ -880,14 +897,16 @@ class FalconHcomServer {
     bool LoadPlugins()
     {
         fprintf(stderr, "[Log] [FalconHcomServer] In LoadPlugins\n"); 
-        if (falcon_plugin_directory == nullptr || falcon_plugin_directory[0] == '\0') {
-            fprintf(stderr, "[WARNING] [FalconHcomServer] falcon_plugin_directory not set\n");
+        const char *plugin_dir = ResolvePluginDirectory();
+        if (plugin_dir == nullptr) {
+            fprintf(stderr,
+                    "[WARNING] [FalconHcomServer] plugin directory not set (env FALCON_PLUGIN_DIRECTORY and symbol falcon_plugin_directory are empty)\n");
             return false;
         }
 
-        DIR *dir = opendir(falcon_plugin_directory);
+        DIR *dir = opendir(plugin_dir);
         if (!dir) {
-            fprintf(stderr, "[WARNING] [FalconHcomServer] Cannot open plugin directory: %s\n", falcon_plugin_directory);
+            fprintf(stderr, "[WARNING] [FalconHcomServer] Cannot open plugin directory: %s\n", plugin_dir);
             return false;
         }
 
@@ -899,7 +918,7 @@ class FalconHcomServer {
             }
 
             char plugin_path[FALCON_PLUGIN_MAX_PATH_SIZE];
-            snprintf(plugin_path, sizeof(plugin_path), "%s/%s", falcon_plugin_directory, entry->d_name);
+            snprintf(plugin_path, sizeof(plugin_path), "%s/%s", plugin_dir, entry->d_name);
 
             void *dl_handle = dlopen(plugin_path, RTLD_LAZY);
             if (!dl_handle) {
