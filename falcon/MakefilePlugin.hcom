@@ -18,7 +18,7 @@ HCOM_PLUGIN_CPPFLAGS = -I./include -I./connection_pool/fbs \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
 			  -I/usr/local/include
 
-HCOM_PLUGIN_LINK_LIB = -L. -l:falcon.so -lpthread -ldl
+HCOM_PLUGIN_LINK_LIB = -lpthread -ldl
 
 HCOM_PLUGIN_LIB_NAME = libhcomplugin.so
 
