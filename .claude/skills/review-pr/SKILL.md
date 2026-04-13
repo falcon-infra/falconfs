@@ -1,7 +1,7 @@
 ---
 name: review-pr
 description: This skill should be used when the user asks to "review PR", "review pull request", "/review-pr", mentions "PR review" combined with "FalconFS", or needs to analyze GitHub pull requests for the FalconFS project. The skill automates code review by fetching PR data, analyzing diffs, and checking against FalconFS project conventions.
-version: 1.4.0
+version: 1.5.0
 ---
 
 # GitHub PR 自动 Review Skill
@@ -118,7 +118,7 @@ HEAD_SHA=$(gh pr view <PR_NUMBER> --repo falcon-infra/falconfs --json headRefOid
 2. 通过 GitHub API 读取实际文件内容
 3. 用 grep -n "关键代码片段" 找到真实行号
 4. 验证：打印该行内容确认匹配
-5. position = 行号（对于新文件）
+5. 使用 line（文件绝对行号）+ side: "RIGHT" 提交评论
 ```
 
 ### 步骤 5.1：读取实际文件内容
@@ -151,14 +151,22 @@ gh api repos/falcon-infra/falconfs/contents/debian/control?ref=c432a89 --jq '.co
 gh api repos/falcon-infra/falconfs/contents/<FILE_PATH>?ref=<HEAD_SHA> --jq '.content' | base64 -d | sed -n '<LINE_NUM-2>,<LINE_NUM+2>p' | cat -n
 ```
 
-### 行级评论的 position 计算
+### 行级评论的定位方式（重要！）
 
-| 场景 | position 值 |
-|------|------------|
-| 新增文件（diff 中 `@@ -0,0 +1,N @@`） | position = 文件行号 |
-| 修改已有文件 | 需要计算 diff hunk 中的相对位置 |
+**必须使用 `line` + `side: "RIGHT"` 参数，禁止使用 `position` 参数。**
 
-**对于新文件**：`position` 直接等于文件的真实行号。
+| 参数 | 说明 |
+|------|------|
+| `line` | 文件的绝对行号（通过步骤 5.2 内容匹配获得） |
+| `side` | 固定为 `"RIGHT"`（表示新文件版本中的行） |
+
+**⚠️ 为什么禁用 `position` 参数？**
+
+`position` 是 diff hunk 内的相对偏移量。当同一文件有多个 hunk 时（常见于大型 PR），不同 hunk 中可能存在相同的 position 值。GitHub 会选择 **第一个匹配的 hunk**，导致评论关联到错误的代码行。
+
+示例：`chaos_run.sh` 有 30+ 个 hunk，`probe_id`（line 857）在 hunk `@@ -485,22 +785,296 @@` 中 position=80，而 hunk `@@ -81,10 +126,246 @@` 中 position=80 对应的是完全不同的行（line 205 的 `resolve_supplement_hold_sec`）。使用 `position=80` 时 GitHub 会关联到第一个 hunk，评论位置完全错误。
+
+使用 `line` + `side: "RIGHT"` 则直接指定文件行号，无多 hunk 歧义问题。
 
 ---
 
@@ -210,23 +218,25 @@ gh api repos/falcon-infra/falconfs/contents/<FILE_PATH>?ref=$HEAD_SHA --jq '.con
   "comments": [
     {
       "path": "debian/control",
-      "position": 68,
+      "line": 68,
+      "side": "RIGHT",
       "body": "⚠️ 硬编码版本依赖问题\n\n..."
     },
     {
       "path": "docker/ubuntu24.04-release-runtime-dockerfile",
-      "position": 130,
+      "line": 130,
+      "side": "RIGHT",
       "body": "⚠️ 数据目录不一致\n\n..."
     }
   ]
 }
 ```
 
-**⚠️ 重要：position 必须通过内容定位，禁止估算！**
+**⚠️ 重要：必须使用 `line` + `side: "RIGHT"` 参数。禁止使用 `position` 参数（多 hunk 文件会导致位置错误）！**
 
 4. 验证评论位置（提交前必须执行）：
 ```bash
-# 验证 position=68 对应的内容
+# 验证 line=68 对应的内容
 gh api repos/falcon-infra/falconfs/contents/debian/control?ref=$HEAD_SHA --jq '.content' | base64 -d | sed -n '66,70p'
 # 确认输出包含评论中提到的问题代码
 ```
@@ -356,14 +366,14 @@ gh auth login
 
 ## 常见问题
 
-### Q: 行级评论的 line 字段为什么是 null？
-A: GitHub API 对已提交的 commit 需要 `position` 参数（diff 中的位置）而不是 `line` 参数（文件的绝对行号）。
+### Q: 行级评论应该用 `position` 还是 `line`？
+A: **必须使用 `line` + `side: "RIGHT"`，禁止使用 `position`。** `position` 是 diff hunk 内的相对偏移量，同一文件多个 hunk 时会产生歧义，导致评论关联到错误行。`line` 是文件的绝对行号，配合 `side: "RIGHT"`（新文件侧）可以无歧义地定位任意行。
 
 ### Q: 评论位置与实际代码不匹配怎么办？
-A: 这是**估算行号**导致的错误。解决方法：
-1. **必须**通过 GitHub API 读取实际文件内容
-2. **必须**用 `grep -n "关键内容"` 定位真实行号
-3. **必须**提交前验证：确认 position 对应的内容确实是你要评论的代码
+A: 可能是误用了 `position` 参数。解决方法：
+1. **必须**使用 `line`（文件绝对行号）+ `side: "RIGHT"` 参数
+2. **必须**通过 GitHub API 读取实际文件内容定位行号
+3. **必须**提交前验证：确认 line 对应的内容确实是你要评论的代码
 ```bash
 # 验证命令
 gh api repos/<repo>/contents/<path>?ref=<sha> --jq '.content' | base64 -d | sed -n '<line-2>,<line+2>p'
@@ -384,6 +394,7 @@ A:
 
 ## 版本历史
 
+- **v1.5.0** - 修复行级评论位置错误：禁用 `position` 参数，改用 `line` + `side: "RIGHT"` 定位（避免多 hunk 歧义）
 - **v1.4.0** - 新增基于内容的行号定位流程，避免行号错乱问题
 - **v1.3.0** - 更新行级评论实现方式，修正 event 类型
 - **v1.2.0** - 新增行级评论模式

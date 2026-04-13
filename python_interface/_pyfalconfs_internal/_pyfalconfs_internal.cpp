@@ -725,6 +725,19 @@ public:
     }
 };
 
+class AsyncResultReadSize : public AsyncResultBase
+{
+public:
+    int bytesRead;
+    AsyncResultReadSize(int bytesRead) : bytesRead(bytesRead) {}
+    PyObject* GeneratePyObject() override
+    {
+        if (exceptionInfo)
+            return AsyncResultBase::GeneratePyObject();
+        return PyLong_FromLong(bytesRead);
+    }
+};
+
 static PyObject* AsyncState_new(PyTypeObject* type, PyObject* args, PyObject* kwargs) 
 {
     AsyncState* self = (AsyncState*)type->tp_alloc(type, 0);
@@ -829,14 +842,14 @@ static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
             ret = Open(path, O_RDONLY, fd);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
-            
+
             readSize = Read(path, fd, (char*)buffer.buf, size, offset);
             if (readSize < 0)
             {
                 Close(path, fd);
                 return std::make_unique<AsyncResultIntOnly>(readSize);
             }
-            
+
             ret = Close(path, fd);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
@@ -847,7 +860,7 @@ static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
                 Close(path, fd);    // We believe Close never throw error currently.
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
-        return std::make_unique<AsyncResultIntOnly>(ret);
+        return std::make_unique<AsyncResultReadSize>(readSize);
     };
     state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
     return (PyObject*)state;
@@ -869,8 +882,8 @@ static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
         uint64_t fd = UINT64_MAX;
         try
         {
-            ret = Create(path, O_WRONLY, fd);
-            if (ret != 0 && ret != -EEXIST)
+            ret = Create(path, O_CREAT | O_WRONLY | O_TRUNC, fd);
+            if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
 
             ret = Write(path, fd, (char*)buffer.buf, size, offset);
