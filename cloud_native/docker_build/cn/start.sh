@@ -2,11 +2,38 @@
 # 使用源码编译安装的 PostgreSQL 17
 # 设置默认的安装目录
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
+COMM_PLUGIN=${FALCON_COMM_PLUGIN:-brpc}
 
-export PATH=/usr/local/pgsql/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/pgsql/lib:${FALCONFS_INSTALL_DIR}/falcon_meta/lib:/usr/local/obs/lib
+if [[ "${COMM_PLUGIN}" != "brpc" && "${COMM_PLUGIN}" != "hcom" ]]; then
+    echo "ERROR: Unsupported FALCON_COMM_PLUGIN='${COMM_PLUGIN}' (use brpc or hcom)" >&2
+    exit 1
+fi
+
+PG_BIN_DIR=${FALCON_PG_BIN_DIR:-}
+PG_LIB_DIR=${FALCON_PG_LIB_DIR:-}
+if [ -z "${PG_BIN_DIR}" ] || [ -z "${PG_LIB_DIR}" ]; then
+    if command -v pg_config >/dev/null 2>&1; then
+        [ -z "${PG_BIN_DIR}" ] && PG_BIN_DIR="$(pg_config --bindir)"
+        [ -z "${PG_LIB_DIR}" ] && PG_LIB_DIR="$(pg_config --libdir)"
+    fi
+fi
+
+PG_BIN_DIR=${PG_BIN_DIR:-/usr/local/pgsql/bin}
+PG_LIB_DIR=${PG_LIB_DIR:-/usr/local/pgsql/lib}
+
+export PATH=${PG_BIN_DIR}:$PATH
+export LD_LIBRARY_PATH=${PG_LIB_DIR}:${FALCONFS_INSTALL_DIR}/falcon_meta/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+if [ -d /usr/local/obs/lib ]; then
+    export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/obs/lib
+fi
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data
 METADATA_DIR=${DATA_DIR}/metadata
+COMM_PLUGIN_PATH="${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql/lib${COMM_PLUGIN}plugin.so"
+
+if [ ! -f "${COMM_PLUGIN_PATH}" ]; then
+    echo "ERROR: communication plugin not found: ${COMM_PLUGIN_PATH}" >&2
+    exit 1
+fi
 
 if [ -d "${METADATA_DIR}/pg_wal" ]; then
     pg_ctl restart -D ${METADATA_DIR}
@@ -49,7 +76,7 @@ else
     echo "falcon_connection_pool.wait_adjust = 1" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_connection_pool.wait_min = 1" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_connection_pool.wait_max = 500" >>${METADATA_DIR}/postgresql.conf
-    echo "falcon_communication.plugin_path = '${FALCONFS_INSTALL_DIR}/falcon_meta/lib/postgresql/libbrpcplugin.so'" >>${METADATA_DIR}/postgresql.conf
+    echo "falcon_communication.plugin_path = '${COMM_PLUGIN_PATH}'" >>${METADATA_DIR}/postgresql.conf
     echo "falcon_communication.server_ip = '${POD_IP}'" >>${METADATA_DIR}/postgresql.conf
     pg_ctl start -D ${METADATA_DIR}
 fi
