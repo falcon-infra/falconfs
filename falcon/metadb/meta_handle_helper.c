@@ -12,6 +12,7 @@
 #include "utils/snapmgr.h"
 #include "utils/timestamp.h"
 
+#include "perf_counter/falcon_per_request_stat.h"
 #include "utils/error_log.h"
 #include "utils/utils.h"
 
@@ -62,7 +63,8 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
                                    TimestampTz *newMtime,
                                    int32_t *primaryNodeId,
                                    int32_t *newPrimaryNodeId,
-                                   int32_t *backupNodeId)
+                                   int32_t *backupNodeId,
+                                   const InodeSearchStatContext *statContext)
 {
     ScanKeyData scanKey[2];
     int scanKeyCount = 2;
@@ -87,12 +89,18 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
 
     if (workerInodeIndexOid == InvalidOid)
         workerInodeIndexOid = GetRelationOidByName_FALCON(workerInodeRelationIndexName);
+    if (statContext) {
+        STAT_CKPT(statContext->statArrayIndex, statContext->requestStartCheckpoint);
+    }
     scanDescriptor =
         systable_beginscan(workerInodeRel, workerInodeIndexOid, true, GetTransactionSnapshot(), scanKeyCount, scanKey);
     heapTuple = systable_getnext(scanDescriptor);
     tupleDesc = RelationGetDescr(workerInodeRel);
 
     if (!HeapTupleIsValid(heapTuple)) {
+        if (statContext) {
+            STAT_CKPT(statContext->statArrayIndex, statContext->opDoneCheckpoint);
+        }
         systable_endscan(scanDescriptor);
         if (!workerInodeRelation) {
             table_close(workerInodeRel, doUpdate ? RowExclusiveLock : AccessShareLock);
@@ -145,6 +153,9 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
         *mode = DatumGetUInt32(heap_getattr(heapTuple, Anum_pg_dfs_file_st_mode, tupleDesc, &isNull));
         if ((modeCheckType == MODE_CHECK_MUST_BE_FILE && !S_ISREG(*mode)) || 
             (modeCheckType == MODE_CHECK_MUST_BE_DIRECTORY && !S_ISDIR(*mode))) {
+            if (statContext) {
+                STAT_CKPT(statContext->statArrayIndex, statContext->opDoneCheckpoint);
+            }
             systable_endscan(scanDescriptor);
             if (!workerInodeRelation) {
                 table_close(workerInodeRel, doUpdate ? RowExclusiveLock : AccessShareLock);
@@ -210,6 +221,9 @@ bool SearchAndUpdateInodeTableInfo(const char *workerInodeRelationName,
         CatalogTupleUpdate(workerInodeRel, &updatedTuple->t_self, updatedTuple);
         CommandCounterIncrement();
     }
+    if (statContext) {
+        STAT_CKPT(statContext->statArrayIndex, statContext->opDoneCheckpoint);
+    }
 
     systable_endscan(scanDescriptor);
     if (!workerInodeRelation) {
@@ -273,4 +287,3 @@ StringInfo GetKvmetaIndexShardName(int shardId)
     appendStringInfo(kvmetaIndexShardName, "%s_%d_%s", KvmetaTableName, shardId, "index");
     return kvmetaIndexShardName;
 }
-

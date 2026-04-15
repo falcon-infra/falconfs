@@ -93,7 +93,10 @@ FalconErrorCode Connection::ProcessRequest(falcon::meta_proto::MetaServiceType p
     request.add_type(proto_type);
     if (proto_type == falcon::meta_proto::MKDIR || proto_type == falcon::meta_proto::CREATE ||
         proto_type == falcon::meta_proto::STAT || proto_type == falcon::meta_proto::OPEN ||
-        proto_type == falcon::meta_proto::CLOSE || proto_type == falcon::meta_proto::UNLINK) {
+        proto_type == falcon::meta_proto::CLOSE || proto_type == falcon::meta_proto::UNLINK ||
+        proto_type == falcon::meta_proto::KV_PUT || proto_type == falcon::meta_proto::KV_GET ||
+        proto_type == falcon::meta_proto::KV_DEL || proto_type == falcon::meta_proto::SLICE_PUT ||
+        proto_type == falcon::meta_proto::SLICE_GET || proto_type == falcon::meta_proto::SLICE_DEL) {
         request.set_allow_batch_with_others(ALLOW_BATCH_WITH_OTHERS);
     }
     brpc::Controller cntl;
