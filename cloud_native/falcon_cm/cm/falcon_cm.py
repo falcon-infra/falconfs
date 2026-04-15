@@ -29,9 +29,18 @@ class FalconCM:
         self._lost_node_time = {}
         self._watch_replica_lock = threading.Lock()
         self._watch_need_supplement_lock = threading.Lock()
+        self._watch_register_lock = threading.Lock()
         self._replica_change_num = 0
         self._need_supplement_num = 0
         self._thread_running = True
+        self._leader_reconcile_running = True
+        self._leader_reconcile_event = threading.Event()
+        self._leader_reconcile_lock = threading.Lock()
+        self._leader_reconcile_epoch = 0
+        self._leader_reconcile_handled_epoch = 0
+        self._leader_reconcile_thread = None
+        self._need_supp_watch_started = False
+        self._replica_watch_started = False
         self._is_cn = is_cn
         self._cluster_name = None
         self._cn_list = []
@@ -42,6 +51,8 @@ class FalconCM:
 
     def __del__(self):
         self._thread_running = False
+        self._leader_reconcile_running = False
+        self._leader_reconcile_event.set()
 
     def init_falcon_env(self):
         self._hosts = os.environ.get("zk_endpoint")
@@ -431,6 +442,8 @@ class FalconCM:
                     self.handle_leader_delete_event()
                 elif event.type == EventType.CREATED:
                     self.handle_leader_create_event()
+                elif event.type == EventType.CHANGED:
+                    self.enqueue_leader_reconcile("leader_changed")
 
         @self._zk_client.ChildrenWatch(candidates_path)
         def watch_candidates(candidates):
@@ -481,110 +494,237 @@ class FalconCM:
             self._zk_client.delete(child_path)
 
     def handle_leader_create_event(self):
+        self.enqueue_leader_reconcile("leader_created")
+
+    def enqueue_leader_reconcile(self, reason):
+        self._leader_reconcile_lock.acquire()
+        self._leader_reconcile_epoch += 1
+        epoch = self._leader_reconcile_epoch
+        self._leader_reconcile_lock.release()
+        self.logger.info(
+            "[reconcile] enqueue epoch={} reason={}".format(epoch, reason)
+        )
+        self._leader_reconcile_event.set()
+
+    def is_current_cluster_leader(self):
         leader_path = "{}/{}".format(self._leader_path, self._cluster_name)
+        try:
+            if not self._zk_client.exists(leader_path):
+                return False
+            data, _ = self._zk_client.get(leader_path)
+            ip_port = data.decode("utf-8")
+            leader_ip, _ = ip_port.split(":", 1)
+            return leader_ip == self._pod_ip
+        except Exception as ex:
+            self.logger.error(
+                "[reconcile] failed to get current leader: {}".format(ex)
+            )
+            return False
+
+    def is_reconcile_stale(self, epoch):
+        self._leader_reconcile_lock.acquire()
+        current_epoch = self._leader_reconcile_epoch
+        self._leader_reconcile_lock.release()
+        if epoch != current_epoch:
+            self.logger.info(
+                "[reconcile] stale epoch={} current={}".format(epoch, current_epoch)
+            )
+            return True
+        if not self.is_current_cluster_leader():
+            self.logger.info("[reconcile] exit not leader epoch={}".format(epoch))
+            return True
+        return False
+
+    def run_leader_reconcile(self, epoch):
+        leader_path = "{}/{}".format(self._leader_path, self._cluster_name)
+        if not self._zk_client.exists(leader_path):
+            self.logger.info(
+                "[reconcile] leader path not found epoch={}".format(epoch)
+            )
+            return "stale"
         data, _ = self._zk_client.get(leader_path)
         ip_port = data.decode("utf-8")
         leader_ip, _ = ip_port.split(":", 1)
-        try:
-            self.delete_candidates()
-        except Exception:
-            pass
-        try:
-            self._zk_client.delete(
-                "{}/{}/replicas/{}".format(
-                    self._cluster_path, self._cluster_name, ip_port
-                )
-            )
-        except Exception:
-            pass
         self._cluster_leader_ip = leader_ip
+        self._is_leader = leader_ip == self._pod_ip
         self.logger.info(
             "The leader of the cluster {} is {}".format(self._cluster_name, leader_ip)
         )
+        self.logger.info("[reconcile] start epoch={}".format(epoch))
         self._is_changing = True
-        if leader_ip == self._pod_ip:
-            if self._is_cn:
-                self.watch_need_supplement()
-            self.watch_replicas()
-            if postgresql.is_standby(self._pgdata_dir):
-                postgresql.do_promote(
-                    self._pgdata_dir,
-                    self._pod_ip,
-                    self._meta_port,
-                    self._user_name,
-                    self._node_ip,
-                    self._pod_ip,
-                )
+        try:
+            if leader_ip == self._pod_ip:
+                if self.is_reconcile_stale(epoch):
+                    return "stale"
+                try:
+                    self.delete_candidates()
+                except Exception:
+                    pass
+                try:
+                    self._zk_client.delete(
+                        "{}/{}/replicas/{}".format(
+                            self._cluster_path, self._cluster_name, ip_port
+                        )
+                    )
+                except Exception:
+                    pass
 
-            ret = False
-            while not ret:
-                self.logger.info("--update background service--")
-                ret = postgresql.update_start_background_service(
-                    self._cluster_leader_ip, self._meta_port, self._user_name
-                )
-                if ret:
-                    break
-                time.sleep(1)
-            self.logger.info("--update background service successfully--")
-            cn_leader_ip = self.get_cn_leader()
-            ret = False
-            while not ret:
-                self.logger.info("--update the node table--")
-                ret = postgresql.update_node_table(
-                    cn_leader_ip,
-                    self._meta_port,
-                    self._user_name,
-                    self._cluster_id,
-                    self._cluster_leader_ip,
-                    self._meta_port,
-                )
-                postgresql.reload_foreign_server_cache(
-                    cn_leader_ip, self._meta_port, self._user_name
-                )
-                if ret:
-                    break
+                if self._is_cn:
+                    self.watch_need_supplement()
+                self.watch_replicas()
+                if self.is_reconcile_stale(epoch):
+                    return "stale"
+                if postgresql.is_standby(self._pgdata_dir):
+                    postgresql.do_promote(
+                        self._pgdata_dir,
+                        self._pod_ip,
+                        self._meta_port,
+                        self._user_name,
+                        self._node_ip,
+                        self._pod_ip,
+                    )
+                if self.is_reconcile_stale(epoch):
+                    return "stale"
+
+                ret = False
+                retry = 0
+                while not ret and self._thread_running:
+                    if self.is_reconcile_stale(epoch):
+                        return "stale"
+                    self.logger.info(
+                        "[reconcile] phase=update_background epoch={} retry={}".format(
+                            epoch, retry
+                        )
+                    )
+                    ret = postgresql.update_start_background_service(
+                        self._cluster_leader_ip, self._meta_port, self._user_name
+                    )
+                    if ret:
+                        self.logger.info("--update background service successfully--")
+                        break
+                    retry += 1
+                    if self.is_reconcile_stale(epoch):
+                        return "stale"
+                    time.sleep(1)
+
+                if not self._thread_running:
+                    return "stale"
+
+                if self.is_reconcile_stale(epoch):
+                    return "stale"
                 cn_leader_ip = self.get_cn_leader()
-                time.sleep(1)
-            self.logger.info("--update the node table successfully--")
-        else:
-            try:
-                self._zk_client.delete(
+                ret = False
+                retry = 0
+                while not ret and self._thread_running:
+                    if self.is_reconcile_stale(epoch):
+                        return "stale"
+                    self.logger.info(
+                        "[reconcile] phase=update_node_table epoch={} retry={}"
+                        .format(epoch, retry)
+                    )
+                    ret = postgresql.update_node_table(
+                        cn_leader_ip,
+                        self._meta_port,
+                        self._user_name,
+                        self._cluster_id,
+                        self._cluster_leader_ip,
+                        self._meta_port,
+                    )
+                    postgresql.reload_foreign_server_cache(
+                        cn_leader_ip, self._meta_port, self._user_name
+                    )
+                    if ret:
+                        self.logger.info("--update the node table successfully--")
+                        break
+                    retry += 1
+                    if self.is_reconcile_stale(epoch):
+                        return "stale"
+                    cn_leader_ip = self.get_cn_leader()
+                    time.sleep(1)
+
+                if not self._thread_running:
+                    return "stale"
+
+                self.logger.info("[reconcile] success epoch={}".format(epoch))
+                return "done"
+            else:
+                try:
+                    self._zk_client.delete(
+                        "{}/{}/membership/{}".format(
+                            self._cluster_path,
+                            self._cluster_name,
+                            self._host_node_name,
+                        )
+                    )
+                except NoNodeError:
+                    pass
+                if postgresql.is_standby(self._pgdata_dir):
+                    postgresql.change_following_leader(
+                        self._pgdata_dir,
+                        self._cluster_leader_ip,
+                        self._meta_port,
+                        self._user_name,
+                        self._pod_ip,
+                        self._meta_port,
+                        self._host_node_name,
+                        self._node_ip,
+                        self._pod_ip,
+                    )
+                else:
+                    postgresql.do_demote(
+                        self._pgdata_dir,
+                        self._cluster_leader_ip,
+                        self._meta_port,
+                        self._user_name,
+                        self._pod_ip,
+                        self._meta_port,
+                        self._host_node_name,
+                        self._node_ip,
+                        self._pod_ip,
+                    )
+                self._zk_client.create(
                     "{}/{}/membership/{}".format(
                         self._cluster_path, self._cluster_name, self._host_node_name
                     )
                 )
-            except NoNodeError:
-                pass
-            if postgresql.is_standby(self._pgdata_dir):
-                postgresql.change_following_leader(
-                    self._pgdata_dir,
-                    self._cluster_leader_ip,
-                    self._meta_port,
-                    self._user_name,
-                    self._pod_ip,
-                    self._meta_port,
-                    self._host_node_name,
-                    self._node_ip,
-                    self._pod_ip,
-                )
-            else:
-                postgresql.do_demote(
-                    self._pgdata_dir,
-                    self._cluster_leader_ip,
-                    self._meta_port,
-                    self._user_name,
-                    self._pod_ip,
-                    self._meta_port,
-                    self._host_node_name,
-                    self._node_ip,
-                    self._pod_ip,
-                )
-            self._zk_client.create(
-                "{}/{}/membership/{}".format(
-                    self._cluster_path, self._cluster_name, self._host_node_name
-                )
-            )
-        self._is_changing = False
+                return "done"
+        finally:
+            self._is_changing = False
+
+    def leader_reconcile_loop(self):
+        while self._thread_running and self._leader_reconcile_running:
+            is_notified = self._leader_reconcile_event.wait(timeout=1)
+            if not is_notified:
+                continue
+            while self._thread_running and self._leader_reconcile_running:
+                self._leader_reconcile_lock.acquire()
+                epoch = self._leader_reconcile_epoch
+                if epoch <= self._leader_reconcile_handled_epoch:
+                    self._leader_reconcile_event.clear()
+                    self._leader_reconcile_lock.release()
+                    break
+                self._leader_reconcile_lock.release()
+                result = "retry"
+                try:
+                    result = self.run_leader_reconcile(epoch)
+                except Exception as ex:
+                    self.logger.error(
+                        "[reconcile] failed epoch={} err={} trace={}"
+                        .format(epoch, ex, traceback.format_exc())
+                    )
+                    result = "retry"
+
+                if result == "retry":
+                    time.sleep(1)
+                    self._leader_reconcile_event.set()
+                    continue
+
+                self._leader_reconcile_lock.acquire()
+                if epoch > self._leader_reconcile_handled_epoch:
+                    self._leader_reconcile_handled_epoch = epoch
+                if self._leader_reconcile_epoch <= self._leader_reconcile_handled_epoch:
+                    self._leader_reconcile_event.clear()
+                self._leader_reconcile_lock.release()
 
     def handle_candidate_change_event(self, candidates):
         leader_path = "{}/{}".format(self._leader_path, self._cluster_name)
@@ -781,8 +921,13 @@ class FalconCM:
         watch_replica_thread = threading.Thread(
             target=FalconCM.handle_replica_change, args=(self,)
         )
+        self._leader_reconcile_thread = threading.Thread(
+            target=FalconCM.leader_reconcile_loop, args=(self,)
+        )
         watch_replica_thread.start()
+        self._leader_reconcile_thread.start()
         watch_replica_thread.join()
+        self._leader_reconcile_thread.join()
 
     def start_watch_replica_need_supplement_thread(self):
         watch_replica_thread = threading.Thread(
@@ -794,12 +939,17 @@ class FalconCM:
         check_meta_status_thread = threading.Thread(
             target=FalconCM.handle_meta_error_report, args=(self,)
         )
+        self._leader_reconcile_thread = threading.Thread(
+            target=FalconCM.leader_reconcile_loop, args=(self,)
+        )
         watch_replica_thread.start()
         handle_replica_thread.start()
         check_meta_status_thread.start()
+        self._leader_reconcile_thread.start()
         watch_replica_thread.join()
         handle_replica_thread.join()
         check_meta_status_thread.join()
+        self._leader_reconcile_thread.join()
 
     def handle_replica_change(self):
         while self._thread_running:
@@ -977,6 +1127,13 @@ class FalconCM:
             time.sleep(self._check_meta_period)
 
     def watch_need_supplement(self):
+        self._watch_register_lock.acquire()
+        if self._need_supp_watch_started:
+            self._watch_register_lock.release()
+            return
+        self._need_supp_watch_started = True
+        self._watch_register_lock.release()
+
         @self._zk_client.ChildrenWatch(self._need_supplement_path)
         def watch_nodes(children):
             self.logger.info("in need supplement watch")
@@ -985,6 +1142,13 @@ class FalconCM:
             self._watch_need_supplement_lock.release()
 
     def watch_replicas(self):
+        self._watch_register_lock.acquire()
+        if self._replica_watch_started:
+            self._watch_register_lock.release()
+            return
+        self._replica_watch_started = True
+        self._watch_register_lock.release()
+
         replica_path = "{}/{}/replicas".format(self._cluster_path, self._cluster_name)
 
         @self._zk_client.ChildrenWatch(replica_path)
