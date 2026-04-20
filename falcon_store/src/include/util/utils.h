@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <cstdlib>
-#include <expected>
 #include <optional>
 #include <string>
 
@@ -42,6 +41,6 @@ std::string GetFilePath(uint64_t inodeId);
 int GenerateRandom(int minValue, int maxValue);
 std::optional<std::string> GetUserName();
 std::optional<std::string_view> SplitIp(std::string_view ipPort);
-std::expected<std::string, std::string> GetPodIPPort();
+std::string GetPodIPPort();
 float GetStorageThreshold(bool persistToStorage);
 int GetParentPathLevel();

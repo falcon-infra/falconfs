@@ -109,13 +109,8 @@ void StoreNode::UpdateNodeConfigByValue(std::unordered_map<int, std::string> &zk
 
 int StoreNode::SetNodeConfig(std::string &rootPath)
 {
-    auto ipPort = GetPodIPPort();
-    if (!ipPort) {
-        FALCON_LOG(LOG_ERROR) << "GetPodIPPort failed: " << ipPort.error();
-        return -1; // 或定义明确的错误码
-    }
-    std::string podIP = ipPort.value_or("127.0.0.1:56039");
-    int ret = FalconCM::GetInstance()->Upload("", podIP, nodeId, rootPath);
+    std::string podIPPort = GetPodIPPort();
+    int ret = FalconCM::GetInstance()->Upload("", podIPPort, nodeId, rootPath);
     if (ret != 0) {
         return ret;
     }
@@ -195,14 +190,17 @@ int StoreNode::GetNodeId() { return nodeId; }
 int StoreNode::GetNodeId(std::string_view ipPort)
 {
     std::shared_lock<std::shared_mutex> slock(nodeMutex);
-    return SplitIp(ipPort)
-        .and_then([this](const auto &metaIp) {
-            auto it = std::find_if(nodeMap.begin(), nodeMap.end(), [&metaIp](const auto &entry) {
-                return SplitIp(entry.second.first) == metaIp;
-            });
-            return it != nodeMap.end() ? std::optional(it->first) : std::nullopt;
-        })
-        .value_or(-1);
+    auto metaIp = SplitIp(ipPort);
+    if (!metaIp.has_value()) {
+        return -1;
+    }
+    auto it = std::find_if(nodeMap.begin(), nodeMap.end(), [&metaIp](const auto &entry) {
+        return SplitIp(entry.second.first) == metaIp;
+    });
+    if (it == nodeMap.end()) {
+        return -1;
+    }
+    return it->first;
 }
 
 bool StoreNode::IsLocal(int otherNodeId)
