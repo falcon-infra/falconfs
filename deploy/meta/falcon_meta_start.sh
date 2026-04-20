@@ -50,6 +50,73 @@ if [[ "$COMM_PLUGIN" != "brpc" && "$COMM_PLUGIN" != "hcom" ]]; then
     exit 1
 fi
 
+check_lock_conflict_for_port() {
+    local port="$1"
+    # NOTE: lock file path follows PostgreSQL unix_socket_directories (default /tmp).
+    # If unix_socket_directories is changed in postgresql.conf, update this path accordingly.
+    local lock_file="/tmp/.s.PGSQL.${port}.lock"
+
+    if [ ! -e "$lock_file" ]; then
+        return 0
+    fi
+
+    local owner
+    owner=$(stat -c '%U' "$lock_file" 2>/dev/null || true)
+    if [ -n "$owner" ] && [ "$owner" != "$USER" ]; then
+        echo "Error: detected PostgreSQL lock conflict on $lock_file (owner: $owner, current user: $USER)." >&2
+        exit 1
+    fi
+}
+
+check_local_socket_lock_conflict() {
+    local port
+
+    if [[ "$cnIp" == "$localIp" ]]; then
+        port="${cnPortPrefix}0"
+        check_lock_conflict_for_port "$port"
+    fi
+
+    for ((n = 0; n < ${#workerIpList[@]}; n++)); do
+        if [[ "${workerIpList[$n]}" == "$localIp" ]]; then
+            for ((i = 0; i < ${workerNumList[$n]}; i++)); do
+                port="${workerPortPrefix}${i}"
+                check_lock_conflict_for_port "$port"
+            done
+        fi
+    done
+}
+
+check_local_socket_lock_conflict
+  
+is_local_meta_running() {
+    local path
+
+    if [[ "$cnIp" == "$localIp" ]]; then
+        path="${cnPathPrefix}0"
+        if [ ! -d "$path" ] || ! pg_ctl status -D "$path" >/dev/null 2>&1; then
+            return 1
+        fi
+    fi
+
+    for ((n = 0; n < ${#workerIpList[@]}; n++)); do
+        if [[ "${workerIpList[$n]}" == "$localIp" ]]; then
+            for ((i = 0; i < ${workerNumList[$n]}; i++)); do
+                path="${workerPathPrefix}${i}"
+                if [ ! -d "$path" ] || ! pg_ctl status -D "$path" >/dev/null 2>&1; then
+                    return 1
+                fi
+            done
+        fi
+    done
+
+    return 0
+}
+
+if is_local_meta_running; then
+    echo "Falcon metadata services are already running on local node, skip re-initialization"
+    exit 0
+fi
+
 CPU_HALF=$(( $(nproc) / 2 ))
 [ $CPU_HALF -eq 0 ] && CPU_HALF=32
 FalconConnectionPoolSize=$CPU_HALF
@@ -107,7 +174,11 @@ EOF
     fi
 
     if ! pg_ctl status -D "$cnPath" &>/dev/null; then
-        pg_ctl start -l "$DIR/cnlogfile0.log" -D "$cnPath" -c
+        if ! pg_ctl start -l "$DIR/cnlogfile0.log" -D "$cnPath" -c; then
+            echo "Error: failed to start coordinator PostgreSQL at $cnPath" >&2
+            echo "Hint: check $DIR/cnlogfile0.log" >&2
+            exit 1
+        fi
     fi
 
     if ! psql -d postgres -h "$cnIp" -p "$cnPort" -tAc "SELECT 1 FROM pg_extension WHERE extname='falcon';" | grep -q 1; then
@@ -158,7 +229,11 @@ EOF
             fi
 
             if ! pg_ctl status -D "$workerPath" &>/dev/null; then
-                pg_ctl start -l "${DIR}/workerlogfile${i}.log" -D "${workerPath}" -c
+                if ! pg_ctl start -l "${DIR}/workerlogfile${i}.log" -D "${workerPath}" -c; then
+                    echo "Error: failed to start worker PostgreSQL at $workerPath" >&2
+                    echo "Hint: check ${DIR}/workerlogfile${i}.log" >&2
+                    exit 1
+                fi
             fi
 
             if ! psql -d postgres -h "${workerIp}" -p "${workerPort}" -tAc "SELECT 1 FROM pg_extension WHERE extname='falcon';" | grep -q 1; then
