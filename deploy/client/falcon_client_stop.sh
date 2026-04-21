@@ -5,6 +5,9 @@ set -euo pipefail
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 source "$DIR/falcon_client_config.sh"
 
+CLIENT_LOG_DIR=${FALCON_CLIENT_LOG_DIR:-$DIR}
+CLIENT_LOG_FILE="${CLIENT_LOG_DIR}/falcon_client.log"
+
 SUDO=""
 if [ "$EUID" -ne 0 ]; then
     if ! command -v sudo >/dev/null 2>&1; then
@@ -39,6 +42,6 @@ fi
 [ -d "$CACHE_PATH" ] && rm -rf "$CACHE_PATH"
 
 # 4. Clean log (idempotent)
-[ -f "${DIR}/falcon_client.log" ] && rm -f "${DIR}/falcon_client.log"
+[ -f "${CLIENT_LOG_FILE}" ] && rm -f "${CLIENT_LOG_FILE}"
 
 exit 0

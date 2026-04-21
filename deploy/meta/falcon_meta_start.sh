@@ -2,6 +2,9 @@
 DIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
 source $DIR/falcon_meta_config.sh
 
+META_LOG_DIR=${FALCON_META_LOG_DIR:-$DIR}
+mkdir -p "$META_LOG_DIR"
+
 # 安装/卸载 PostgreSQL falcon 扩展文件到系统目录
 # PostgreSQL 在编译时确定扩展文件 (.control, .sql) 的查找位置，无法通过配置修改
 install_falcon_extension() {
@@ -180,9 +183,9 @@ EOF
     fi
 
     if ! pg_ctl status -D "$cnPath" &>/dev/null; then
-        if ! pg_ctl start -l "$DIR/cnlogfile0.log" -D "$cnPath" -c; then
+        if ! pg_ctl start -l "$META_LOG_DIR/cnlogfile0.log" -D "$cnPath" -c; then
             echo "Error: failed to start coordinator PostgreSQL at $cnPath" >&2
-            echo "Hint: check $DIR/cnlogfile0.log" >&2
+            echo "Hint: check $META_LOG_DIR/cnlogfile0.log" >&2
             exit 1
         fi
     fi
@@ -235,9 +238,9 @@ EOF
             fi
 
             if ! pg_ctl status -D "$workerPath" &>/dev/null; then
-                if ! pg_ctl start -l "${DIR}/workerlogfile${i}.log" -D "${workerPath}" -c; then
+                if ! pg_ctl start -l "${META_LOG_DIR}/workerlogfile${i}.log" -D "${workerPath}" -c; then
                     echo "Error: failed to start worker PostgreSQL at $workerPath" >&2
-                    echo "Hint: check ${DIR}/workerlogfile${i}.log" >&2
+                    echo "Hint: check ${META_LOG_DIR}/workerlogfile${i}.log" >&2
                     exit 1
                 fi
             fi

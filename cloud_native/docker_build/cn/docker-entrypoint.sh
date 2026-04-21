@@ -3,7 +3,15 @@
 FALCONFS_INSTALL_DIR=${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}
 DATA_DIR=${FALCONFS_INSTALL_DIR}/data
 METADATA_DIR=${DATA_DIR}/metadata
+START_LOG_DIR=${FALCON_CN_DN_START_LOG_DIR:-${DATA_DIR}}
+START_LOG_FILE=${START_LOG_DIR}/start.log
 STARTUP_SCRIPT=${FALCONFS_INSTALL_DIR}/falcon_cn/start.sh
+
+mkdir -p "${START_LOG_DIR}"
+chown falconMeta:falconMeta "${START_LOG_DIR}"
+chmod 775 "${START_LOG_DIR}"
+touch "${START_LOG_FILE}"
+chown falconMeta:falconMeta "${START_LOG_FILE}"
 
 if [ ! -d "${METADATA_DIR}" ]; then
     chown falconMeta:falconMeta "${DATA_DIR}"
@@ -23,4 +31,4 @@ if [ ! -d "${METADATA_DIR}" ]; then
     echo "Falcon extension files installed."
 fi
 
-exec su -s /bin/bash falconMeta -c "bash ${STARTUP_SCRIPT} >${DATA_DIR}/start.log 2>&1"
+exec su -s /bin/bash falconMeta -c "bash ${STARTUP_SCRIPT} >${START_LOG_FILE} 2>&1"

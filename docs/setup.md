@@ -205,6 +205,9 @@ git -C third_party/postgres apply ../../patches/no_root_check.patch
 ./build.sh clean
 ./build.sh build --debug && ./build.sh install
 source deploy/falcon_env.sh
+# optional: override default log directories
+# export FALCON_META_LOG_DIR=/tmp/falcon-meta-logs
+# export FALCON_CLIENT_LOG_DIR=/tmp/falcon-client-logs
 ./deploy/falcon_start.sh
 ```
 
