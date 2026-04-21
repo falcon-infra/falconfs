@@ -649,7 +649,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
             toHandleMetaProcessList = lappend(toHandleMetaProcessList, info);
         }
 
-        MetaProcessInfo info = NULL;
+        volatile MetaProcessInfo info = NULL;
         while (list_length(toHandleMetaProcessList) != 0) {
             BeginInternalSubTransaction(NULL);
             StatBroadcastList(toHandleMetaProcessList, CKPT_HANDLER_START + 5);
@@ -662,8 +662,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                 int toHandleMetaProcessIndex = list_length(toHandleMetaProcessList) - 1;
                 while (currentGroupHandled > 0 && toHandleMetaProcessIndex >= 0) {
                     // force the info writen to memory
-                    *(volatile MetaProcessInfo *)(&info) = list_nth(toHandleMetaProcessList, toHandleMetaProcessIndex);
-                    // info = list_nth(toHandleMetaProcessList, toHandleMetaProcessIndex);
+                    info = list_nth(toHandleMetaProcessList, toHandleMetaProcessIndex);
                     --toHandleMetaProcessIndex;
                     if (info->errorCode != SUCCESS) {
                         if (info->errorCode == FILE_EXISTS) {
