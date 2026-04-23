@@ -26,7 +26,7 @@ RUN apt-get install -y tar wget make cmake ninja-build libreadline-dev liblz4-de
     libssl-dev fuse libfuse-dev libtool libflatbuffers-dev flatbuffers-compiler \
     libprotoc-dev libprotobuf-dev protobuf-compiler libgflags-dev libjsoncpp-dev \
     libleveldb-dev libfmt-dev libgtest-dev libgmock-dev libgoogle-glog-dev \
-    libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils \
+    libzookeeper-mt-dev libibverbs-dev iputils-ping net-tools jq moreutils lcov \
     build-essential git libcurl4-openssl-dev
 
 # 从源码编译安装 PostgreSQL 17

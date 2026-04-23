@@ -36,3 +36,25 @@ target_link_libraries(test_falcon
     ${BRPC_LIBRARIES}
     ${DYNAMIC_LIB}
 )
+
+add_executable(LocalRunWorkloadUT test_local_run_workload_ut.cpp workloads.cc falconfs.cc)
+
+target_link_libraries(LocalRunWorkloadUT
+    FalconStore
+    FalconClient
+    zookeeper_mt
+    glog
+    jsoncpp
+    gtest
+    pq
+    ${BRPC_LIBRARIES}
+    ${DYNAMIC_LIB}
+)
+
+add_executable(LocalRunPosixWorkloadUT test_local_run_posix_workload_ut.cpp workloads.cc posix.cc)
+
+target_link_libraries(LocalRunPosixWorkloadUT
+    PUBLIC pthread
+    PUBLIC fmt
+    PUBLIC gtest
+)

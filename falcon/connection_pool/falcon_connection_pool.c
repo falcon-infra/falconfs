@@ -5,9 +5,14 @@
 #include "connection_pool/falcon_connection_pool.h"
 
 #include <dlfcn.h>
+#include <elf.h>
+#include <fcntl.h>
+#include <link.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <threads.h>
 #include <unistd.h>
+
 #include "postgres.h"
 #include "postmaster/bgworker.h"
 #include "postmaster/postmaster.h"
@@ -43,10 +48,138 @@ char *FalconNodeLocalIp = NULL;
 // variable used for falcon communication plugin
 static falcon_plugin_start_comm_func_t comm_work_func = NULL;
 static falcon_plugin_stop_comm_func_t comm_cleanup_func = NULL;
+static falcon_plugin_flush_coverage_func_t comm_flush_coverage_func = NULL;
+static void (*comm_plugin_gcov_dump_func)(void) = NULL;
 static void *falcon_comm_dl_handle = NULL;
 
 static volatile bool got_SIGTERM = false;
 static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS);
+
+static void *ResolveLocalSymbolAddress(void *handle, const char *symbolName)
+{
+    struct link_map *linkMap = NULL;
+    Elf64_Ehdr elfHeader;
+    Elf64_Shdr *sectionHeaders = NULL;
+    char *sectionNames = NULL;
+    void *resolvedAddress = NULL;
+    int fd = -1;
+
+    if (handle == NULL || symbolName == NULL) {
+        return NULL;
+    }
+    if (dlinfo(handle, RTLD_DI_LINKMAP, &linkMap) != 0 || linkMap == NULL || linkMap->l_name == NULL ||
+        linkMap->l_name[0] == '\0') {
+        return NULL;
+    }
+
+    fd = open(linkMap->l_name, O_RDONLY);
+    if (fd < 0) {
+        return NULL;
+    }
+    if (read(fd, &elfHeader, sizeof(elfHeader)) != sizeof(elfHeader)) {
+        goto cleanup;
+    }
+    if (memcmp(elfHeader.e_ident, ELFMAG, SELFMAG) != 0 || elfHeader.e_ident[EI_CLASS] != ELFCLASS64 ||
+        elfHeader.e_shentsize != sizeof(Elf64_Shdr) || elfHeader.e_shnum == 0) {
+        goto cleanup;
+    }
+
+    sectionHeaders = (Elf64_Shdr *)malloc(elfHeader.e_shentsize * elfHeader.e_shnum);
+    if (sectionHeaders == NULL) {
+        goto cleanup;
+    }
+    if (lseek(fd, elfHeader.e_shoff, SEEK_SET) < 0 ||
+        read(fd, sectionHeaders, elfHeader.e_shentsize * elfHeader.e_shnum) !=
+            elfHeader.e_shentsize * elfHeader.e_shnum) {
+        goto cleanup;
+    }
+    if (elfHeader.e_shstrndx >= elfHeader.e_shnum) {
+        goto cleanup;
+    }
+
+    sectionNames = (char *)malloc(sectionHeaders[elfHeader.e_shstrndx].sh_size);
+    if (sectionNames == NULL) {
+        goto cleanup;
+    }
+    if (lseek(fd, sectionHeaders[elfHeader.e_shstrndx].sh_offset, SEEK_SET) < 0 ||
+        read(fd, sectionNames, sectionHeaders[elfHeader.e_shstrndx].sh_size) !=
+            (ssize_t)sectionHeaders[elfHeader.e_shstrndx].sh_size) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < elfHeader.e_shnum; i++) {
+        Elf64_Shdr symbolSection = sectionHeaders[i];
+        Elf64_Shdr stringSection;
+        Elf64_Sym *symbols = NULL;
+        char *symbolNames = NULL;
+        size_t symbolCount = 0;
+
+        if (symbolSection.sh_type != SHT_SYMTAB || symbolSection.sh_link >= elfHeader.e_shnum ||
+            strcmp(sectionNames + symbolSection.sh_name, ".symtab") != 0) {
+            continue;
+        }
+
+        stringSection = sectionHeaders[symbolSection.sh_link];
+        symbolCount = symbolSection.sh_size / symbolSection.sh_entsize;
+        symbols = (Elf64_Sym *)malloc(symbolSection.sh_size);
+        symbolNames = (char *)malloc(stringSection.sh_size);
+        if (symbols == NULL || symbolNames == NULL) {
+            free(symbols);
+            free(symbolNames);
+            goto cleanup;
+        }
+
+        if (lseek(fd, symbolSection.sh_offset, SEEK_SET) < 0 ||
+            read(fd, symbols, symbolSection.sh_size) != (ssize_t)symbolSection.sh_size ||
+            lseek(fd, stringSection.sh_offset, SEEK_SET) < 0 ||
+            read(fd, symbolNames, stringSection.sh_size) != (ssize_t)stringSection.sh_size) {
+            free(symbols);
+            free(symbolNames);
+            goto cleanup;
+        }
+
+        for (size_t symbolIdx = 0; symbolIdx < symbolCount; symbolIdx++) {
+            if (symbols[symbolIdx].st_name >= stringSection.sh_size ||
+                strcmp(symbolNames + symbols[symbolIdx].st_name, symbolName) != 0 ||
+                ELF64_ST_TYPE(symbols[symbolIdx].st_info) != STT_FUNC || symbols[symbolIdx].st_value == 0) {
+                continue;
+            }
+            resolvedAddress = (void *)(linkMap->l_addr + symbols[symbolIdx].st_value);
+            free(symbols);
+            free(symbolNames);
+            goto cleanup;
+        }
+
+        free(symbols);
+        free(symbolNames);
+    }
+
+cleanup:
+    free(sectionHeaders);
+    free(sectionNames);
+    if (fd >= 0) {
+        close(fd);
+    }
+    return resolvedAddress;
+}
+
+static inline void FlushCoverageData(void)
+{
+    void (*gcov_dump)(void) = (void (*)(void))dlsym(RTLD_DEFAULT, "__gcov_dump");
+    if (gcov_dump != NULL) {
+        gcov_dump();
+    }
+}
+
+static inline void FlushCoverageDataForPlugin(void)
+{
+    if (comm_flush_coverage_func != NULL) {
+        comm_flush_coverage_func();
+    }
+    if (comm_plugin_gcov_dump_func != NULL) {
+        comm_plugin_gcov_dump_func();
+    }
+}
 
 void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg)
 {
@@ -88,6 +221,9 @@ static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS)
 {
     int save_errno = errno;
 
+    FlushCoverageData();
+    FlushCoverageDataForPlugin();
+
     elog(LOG, "FalconDaemonConnectionPoolProcessSigTermHandler: get sigterm.");
     got_SIGTERM = true;
 
@@ -98,10 +234,15 @@ static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS)
     }
 
     if (falcon_comm_dl_handle != NULL) {
+        FlushCoverageDataForPlugin();
         dlclose(falcon_comm_dl_handle);
         comm_work_func = NULL;
+        comm_flush_coverage_func = NULL;
+        comm_plugin_gcov_dump_func = NULL;
         falcon_comm_dl_handle = NULL;
     }
+
+    FlushCoverageData();
 
     errno = save_errno;
 }
@@ -149,6 +290,9 @@ static void StartCommunicationSever()
 
     comm_work_func = (falcon_plugin_start_comm_func_t)dlsym(falcon_comm_dl_handle, FALCON_PLUGIN_START_COMM_FUNC_NAME);
     comm_cleanup_func = (falcon_plugin_stop_comm_func_t)dlsym(falcon_comm_dl_handle, FALCON_PLUGIN_STOP_COMM_FUNC_NAME);
+    comm_flush_coverage_func =
+        (falcon_plugin_flush_coverage_func_t)dlsym(falcon_comm_dl_handle, FALCON_PLUGIN_FLUSH_COVERAGE_FUNC_NAME);
+    comm_plugin_gcov_dump_func = (void (*)(void))ResolveLocalSymbolAddress(falcon_comm_dl_handle, "__gcov_dump");
     if (!comm_work_func || !comm_cleanup_func) {
         elog(ERROR, "Plugin %s missing required functions (work/cleanup)", FalconCommunicationPluginPath);
         dlclose(falcon_comm_dl_handle);
@@ -165,9 +309,18 @@ static void StartCommunicationSever()
     }
     /* Cleanup */
     elog(LOG, "Background worker stopping: %s", FalconCommunicationPluginPath);
+    FlushCoverageData();
+    FlushCoverageDataForPlugin();
     comm_cleanup_func();
+    comm_cleanup_func = NULL;
 
+    FlushCoverageDataForPlugin();
     dlclose(falcon_comm_dl_handle);
+    comm_work_func = NULL;
+    comm_flush_coverage_func = NULL;
+    comm_plugin_gcov_dump_func = NULL;
+    falcon_comm_dl_handle = NULL;
+    FlushCoverageData();
 }
 
 void RunConnectionPoolServer(void)

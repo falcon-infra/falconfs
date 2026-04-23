@@ -1,4 +1,4 @@
-# FalconFS
+# FalconFS 
 
 [![Build](https://github.com/falcon-infra/falconfs/actions/workflows/build.yml/badge.svg)](https://github.com/falcon-infra/falconfs/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/License-Mulan%20PSL%202-green)](LICENSE)
@@ -108,6 +108,22 @@ test
 
 ``` bash
 ./build.sh test
+```
+
+coverage (lcov)
+
+``` bash
+# lcov/genhtml are preinstalled in ghcr.io/falcon-infra/falconfs-dev
+# if running on a host, install lcov first:
+#   Ubuntu/Debian: apt-get update && apt-get install -y lcov
+#   openEuler:     dnf install -y lcov
+
+# build with gcov instrumentation, run UT, generate html report
+# artifacts are kept by default
+./build.sh coverage
+
+# open report (when artifacts are kept)
+xdg-open build/coverage/html/index.html
 ```
 
 clean

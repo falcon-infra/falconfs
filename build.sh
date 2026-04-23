@@ -10,7 +10,10 @@ WITH_RDMA=false
 WITH_PROMETHEUS=false
 WITH_OBS_STORAGE=false
 WITH_ASAN=false
+COVERAGE=false
+RUN_LOCAL_SERVICE_FOR_COVERAGE=false
 COMM_PLUGIN="brpc"
+SERVICE_COVERAGE_GCOV_PREFIX="${SERVICE_COVERAGE_GCOV_PREFIX:-/tmp/falconfs_service_gcov}"
 
 FALCONFS_INSTALL_DIR="${FALCONFS_INSTALL_DIR:-/usr/local/falconfs}"
 export FALCONFS_INSTALL_DIR=$FALCONFS_INSTALL_DIR
@@ -86,15 +89,29 @@ gen_proto() {
 }
 
 build_comm_plugin() {
+	local plugin_cflags="-Wall -Wextra -O2 -fPIC"
+	local plugin_ldflags=""
+	if [[ "$COVERAGE" == true ]]; then
+		plugin_cflags="-Wall -Wextra -O0 -g -fPIC --coverage -fprofile-update=atomic"
+		plugin_ldflags="--coverage"
+	fi
+
 	case "$COMM_PLUGIN" in
 	brpc)
 		echo "Building brpc communication plugin..."
-		cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc
+		cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.brpc \
+			CFLAGS="$plugin_cflags" \
+			CXXFLAGS="$plugin_cflags" \
+			LDFLAGS="$plugin_ldflags"
 		echo "brpc communication plugin build complete."
 		;;
 	hcom)
 		echo "Building hcom communication plugin..."
-		cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom WITH_OBS_STORAGE=$WITH_OBS_STORAGE
+		cd "$FALCONFS_DIR/falcon" && make -f MakefilePlugin.hcom \
+			WITH_OBS_STORAGE=$WITH_OBS_STORAGE \
+			CFLAGS="$plugin_cflags" \
+			CXXFLAGS="$plugin_cflags" \
+			LDFLAGS="$plugin_ldflags"
 		echo "hcom communication plugin build complete."
 
 		# Copy test plugins to plugins directory for hcom
@@ -115,11 +132,18 @@ build_falconfs() {
 	gen_proto
 
 	PG_CFLAGS=""
+	local cmake_coverage_extra_flags=""
+	local cmake_coverage="OFF"
 	if [[ "$BUILD_TYPE" == "Debug" ]]; then
 		CONFIGURE_OPTS+=(--enable-debug)
 		PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
 	else
 		PG_CFLAGS="-O0 -g"
+	fi
+	if [[ "$COVERAGE" == true ]]; then
+		cmake_coverage="ON"
+		PG_CFLAGS="$PG_CFLAGS --coverage -fprofile-update=atomic"
+		cmake_coverage_extra_flags="-fprofile-update=atomic"
 	fi
 	echo "Building FalconFS Meta (mode: $BUILD_TYPE)..."
 	cd $FALCONFS_DIR/falcon
@@ -135,6 +159,8 @@ build_falconfs() {
 		-DCMAKE_INSTALL_PREFIX=$FALCON_CLIENT_INSTALL_DIR \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
 		-DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+		-DCMAKE_C_FLAGS="$cmake_coverage_extra_flags" \
+		-DCMAKE_CXX_FLAGS="$cmake_coverage_extra_flags" \
 		-DPOSTGRES_INCLUDE_DIR="$POSTGRES_INCLUDE_DIR" \
 		-DPOSTGRES_LIB_DIR="$POSTGRES_LIB_DIR" \
 		-DPG_PKGLIBDIR="$PG_PKGLIBDIR" \
@@ -143,6 +169,7 @@ build_falconfs() {
 		-DWITH_RDMA="$WITH_RDMA" \
 		-DWITH_PROMETHEUS="$WITH_PROMETHEUS" \
 		-DWITH_OBS_STORAGE="$WITH_OBS_STORAGE" \
+		-DENABLE_COVERAGE="$cmake_coverage" \
 		-DENABLE_ASAN="$WITH_ASAN" \
 		-DBUILD_TEST=$BUILD_TEST &&
 		cd "$BUILD_DIR" && ninja
@@ -172,6 +199,10 @@ clean_tests() {
 	rm -rf "$BUILD_DIR/tests"
 	echo "FalconFS tests clean complete."
 }
+
+source "$FALCONFS_DIR/deploy/coverage/coverage_common.sh"
+source "$FALCONFS_DIR/deploy/coverage/coverage_local_service.sh"
+source "$FALCONFS_DIR/deploy/coverage/coverage_report.sh"
 
 install_falcon_meta() {
 	echo "Installing FalconFS meta ..."
@@ -369,11 +400,13 @@ print_help() {
 		echo "Options:"
 		echo "  --debug              Build debug versions"
 		echo "  --release            Build release versions (default)"
+		echo "  --coverage           Build with gcov/lcov instrumentation"
 		echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
 		echo "  -h, --help           Show this help message"
 		echo ""
 		echo "Examples:"
 		echo "  $0 build --debug                 # Build everything in debug mode"
+		echo "  $0 build --debug --coverage      # Build with coverage instrumentation"
 		echo "  $0 build --comm-plugin=hcom      # Build with hcom communication plugin"
 		;;
 	clean)
@@ -384,6 +417,7 @@ print_help() {
 		echo "Targets:"
 		echo "  falcon   Clean FalconFS build artifacts"
 		echo "  test     Clean test binaries"
+		echo "  coverage Clean coverage artifacts and report"
 		echo ""
 		echo "Options:"
 		echo "  -h, --help  Show this help message"
@@ -391,6 +425,23 @@ print_help() {
 		echo "Examples:"
 		echo "  $0 clean           # Clean everything"
 		echo "  $0 clean falcon    # Clean only FalconFS"
+		;;
+	coverage)
+		echo "Usage: $0 coverage [options]"
+		echo ""
+		echo "Build FalconFS with coverage, run unit tests, and generate lcov html report"
+		echo ""
+		echo "Options:"
+		echo "  --local-run        Start local service and run service-dependent UT cases"
+		echo "  -h, --help         Show this help message"
+		echo ""
+		echo "Examples:"
+		echo "  $0 coverage"
+		echo "  $0 coverage --local-run"
+		echo ""
+		echo "Behavior:"
+		echo "  $0 coverage             # do not start local service"
+		echo "  $0 coverage --local-run # start local service"
 		;;
 	*)
 		# General help information
@@ -400,6 +451,7 @@ print_help() {
 		echo "  build     Build components"
 		echo "  clean     Clean artifacts"
 		echo "  test      Run tests"
+		echo "  coverage  Build, test and generate lcov report"
 		echo "  install   Install components"
 		echo ""
 		echo "Run '$0 <command> --help' for more information on a specific command"
@@ -421,6 +473,10 @@ build)
 			BUILD_TYPE="Release"
 			shift
 			;;
+		--coverage)
+			COVERAGE=true
+			shift
+			;;
 		--help | -h)
 			print_help "build"
 			exit 0
@@ -440,7 +496,7 @@ build)
 		*)
 			# Only break if this isn't the combined build case
 			[[ -z "${2:-}" || "$2" == "pg" || "$2" == "falcon" ]] && break
-			echo "Error: Combined build only supports --debug, --deploy or --comm-plugin" >&2
+			echo "Error: Combined build only supports --debug, --deploy, --coverage or --comm-plugin" >&2
 			exit 1
 			;;
 		esac
@@ -459,6 +515,9 @@ build)
 				;;
 			--relwithdebinfo)
 				BUILD_TYPE="RelWithDebInfo"
+				;;
+			--coverage)
+				COVERAGE=true
 				;;
 			--with-fuse-opt)
 				WITH_FUSE_OPT=true
@@ -498,6 +557,7 @@ build)
 				echo "  --debug              Build in debug mode"
 				echo "  --release            Build in release mode"
 				echo "  --relwithdebinfo     Build with debug symbols"
+				echo "  --coverage           Build with gcov/lcov instrumentation"
 				echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
 				echo "  --with-fuse-opt      Enable FUSE optimizations"
 				echo "  --with-zk-init       Enable Zookeeper initialization for containerized deployment"
@@ -545,6 +605,9 @@ clean)
 		done
 		clean_tests
 		;;
+	coverage)
+		clean_coverage_data
+		;;
 	*)
 		# Main clean command options
 		while true; do
@@ -561,29 +624,27 @@ clean)
 	esac
 	;;
 test)
-	TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
-
-	for TARGET_DIR in "${TARGET_DIRS[@]}"; do
-		if [ -d "$TARGET_DIR" ]; then
-			echo "Running tests in: $TARGET_DIR"
-			find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
-				echo "Executing: $executable_file"
-				"$executable_file"
-				echo "---------------------------------------------------------------------------------------"
-			done
-		else
-			echo "Test directory not found: $TARGET_DIR"
-		fi
+	run_unit_tests
+	;;
+coverage)
+	shift
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--help | -h)
+			print_help "coverage"
+			exit 0
+			;;
+		--local-run)
+			RUN_LOCAL_SERVICE_FOR_COVERAGE=true
+			;;
+		*)
+			echo "Unknown option for coverage: $1" >&2
+			exit 1
+			;;
+		esac
+		shift
 	done
-	TARGET_DIR="$FALCONFS_DIR/build/tests/falcon/"
-	# Find executable files directly in the test directory (not in subdirectories)
-	# Exclude .cmake files and anything in CMakeFiles/
-	find "$TARGET_DIR" -maxdepth 1 -type f -executable -not -name "*.cmake" -not -path "*/CMakeFiles/*" | while read -r executable_file; do
-		echo "Executing: $executable_file"
-		"$executable_file"
-		echo "---------------------------------------------------------------------------------------"
-	done
-	echo "All unit tests passed."
+	run_coverage
 	;;
 install)
 	case "${2:-}" in
