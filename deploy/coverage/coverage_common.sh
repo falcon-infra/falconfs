@@ -75,6 +75,7 @@ run_non_service_unit_tests() {
 
 run_service_dependent_unit_tests() {
 	local local_run_ut="$FALCONFS_DIR/build/tests/private-directory-test/LocalRunWorkloadUT"
+	local metadata_ut="$FALCONFS_DIR/build/tests/metadata_ut/FalconMetadataUT"
 	local service_server_ip
 	local service_server_port
 	service_server_ip="$(resolve_service_test_server_ip)"
@@ -95,6 +96,17 @@ run_service_dependent_unit_tests() {
 		LOCAL_RUN_FILE_SIZE="${LOCAL_RUN_FILE_SIZE:-4096}" \
 		LOCAL_RUN_CLIENT_NUM="${LOCAL_RUN_CLIENT_NUM:-1}" \
 		"$local_run_ut"
+		echo "---------------------------------------------------------------------------------------"
+	fi
+
+	if [[ -x "$metadata_ut" ]]; then
+		echo "Running service-dependent metadata UT in: $FALCONFS_DIR/build/tests/metadata_ut/"
+		echo "Metadata UT endpoint: ${service_server_ip}:${service_server_port}"
+		echo "Executing: $metadata_ut"
+		SERVER_IP="$service_server_ip" \
+		SERVER_PORT="$service_server_port" \
+		FALCON_METADATA_UT_MANAGE_SERVER=0 \
+		"$metadata_ut" --gtest_color=no
 		echo "---------------------------------------------------------------------------------------"
 	fi
 }

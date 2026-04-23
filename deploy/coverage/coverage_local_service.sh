@@ -3,8 +3,14 @@
 prepare_coverage_service_artifacts() {
 	local meta_lib_dir="$FALCONFS_INSTALL_DIR/falcon_meta/lib/postgresql"
 	local meta_ext_dir="$FALCONFS_INSTALL_DIR/falcon_meta/share/extension"
+	local client_config_dir="$FALCONFS_INSTALL_DIR/falcon_client/config"
+	local client_config_file="$client_config_dir/config.json"
+	local service_server_ip
+	local service_server_port
 	local plugin_src=""
 	local use_sudo=false
+	service_server_ip="$(resolve_service_test_server_ip)"
+	service_server_port="$(resolve_service_test_server_port)"
 
 	case "$COMM_PLUGIN" in
 	brpc)
@@ -25,7 +31,7 @@ prepare_coverage_service_artifacts() {
 	fi
 
 	if [[ "$use_sudo" == true ]]; then
-		sudo mkdir -p "$meta_lib_dir" "$meta_ext_dir"
+		sudo mkdir -p "$meta_lib_dir" "$meta_ext_dir" "$client_config_dir"
 		sudo cp -f "$FALCONFS_DIR/falcon/falcon.so" "$meta_lib_dir/"
 		sudo cp -f "$FALCONFS_DIR/falcon/falcon.control" "$meta_ext_dir/"
 		sudo cp -f "$FALCONFS_DIR/falcon/falcon--1.0.sql" "$meta_ext_dir/"
@@ -33,8 +39,13 @@ prepare_coverage_service_artifacts() {
 		if [[ -f "$BUILD_DIR/test_plugins/libfalcon_meta_service_test_plugin.so" ]]; then
 			sudo cp -f "$BUILD_DIR/test_plugins/libfalcon_meta_service_test_plugin.so" "$meta_lib_dir/"
 		fi
+		sudo cp -r "$FALCONFS_DIR/config/." "$client_config_dir/"
+		sudo sed -i -E \
+			-e "s#(\"falcon_server_ip\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")#\1${service_server_ip}\2#" \
+			-e "s#(\"falcon_server_port\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")#\1${service_server_port}\2#" \
+			"$client_config_file"
 	else
-		mkdir -p "$meta_lib_dir" "$meta_ext_dir"
+		mkdir -p "$meta_lib_dir" "$meta_ext_dir" "$client_config_dir"
 		cp -f "$FALCONFS_DIR/falcon/falcon.so" "$meta_lib_dir/"
 		cp -f "$FALCONFS_DIR/falcon/falcon.control" "$meta_ext_dir/"
 		cp -f "$FALCONFS_DIR/falcon/falcon--1.0.sql" "$meta_ext_dir/"
@@ -42,9 +53,15 @@ prepare_coverage_service_artifacts() {
 		if [[ -f "$BUILD_DIR/test_plugins/libfalcon_meta_service_test_plugin.so" ]]; then
 			cp -f "$BUILD_DIR/test_plugins/libfalcon_meta_service_test_plugin.so" "$meta_lib_dir/"
 		fi
+		cp -r "$FALCONFS_DIR/config/." "$client_config_dir/"
+		sed -i -E \
+			-e "s#(\"falcon_server_ip\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")#\1${service_server_ip}\2#" \
+			-e "s#(\"falcon_server_port\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")#\1${service_server_port}\2#" \
+			"$client_config_file"
 	fi
 
 	echo "Coverage service artifacts prepared in $FALCONFS_INSTALL_DIR/falcon_meta"
+	echo "Coverage client config prepared in $client_config_dir (${service_server_ip}:${service_server_port})"
 }
 
 start_local_service_for_coverage() {

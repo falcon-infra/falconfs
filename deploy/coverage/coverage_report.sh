@@ -58,9 +58,11 @@ run_coverage() {
 	trap cleanup_coverage_local_service RETURN
 
 	if [[ "$RUN_LOCAL_SERVICE_FOR_COVERAGE" == true ]]; then
+		run_non_service_unit_tests
 		start_local_service_for_coverage
 		local_service_started=true
-		run_unit_tests
+		run_service_dependent_unit_tests
+		echo "All unit tests passed."
 	else
 		run_non_service_unit_tests
 		echo "All unit tests passed."

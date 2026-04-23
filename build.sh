@@ -79,6 +79,30 @@ parse_comm_plugin_option() {
 
 parse_comm_plugin_option "$@"
 
+install_requires_sudo() {
+	if [[ "$(id -u)" -eq 0 ]]; then
+		return 1
+	fi
+
+	if [[ -e "$FALCONFS_INSTALL_DIR" ]]; then
+		[[ ! -w "$FALCONFS_INSTALL_DIR" ]]
+	else
+		[[ ! -w "$(dirname "$FALCONFS_INSTALL_DIR")" ]]
+	fi
+}
+
+install_cmd() {
+	if install_requires_sudo; then
+		if ! command -v sudo >/dev/null 2>&1; then
+			echo "Error: sudo is required to write $FALCONFS_INSTALL_DIR" >&2
+			exit 1
+		fi
+		sudo "$@"
+	else
+		"$@"
+	fi
+}
+
 gen_proto() {
 	mkdir -p "$BUILD_DIR"
 	echo "Generating Protobuf files..."
@@ -206,7 +230,7 @@ source "$FALCONFS_DIR/deploy/coverage/coverage_report.sh"
 
 install_falcon_meta() {
 	echo "Installing FalconFS meta ..."
-	cd "$FALCONFS_DIR/falcon" && make USE_PGXS=1 install-falconfs \
+	cd "$FALCONFS_DIR/falcon" && install_cmd make USE_PGXS=1 install-falconfs \
 		FALCONFS_INSTALL_DIR="$FALCONFS_INSTALL_DIR"
 	echo "FalconFS meta installed"
 
@@ -224,13 +248,13 @@ install_falcon_meta() {
         echo "Error: communication plugin ($COMM_PLUGIN) not built at $plugin_src" >&2
         exit 1
     fi
-    echo "copy ${COMM_PLUGIN} communication plugin to $FALCON_META_INSTALL_DIR/lib/postgresql..."
-    cp "$plugin_src" "$FALCON_META_INSTALL_DIR/lib/postgresql/"
-    echo "${COMM_PLUGIN} communication plugin copied."
+	echo "copy ${COMM_PLUGIN} communication plugin to $FALCON_META_INSTALL_DIR/lib/postgresql..."
+	install_cmd cp "$plugin_src" "$FALCON_META_INSTALL_DIR/lib/postgresql/"
+	echo "${COMM_PLUGIN} communication plugin copied."
 
 	# 安装测试插件 (如果存在)
 	if [[ -f "$FALCONFS_DIR/falcon/libfalcon_meta_service_test_plugin.so" ]]; then
-		cp "$FALCONFS_DIR/falcon/libfalcon_meta_service_test_plugin.so" \
+		install_cmd cp "$FALCONFS_DIR/falcon/libfalcon_meta_service_test_plugin.so" \
 			"$FALCON_META_INSTALL_DIR/lib/postgresql/"
 		echo "test plugin copied."
 	fi
@@ -380,11 +404,130 @@ install_private_directory_test() {
 
 install_deploy_scripts() {
 	echo "Installing deploy scripts to $FALCONFS_INSTALL_DIR/deploy..."
-	rm -rf "$FALCONFS_INSTALL_DIR/deploy"
-	mkdir -p "$FALCONFS_INSTALL_DIR/deploy"
+	install_cmd rm -rf "$FALCONFS_INSTALL_DIR/deploy"
+	install_cmd mkdir -p "$FALCONFS_INSTALL_DIR/deploy"
 	# 复制 deploy 目录内容，排除 tmp 目录
-	rsync -av --exclude='tmp' "$FALCONFS_DIR/deploy/" "$FALCONFS_INSTALL_DIR/deploy/"
+	install_cmd rsync -av --exclude='tmp' "$FALCONFS_DIR/deploy/" "$FALCONFS_INSTALL_DIR/deploy/"
 	echo "deploy scripts installed to $FALCONFS_INSTALL_DIR/deploy"
+}
+
+run_unit_tests() {
+	TARGET_DIRS=("$FALCONFS_DIR/build/tests/falcon_store/" "$FALCONFS_DIR/build/tests/falcon_plugin/")
+
+	for TARGET_DIR in "${TARGET_DIRS[@]}"; do
+		if [ -d "$TARGET_DIR" ]; then
+			echo "Running tests in: $TARGET_DIR"
+			find "$TARGET_DIR" -type f -executable -name "*UT" | while read -r executable_file; do
+				echo "Executing: $executable_file"
+				"$executable_file"
+				echo "---------------------------------------------------------------------------------------"
+			done
+		else
+			echo "Test directory not found: $TARGET_DIR"
+		fi
+	done
+	TARGET_DIR="$FALCONFS_DIR/build/tests/falcon/"
+	# Find executable files directly in the test directory (not in subdirectories)
+	# Exclude .cmake files and anything in CMakeFiles/
+	find "$TARGET_DIR" -maxdepth 1 -type f -executable -not -name "*.cmake" -not -path "*/CMakeFiles/*" | while read -r executable_file; do
+		echo "Executing: $executable_file"
+		"$executable_file"
+		echo "---------------------------------------------------------------------------------------"
+	done
+	echo "All unit tests passed."
+}
+
+run_metadata_ut_test() {
+	local install_server=false
+	local gtest_args=("--gtest_color=no")
+
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--help | -h)
+			print_help "test"
+			exit 0
+			;;
+		--install-server | --install-falcon)
+			install_server=true
+			;;
+		--debug)
+			BUILD_TYPE="Debug"
+			;;
+		--release | --deploy)
+			BUILD_TYPE="Release"
+			;;
+		--relwithdebinfo)
+			BUILD_TYPE="RelWithDebInfo"
+			;;
+		--with-fuse-opt)
+			WITH_FUSE_OPT=true
+			;;
+		--with-zk-init)
+			WITH_ZK_INIT=true
+			;;
+		--with-rdma)
+			WITH_RDMA=true
+			;;
+		--with-prometheus)
+			WITH_PROMETHEUS=true
+			;;
+		--with-obs-storage)
+			WITH_OBS_STORAGE=true
+			;;
+		--with-asan)
+			WITH_ASAN=true
+			;;
+		--comm-plugin)
+			if [[ -z "${2:-}" ]]; then
+				echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
+				exit 1
+			fi
+			set_comm_plugin "$2"
+			shift
+			;;
+		--comm-plugin=*)
+			set_comm_plugin "${1#*=}"
+			;;
+		--manage-server)
+			export FALCON_METADATA_UT_MANAGE_SERVER=1
+			;;
+		--no-manage-server)
+			export FALCON_METADATA_UT_MANAGE_SERVER=0
+			;;
+		--auto-manage-server)
+			export FALCON_METADATA_UT_MANAGE_SERVER=auto
+			;;
+		--gtest_*)
+			gtest_args+=("$1")
+			;;
+		--)
+			shift
+			gtest_args+=("$@")
+			break
+			;;
+		*)
+			echo "Unknown metadata UT option: $1" >&2
+			print_help "test"
+			exit 1
+			;;
+		esac
+		shift
+	done
+
+	if [[ "$install_server" == "true" ]]; then
+		build_falconfs
+		install_falcon_meta
+		install_deploy_scripts
+	elif [[ ! -f "$BUILD_DIR/build.ninja" && ! -f "$BUILD_DIR/Makefile" ]]; then
+		echo "Error: build directory is not configured at $BUILD_DIR" >&2
+		echo "Run './build.sh build falcon' first, or use './build.sh test --metadata-ut --install-server'." >&2
+		exit 1
+	fi
+
+	cmake --build "$BUILD_DIR" --target FalconMetadataUT -j"$(nproc)"
+	: "${FALCON_METADATA_UT_MANAGE_SERVER:=auto}"
+	"$FALCONFS_DIR/tests/metadata_ut/run_metadata_ut.sh" "${gtest_args[@]}"
+	echo "Metadata UT passed."
 }
 
 print_help() {
@@ -432,7 +575,7 @@ print_help() {
 		echo "Build FalconFS with coverage, run unit tests, and generate lcov html report"
 		echo ""
 		echo "Options:"
-		echo "  --local-run        Start local service and run service-dependent UT cases"
+		echo "  --local-run        Start local service and run service-dependent UT cases, including metadata UT"
 		echo "  -h, --help         Show this help message"
 		echo ""
 		echo "Examples:"
@@ -442,6 +585,34 @@ print_help() {
 		echo "Behavior:"
 		echo "  $0 coverage             # do not start local service"
 		echo "  $0 coverage --local-run # start local service"
+		;;
+	test)
+		echo "Usage: $0 test [options]"
+		echo ""
+		echo "Run FalconFS tests"
+		echo ""
+		echo "Modes:"
+		echo "  default              Run unit tests only"
+		echo "  --metadata-ut        Run real-server metadata UT only"
+		echo "  --all                Run unit tests, then real-server metadata UT"
+		echo ""
+		echo "Metadata UT options:"
+		echo "  --install-server      Build and install current FalconFS server before metadata UT"
+		echo "  --debug/--release     Build mode when used with --install-server"
+		echo "  --comm-plugin=PLUGIN  Communication plugin when used with --install-server"
+		echo "  --manage-server       Always start/stop metadata server for metadata UT"
+		echo "  --no-manage-server    Reuse an already running metadata server"
+		echo "  --auto-manage-server  Start/stop only when the configured server is not reachable (default)"
+		echo "  --gtest_*             Forward a GoogleTest option to the metadata UT binary"
+		echo "  -h, --help            Show this help message"
+		echo ""
+		echo "Examples:"
+		echo "  $0 test"
+		echo "  $0 test --metadata-ut"
+		echo "  $0 test --metadata-ut --install-server"
+		echo "  $0 test --all"
+		echo "  $0 test --metadata-ut --gtest_filter='MetadataUT.Basic*'"
+		echo "  SERVER_IP=127.0.0.1 SERVER_PORT=51110 $0 test --metadata-ut --no-manage-server"
 		;;
 	*)
 		# General help information
@@ -458,6 +629,11 @@ print_help() {
 		;;
 	esac
 }
+
+if [[ "$COMMAND" == "--help" || "$COMMAND" == "-h" || "$COMMAND" == "help" ]]; then
+	print_help "general"
+	exit 0
+fi
 
 # Dispatch commands
 case "$COMMAND" in
@@ -623,28 +799,47 @@ clean)
 		;;
 	esac
 	;;
-test)
-	run_unit_tests
-	;;
-coverage)
-	shift
-	while [[ $# -gt 0 ]]; do
-		case "$1" in
-		--help | -h)
-			print_help "coverage"
-			exit 0
+	test)
+		case "${2:-}" in
+		"")
+			run_unit_tests
 			;;
-		--local-run)
-			RUN_LOCAL_SERVICE_FOR_COVERAGE=true
+		--help | -h)
+			print_help "test"
+			;;
+		--metadata-ut)
+			run_metadata_ut_test "${@:3}"
+			;;
+		--all)
+			run_unit_tests
+			run_metadata_ut_test "${@:3}"
 			;;
 		*)
-			echo "Unknown option for coverage: $1" >&2
+			echo "Unknown test option: ${2:-}" >&2
+			print_help "test"
 			exit 1
 			;;
 		esac
+		;;
+	coverage)
 		shift
-	done
-	run_coverage
+		while [[ $# -gt 0 ]]; do
+			case "$1" in
+			--help | -h)
+				print_help "coverage"
+				exit 0
+				;;
+			--local-run)
+				RUN_LOCAL_SERVICE_FOR_COVERAGE=true
+				;;
+			*)
+				echo "Unknown option for coverage: $1" >&2
+				exit 1
+				;;
+			esac
+			shift
+		done
+		run_coverage
 	;;
 install)
 	case "${2:-}" in
