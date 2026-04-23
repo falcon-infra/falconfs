@@ -96,12 +96,14 @@ CLIENT_OPTIONS=(
 nohup falcon_client "${CLIENT_OPTIONS[@]}" >"${DIR}/falcon_client.log" 2>&1 &
 client_pid=$!
 
-sleep 1
-if ! kill -0 "$client_pid" 2>/dev/null; then
-    echo "Error: Failed to start falcon_client" >&2
-    [ -f "${DIR}/falcon_client.log" ] && tail -n 50 "${DIR}/falcon_client.log" || true
-    exit 1
-fi
+for _ in {1..5}; do
+    sleep 1
+    if ! kill -0 "$client_pid" 2>/dev/null; then
+        echo "Error: falcon_client exited during startup" >&2
+        [ -f "${DIR}/falcon_client.log" ] && tail -n 50 "${DIR}/falcon_client.log" || true
+        exit 1
+    fi
+done
 
 echo "falcon_client started successfully (PID: $client_pid)"
 exit 0
