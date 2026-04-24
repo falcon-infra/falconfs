@@ -22,7 +22,7 @@ Requires:       findutils
 Requires:       python3
 Requires:       python3-requests python3-psycopg2 python3-kazoo
 Requires:       postgresql-17 postgresql-17-server
-Requires:       brpc zookeeper-c
+Requires:       brpc zookeeper-client-c
 
 BuildRequires:  bash gcc gcc-c++ make
 BuildRequires:  cmake ninja-build
@@ -48,7 +48,7 @@ BuildRequires:  python3-devel
 BuildRequires:  maven java-11-openjdk-devel
 BuildRequires:  wget tar rsync
 BuildRequires:  libstdc++-static zstd-devel
-BuildRequires:  brpc-devel zookeeper-c-devel
+BuildRequires:  brpc-devel zookeeper-client-c-devel
 BuildRequires:  postgresql-17-server-devel
 BuildRequires:  perl
 BuildRequires:  chrpath
