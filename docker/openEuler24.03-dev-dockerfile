@@ -16,7 +16,7 @@ RUN dnf clean all && \
     systemd-devel libffi-devel \
     autoconf automake libtool cppunit-devel \
     protobuf-devel protobuf-compiler flatbuffers-devel flatbuffers-compiler jsoncpp-devel thrift-devel \
-    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks rsync libstdc++-static && \
+    wget tar java-11-openjdk-devel maven hostname glibc-langpack-en glibc-all-langpacks rsync libstdc++-static lcov && \
     dnf clean all
 
 # 从源码编译安装 PostgreSQL 17

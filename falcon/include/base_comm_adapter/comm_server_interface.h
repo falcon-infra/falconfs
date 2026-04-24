@@ -11,6 +11,7 @@
 
 #define FALCON_PLUGIN_START_COMM_FUNC_NAME "StartFalconCommunicationServer"
 #define FALCON_PLUGIN_STOP_COMM_FUNC_NAME "StopFalconCommunicationServer"
+#define FALCON_PLUGIN_FLUSH_COVERAGE_FUNC_NAME "FlushFalconCommunicationCoverageData"
 
 // the meta job dispatch function prototype for communication plugin to use.
 // implement by falcon and transfer to communication plugin by start function.
@@ -23,5 +24,8 @@ typedef int (*falcon_plugin_start_comm_func_t)(falcon_meta_job_dispatch_func dis
 
 // the function prototype of communication server stop, need implemented in the plugin.
 typedef void (*falcon_plugin_stop_comm_func_t)();
+
+// optional coverage flush hook for communication plugins built with gcov.
+typedef void (*falcon_plugin_flush_coverage_func_t)();
 
 #endif // COMM_SERVER_INTERFACE_H

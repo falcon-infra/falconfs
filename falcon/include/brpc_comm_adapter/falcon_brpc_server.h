@@ -15,6 +15,8 @@ int StartFalconCommunicationServer(falcon_meta_job_dispatch_func dispatchFunc,
                                    int serverListenPort);
 // define shut down interface of falcon brpc Server
 int StopFalconCommunicationServer(void);
+// define optional coverage flush interface of falcon brpc Server
+void FlushFalconCommunicationCoverageData(void);
 #ifdef __cplusplus
 }
 #endif

@@ -64,6 +64,8 @@ if(BUILD_TEST)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNIT_TEST")
 endif()
 
+option(ENABLE_COVERAGE "Enable gcov/lcov instrumentation" OFF)
+
 option(FALCON_ENABLE_PLUGINS "Enable plugin support" ON)
 
 if(FALCON_ENABLE_PLUGINS)
@@ -113,6 +115,14 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 set(GFLAGS_NS "gflags")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DGFLAGS_NS=${GFLAGS_NS} -faligned-new")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CPP_FLAGS} -D__const__=__unused__ -pipe -W -Wall -Wno-unused-parameter -fPIE -fPIC -fno-omit-frame-pointer")
+
+if(ENABLE_COVERAGE)
+    message(STATUS "Coverage enabled: compiling with --coverage")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -O0 -g")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -O0 -g")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+endif()
 
 # Dynamic libraries
 set(DYNAMIC_LIB

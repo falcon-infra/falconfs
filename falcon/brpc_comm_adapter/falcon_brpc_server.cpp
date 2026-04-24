@@ -61,6 +61,11 @@ class FalconBrpcServer {
 };
 
 static std::unique_ptr<FalconBrpcServer> g_falconBrpcServerInstance = NULL;
+extern "C" {
+void __gcov_exit(void);
+void __gcov_dump(void) __attribute__((weak));
+}
+
 int StartFalconCommunicationServer(falcon_meta_job_dispatch_func dispatchFunc, const char *serverIp, int serverListenPort)
 {
     try {
@@ -91,4 +96,12 @@ int StopFalconCommunicationServer()
         return 1;
     }
     return 1;
+}
+
+void FlushFalconCommunicationCoverageData(void)
+{
+    __gcov_exit();
+    if (__gcov_dump != NULL) {
+        __gcov_dump();
+    }
 }
