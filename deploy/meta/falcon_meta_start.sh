@@ -135,6 +135,12 @@ shardcount=50
 
 comm_plugin_path="$FALCONFS_INSTALL_DIR/falcon_meta/lib/postgresql/lib${COMM_PLUGIN}plugin.so"
 
+if [ ! -f "$comm_plugin_path" ]; then
+    echo "Error: communication plugin not found: $comm_plugin_path" >&2
+    echo "Hint: build/install Falcon with --comm-plugin=${COMM_PLUGIN}" >&2
+    exit 1
+fi
+
 # 安装 falcon 扩展到 PostgreSQL 系统目录
 install_falcon_extension
 
