@@ -119,6 +119,30 @@
    bash start_regress_test.sh $data_path
    ```
 
+## Release compose notes (openEuler)
+
+- For release compose on openEuler, use `tests/regress/docker-compose-release-openeuler.yaml`.
+- Recommended environment variables:
+
+  ```bash
+  export FALCON_RELEASE_IMAGE=falconfs-release-openeuler24.03:v0.1.0
+  export FALCON_DATA_PATH=$PWD/tests/regress/verify_data_release_openeuler
+  # optional: custom CN/DN start.log directory inside container
+  export FALCON_CN_DN_START_LOG_DIR=/usr/local/falconfs/data/start-logs
+  mkdir -p "$FALCON_DATA_PATH"
+  ```
+
+- Bring up/down:
+
+  ```bash
+  docker compose -f tests/regress/docker-compose-release-openeuler.yaml up -d
+  docker compose -f tests/regress/docker-compose-release-openeuler.yaml ps
+  docker compose -f tests/regress/docker-compose-release-openeuler.yaml down
+  ```
+
+- Health check note:
+  - CN/DN liveness probe uses explicit TCP (`127.0.0.1:5432`) to avoid distro-specific default Unix socket path differences.
+
 ## Chaos fault injection (P0)
 
 - `tests/regress/chaos_run.sh` provides automated fault injection with recovery checks.

@@ -116,7 +116,23 @@ mountpoint -q /tmp/falcon_mnt && echo mounted
 /usr/local/falconfs/deploy/falcon_stop.sh
 ```
 
-### 4.4 权限提示（开发机）
+### 4.4 可选日志目录配置
+
+默认情况下日志路径保持历史行为：
+
+- metadata 启动日志：`/usr/local/falconfs/deploy/meta/`
+- client 日志：`/usr/local/falconfs/deploy/client/`
+- 容器 CN/DN `start.log`：`${FALCONFS_INSTALL_DIR}/data/`
+
+如需自定义，可在启动前设置：
+
+```bash
+export FALCON_META_LOG_DIR=/path/to/meta/logs
+export FALCON_CLIENT_LOG_DIR=/path/to/client/logs
+export FALCON_CN_DN_START_LOG_DIR=/path/to/cn-dn-start-logs
+```
+
+### 4.5 权限提示（开发机）
 
 如果当前用户需要直接执行 `/usr/local/falconfs/deploy/falcon_start.sh`，建议确保有 sudo 权限。
 

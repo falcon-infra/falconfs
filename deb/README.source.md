@@ -77,6 +77,26 @@ source /etc/profile.d/falconfs.sh
 /usr/local/falconfs/deploy/falcon_stop.sh
 ```
 
+### 3.4 可选日志目录配置
+
+默认情况下日志路径保持历史行为：
+
+- metadata 启动日志：`/usr/local/falconfs/deploy/meta/`
+- client 日志：`/usr/local/falconfs/deploy/client/`
+- 容器 CN/DN `start.log`：`${FALCONFS_INSTALL_DIR}/data/`
+
+如需自定义，可在启动前设置：
+
+```bash
+export FALCON_META_LOG_DIR=/path/to/meta/logs
+export FALCON_CLIENT_LOG_DIR=/path/to/client/logs
+export FALCON_CN_DN_START_LOG_DIR=/path/to/cn-dn-start-logs
+```
+
+说明：
+
+- 不设置上述变量时，仍使用默认路径。
+
 ## 4. 包内容说明
 
 - `falconfs`：完整安装目录 `/usr/local/falconfs`

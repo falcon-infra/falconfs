@@ -4,6 +4,8 @@ set -euo pipefail
 DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$DIR/falcon_meta_config.sh"
 
+META_LOG_DIR=${FALCON_META_LOG_DIR:-$DIR}
+
 # 卸载 PostgreSQL falcon 扩展文件
 # PostgreSQL 在编译时确定扩展文件 (.control, .sql) 的查找位置
 uninstall_falcon_extension() {
@@ -50,7 +52,7 @@ stop_falcon_cluster() {
 # Main shutdown logic (parallel execution)
 if [[ "$cnIp" == "$localIp" ]]; then
     stop_falcon_cluster "${cnPathPrefix}0" &
-    rm -f "$DIR/cnlogfile0.log" &
+    rm -f "$META_LOG_DIR/cnlogfile0.log" &
 fi
 
 for ((n = 0; n < ${#workerIpList[@]}; n++)); do
@@ -58,7 +60,7 @@ for ((n = 0; n < ${#workerIpList[@]}; n++)); do
     if [[ "$workerIp" == "$localIp" ]]; then
         for ((i = 0; i < ${workerNumList[$n]}; i++)); do
             stop_falcon_cluster "${workerPathPrefix}$i" &
-            rm -f "$DIR/workerlogfile$i.log" &
+            rm -f "$META_LOG_DIR/workerlogfile$i.log" &
         done
     fi
 done

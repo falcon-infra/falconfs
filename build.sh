@@ -138,7 +138,7 @@ build_falconfs() {
 		CONFIGURE_OPTS+=(--enable-debug)
 		PG_CFLAGS="-ggdb -O0 -g3 -Wall -fno-omit-frame-pointer"
 	else
-		PG_CFLAGS="-O0 -g"
+		PG_CFLAGS="-O2 -g"
 	fi
 	if [[ "$COVERAGE" == true ]]; then
 		cmake_coverage="ON"

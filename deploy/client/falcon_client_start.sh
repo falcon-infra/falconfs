@@ -4,6 +4,10 @@ set -euo pipefail
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 source "$DIR/falcon_client_config.sh"
 
+CLIENT_LOG_DIR=${FALCON_CLIENT_LOG_DIR:-$DIR}
+CLIENT_LOG_FILE="${CLIENT_LOG_DIR}/falcon_client.log"
+mkdir -p "$CLIENT_LOG_DIR"
+
 is_mounted() {
     if command -v mountpoint >/dev/null 2>&1; then
         mountpoint -q "$MNT_PATH" 2>/dev/null
@@ -93,14 +97,14 @@ CLIENT_OPTIONS=(
     -socket_max_unwritten_bytes=268435456
 )
 
-nohup falcon_client "${CLIENT_OPTIONS[@]}" >"${DIR}/falcon_client.log" 2>&1 &
+nohup falcon_client "${CLIENT_OPTIONS[@]}" >"${CLIENT_LOG_FILE}" 2>&1 &
 client_pid=$!
 
 for _ in {1..5}; do
     sleep 1
     if ! kill -0 "$client_pid" 2>/dev/null; then
         echo "Error: falcon_client exited during startup" >&2
-        [ -f "${DIR}/falcon_client.log" ] && tail -n 50 "${DIR}/falcon_client.log" || true
+        [ -f "${CLIENT_LOG_FILE}" ] && tail -n 50 "${CLIENT_LOG_FILE}" || true
         exit 1
     fi
 done
