@@ -624,7 +624,7 @@ clean)
 	esac
 	;;
 test)
-	run_unit_tests
+	run_all_unit_tests
 	;;
 coverage)
 	shift

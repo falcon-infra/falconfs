@@ -3,12 +3,10 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string>
-#include <thread>
 
 int thread_num = 1;
 int client_cache_size = 16384;
@@ -86,6 +84,71 @@ std::string BuildRootPath()
     return fmt::format("{}posix_flow_{}_{}_{}/", client_root, getpid(), seq, time(nullptr));
 }
 
+std::string ThreadDir(const std::string &root, int thread_id)
+{
+    return fmt::format("{}thread_{}", root, thread_id);
+}
+
+std::string FilePath(const std::string &root, int thread_id, int file_id)
+{
+    return fmt::format("{}/file_{}", ThreadDir(root, thread_id), file_id);
+}
+
+std::string DirPath(const std::string &root, int thread_id, int dir_id)
+{
+    return fmt::format("{}/dir_{}", ThreadDir(root, thread_id), dir_id);
+}
+
+void InitNamespaceRoot(const std::string &root)
+{
+    int saved_files_per_dir = files_per_dir;
+    files_per_dir = 1 + thread_num;
+    workload_init(root, 0);
+    files_per_dir = saved_files_per_dir;
+}
+
+void UninitNamespaceRoot(const std::string &root)
+{
+    int saved_files_per_dir = files_per_dir;
+    files_per_dir = 1 + thread_num;
+    workload_uninit(root, 0);
+    files_per_dir = saved_files_per_dir;
+}
+
+void RunForEachThread(void (*workload)(std::string, int), const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        workload(root, thread_id);
+    }
+}
+
+void ExpectThreadFilesExist(const std::string &root, int thread_id)
+{
+    for (int file_id = 0; file_id < files_per_dir; ++file_id) {
+        struct stat stbuf;
+        SCOPED_TRACE(FilePath(root, thread_id, file_id));
+        EXPECT_EQ(dfs_stat(FilePath(root, thread_id, file_id).c_str(), &stbuf), 0);
+    }
+}
+
+void ExpectFilesExist(const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        ExpectThreadFilesExist(root, thread_id);
+    }
+}
+
+void ExpectDirsExist(const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        for (int dir_id = 0; dir_id < files_per_dir; ++dir_id) {
+            struct stat stbuf;
+            SCOPED_TRACE(DirPath(root, thread_id, dir_id));
+            EXPECT_EQ(dfs_stat(DirPath(root, thread_id, dir_id).c_str(), &stbuf), 0);
+        }
+    }
+}
+
 bool InitClient()
 {
     LoadPosixParameters();
@@ -95,41 +158,20 @@ bool InitClient()
     return dfs_init(1) == 0;
 }
 
-void CleanupRoot(const std::string &root, bool with_files)
+void CleanupRoot(const std::string &root, bool with_files, bool all_threads)
 {
     try {
         if (with_files) {
-            workload_delete(root, 0);
+            if (all_threads) {
+                RunForEachThread(workload_delete, root);
+            } else {
+                workload_delete(root, 0);
+            }
         }
-        int thread_dir_count = files_per_dir > 1 ? files_per_dir - 1 : 1;
-        for (int i = 0; i < thread_dir_count; ++i) {
-            std::string thread_dir = fmt::format("{}thread_{}", root, i);
-            dfs_rmdir(thread_dir.c_str());
-        }
-        workload_uninit(root, 0);
+        UninitNamespaceRoot(root);
     } catch (...) {
     }
     dfs_shutdown();
-}
-
-void EnsureDirExistsWithRetry(const std::string &path)
-{
-    constexpr int kRetry = 20;
-    struct stat stbuf;
-    for (int i = 0; i < kRetry; ++i) {
-        int ret = dfs_mkdir(path.c_str(), 0777);
-        if (ret == 0 || errno == EEXIST || dfs_stat(path.c_str(), &stbuf) == 0) {
-            return;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    throw std::runtime_error("failed to ensure directory exists");
-}
-
-void EnsureThreadDir(const std::string &root)
-{
-    EnsureDirExistsWithRetry(root);
-    EnsureDirExistsWithRetry(fmt::format("{}thread_0", root));
 }
 
 }  // namespace
@@ -144,12 +186,12 @@ TEST(LocalRunPosixWorkloadUT, InitCreateStatOpenCloseFlow)
     std::string root = BuildRootPath();
     uint64_t start = op_count[0];
     try {
-        workload_init(root, 0);
+        InitNamespaceRoot(root);
         uint64_t after_init = op_count[0];
-        EnsureThreadDir(root);
 
         workload_create(root, 0);
         uint64_t after_create = op_count[0];
+        ExpectThreadFilesExist(root, 0);
 
         workload_stat(root, 0);
         uint64_t after_stat = op_count[0];
@@ -165,12 +207,92 @@ TEST(LocalRunPosixWorkloadUT, InitCreateStatOpenCloseFlow)
         EXPECT_GT(after_open, after_stat);
         EXPECT_GT(op_count[0], after_open);
     } catch (...) {
-        CleanupRoot(root, true);
+        CleanupRoot(root, true, false);
         GTEST_SKIP() << "posix full workload flow failed";
         return;
     }
 
-    CleanupRoot(root, true);
+    CleanupRoot(root, true, false);
+}
+
+TEST(LocalRunPosixWorkloadUT, FullFileWorkloadFlow)
+{
+    if (!InitClient()) {
+        GTEST_SKIP() << "posix dfs_init failed";
+        return;
+    }
+
+    std::string root = BuildRootPath();
+    bool files_deleted = false;
+    bool namespace_removed = false;
+    try {
+        InitNamespaceRoot(root);
+        uint64_t after_init = op_count[0];
+
+        RunForEachThread(workload_create, root);
+        uint64_t after_create = op_count[0];
+        ExpectFilesExist(root);
+
+        RunForEachThread(workload_stat, root);
+        uint64_t after_stat = op_count[0];
+
+        RunForEachThread(workload_open, root);
+        uint64_t after_open = op_count[0];
+
+        RunForEachThread(workload_close, root);
+        uint64_t after_close = op_count[0];
+
+        RunForEachThread(workload_delete, root);
+        files_deleted = true;
+        uint64_t after_delete_initial = op_count[0];
+
+        RunForEachThread(workload_mkdir, root);
+        uint64_t after_mkdir = op_count[0];
+        ExpectDirsExist(root);
+
+        RunForEachThread(workload_rmdir, root);
+        uint64_t after_rmdir = op_count[0];
+
+        RunForEachThread(workload_open_write_close, root);
+        files_deleted = false;
+        uint64_t after_open_write_close = op_count[0];
+        ExpectFilesExist(root);
+
+        RunForEachThread(workload_open_write_close_nocreate, root);
+        uint64_t after_open_write_close_nocreate = op_count[0];
+
+        RunForEachThread(workload_open_read_close, root);
+        uint64_t after_open_read_close = op_count[0];
+
+        RunForEachThread(workload_delete, root);
+        files_deleted = true;
+        uint64_t after_delete_final = op_count[0];
+
+        UninitNamespaceRoot(root);
+        namespace_removed = true;
+        uint64_t after_uninit = op_count[0];
+
+        EXPECT_GT(after_init, 0U);
+        EXPECT_GT(after_create, after_init);
+        EXPECT_GT(after_stat, after_create);
+        EXPECT_GT(after_open, after_stat);
+        EXPECT_GT(after_close, after_open);
+        EXPECT_GT(after_delete_initial, after_close);
+        EXPECT_GT(after_mkdir, after_delete_initial);
+        EXPECT_GT(after_rmdir, after_mkdir);
+        EXPECT_GT(after_open_write_close, after_rmdir);
+        EXPECT_GT(after_open_write_close_nocreate, after_open_write_close);
+        EXPECT_GT(after_open_read_close, after_open_write_close_nocreate);
+        EXPECT_GT(after_delete_final, after_open_read_close);
+        EXPECT_GT(after_uninit, after_delete_final);
+    } catch (...) {
+    }
+
+    if (namespace_removed) {
+        dfs_shutdown();
+    } else {
+        CleanupRoot(root, !files_deleted, true);
+    }
 }
 
 int main(int argc, char **argv)
