@@ -19,6 +19,13 @@
 #include "log/logging.h"
 #include "stats/falcon_stats.h"
 
+/* =================== Timing Helpers =======================*/
+static int64_t steady_clock_now_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+}
+
 /* =================== Blocking Methods =======================*/
 static void Init(const char* workspace, const char* runningConfigFile) 
 {
@@ -395,12 +402,15 @@ static int Stat(const char *path, struct stat *stbuf)
     int ret = FalconGetStat(path, stbuf);
     return ret > 0 ? -ErrorCodeToErrno(ret) : ret;
 }
-static PyObject* PyWrapper_Stat(PyObject* self, PyObject* args) 
+static PyObject* PyWrapper_Stat(PyObject* self, PyObject* args)
 {
+    // T_entry: C++ function entry timestamp (GIL already held by Python)
+    int64_t entry_us = steady_clock_now_us();
+
     char* path = nullptr;
     if (!PyArg_ParseTuple(args, "s", &path))
         return NULL;
-    
+
     int ret = -1;
     struct stat stbuf;
     try
@@ -412,7 +422,10 @@ static PyObject* PyWrapper_Stat(PyObject* self, PyObject* args)
         PyErr_SetString(PyExc_RuntimeError, e.what());
         return NULL;
     }
-    
+
+    // T_exit: C++ function about to return to Python (GIL still held)
+    int64_t exit_us = steady_clock_now_us();
+
     PyObject* dict = PyDict_New();
     if (ret == 0)
     {
@@ -430,8 +443,9 @@ static PyObject* PyWrapper_Stat(PyObject* self, PyObject* args)
         PyDict_SetItem(dict, PyUnicode_FromString("st_mtime"), PyLong_FromLong(stbuf.st_mtime));
         PyDict_SetItem(dict, PyUnicode_FromString("st_ctime"), PyLong_FromLong(stbuf.st_ctime));
     }
-    
-    return Py_BuildValue("(iN)", ret, dict);
+
+    // Return 4-tuple: (ret, dict, entry_us, exit_us)
+    return Py_BuildValue("(iNLL)", ret, dict, entry_us, exit_us);
 }
 
 static int OpenDir(const char *path, uint64_t& fd)
@@ -705,10 +719,12 @@ public:
             free(exceptionInfo);
     }
 };
-struct AsyncState 
+struct AsyncState
 {
     PyObject_HEAD
     std::future<std::unique_ptr<AsyncResultBase>> future;
+    int64_t cpp_recv_time_us = 0;
+    int64_t cpp_done_time_us = 0;
 };
 
 class AsyncResultIntOnly : public AsyncResultBase
@@ -725,16 +741,45 @@ public:
     }
 };
 
+class AsyncResultReadSize : public AsyncResultBase
+{
+public:
+    int bytesRead;
+    AsyncResultReadSize(int bytesRead) : bytesRead(bytesRead) {}
+    PyObject* GeneratePyObject() override
+    {
+        if (exceptionInfo)
+            return AsyncResultBase::GeneratePyObject();
+        return PyLong_FromLong(bytesRead);
+    }
+};
+
 static PyObject* AsyncState_new(PyTypeObject* type, PyObject* args, PyObject* kwargs) 
 {
     AsyncState* self = (AsyncState*)type->tp_alloc(type, 0);
     return (PyObject*)self;
 }
 
-static void AsyncState_dealloc(AsyncState* self) 
+static void AsyncState_dealloc(AsyncState* self)
 {
     Py_TYPE(self)->tp_free((PyObject*)self);
 }
+
+static PyObject* AsyncState_get_cpp_recv_time(AsyncState* self, void* closure) {
+    return PyLong_FromLongLong(self->cpp_recv_time_us);
+}
+
+static PyObject* AsyncState_get_cpp_done_time(AsyncState* self, void* closure) {
+    return PyLong_FromLongLong(self->cpp_done_time_us);
+}
+
+static PyGetSetDef AsyncState_getsetters[] = {
+    {"cpp_recv_time_us", (getter)AsyncState_get_cpp_recv_time, NULL,
+     "C++ worker thread receive timestamp (microseconds since steady_clock epoch)", NULL},
+    {"cpp_done_time_us", (getter)AsyncState_get_cpp_done_time, NULL,
+     "C++ worker thread done timestamp (microseconds since steady_clock epoch)", NULL},
+    {NULL}
+};
 
 static PyObject* AsyncState_iter(PyObject* self) 
 {
@@ -768,7 +813,7 @@ static PyAsyncMethods AsyncState_as_async =
     .am_anext = AsyncState_iternext
 };
 
-static PyTypeObject AsyncStateType = 
+static PyTypeObject AsyncStateType =
 {
     .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "pyfalconfs.AsyncState",
@@ -779,48 +824,51 @@ static PyTypeObject AsyncStateType =
     .tp_doc = "Asynchronous task state",
     .tp_iter = AsyncState_iter,
     .tp_iternext = AsyncState_iternext,
+    .tp_getset = AsyncState_getsetters,
     .tp_new = AsyncState_new,
 };
 
-static PyObject* PyWrapper_AsyncExists(PyObject* self, PyObject* args) 
+static PyObject* PyWrapper_AsyncExists(PyObject* self, PyObject* args)
 {
     char* path = nullptr;
-    if (!PyArg_ParseTuple(args, "s", &path)) 
+    if (!PyArg_ParseTuple(args, "s", &path))
         return nullptr;
 
     AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [path]() -> std::unique_ptr<AsyncResultBase>
+    state->cpp_recv_time_us = steady_clock_now_us();
+    auto task = [path, state]() -> std::unique_ptr<AsyncResultBase>
     {
         int ret = -1;
         struct stat stbuf;
         try
         {
             ret = Stat(path, &stbuf);
-            if (ret != 0)
-                return std::make_unique<AsyncResultIntOnly>(ret);
         }
         catch (const std::exception& e)
         {
+            state->cpp_done_time_us = steady_clock_now_us();
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
+
+        state->cpp_done_time_us = steady_clock_now_us();
         return std::make_unique<AsyncResultIntOnly>(ret);
     };
     state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
     return (PyObject*)state;
 }
 
-static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args) 
+static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
 {
     char* path = nullptr;
     Py_buffer buffer;
     int size;
     int offset;
-    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
+    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset))
         return nullptr;
 
-    AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
-    {
+    AsyncState *state = (AsyncState *)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
+    state->cpp_recv_time_us = steady_clock_now_us();
+    auto task = [path, buffer, size, offset, state]() -> std::unique_ptr<AsyncResultBase> {
         int ret = -1;
         int readSize;
         uint64_t fd = UINT64_MAX;
@@ -828,55 +876,69 @@ static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
         {
             ret = Open(path, O_RDONLY, fd);
             if (ret != 0)
+            {
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
-            
+            }
+
             readSize = Read(path, fd, (char*)buffer.buf, size, offset);
             if (readSize < 0)
             {
                 Close(path, fd);
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(readSize);
             }
-            
+
             ret = Close(path, fd);
             if (ret != 0)
+            {
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
+            }
         }
         catch (const std::exception& e)
         {
             if (fd != UINT64_MAX)
-                Close(path, fd);    // We believe Close never throw error currently.
+                Close(path, fd);
+            state->cpp_done_time_us = steady_clock_now_us();
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
-        return std::make_unique<AsyncResultIntOnly>(ret);
+        state->cpp_done_time_us = steady_clock_now_us();
+        return std::make_unique<AsyncResultReadSize>(readSize);
     };
     state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
     return (PyObject*)state;
 }
 
-static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args) 
+static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
 {
     char* path = nullptr;
     Py_buffer buffer;
     int size;
     int offset;
-    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
+    if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset))
         return nullptr;
 
-    AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
+    AsyncState *state = (AsyncState *)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
+    state->cpp_recv_time_us = steady_clock_now_us();
+    auto task = [path, buffer, size, offset, state]() -> std::unique_ptr<AsyncResultBase>
     {
         int ret = -1;
         uint64_t fd = UINT64_MAX;
         try
         {
-            ret = Create(path, O_WRONLY, fd);
-            if (ret != 0 && ret != -EEXIST)
+            ret = Create(path, O_CREAT | O_WRONLY | O_TRUNC, fd);
+            if (ret != 0)
+            {
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
+            }
 
             ret = Write(path, fd, (char*)buffer.buf, size, offset);
             if (ret != 0)
             {
                 Close(path, fd);
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
             }
 
@@ -884,26 +946,37 @@ static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
             if (ret != 0)
             {
                 Close(path, fd);
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
             }
-            
+
             ret = Close(path, fd);
             if (ret != 0)
+            {
+                state->cpp_done_time_us = steady_clock_now_us();
                 return std::make_unique<AsyncResultIntOnly>(ret);
+            }
         }
         catch (const std::exception& e)
         {
             if (fd != UINT64_MAX)
-                Close(path, fd);    // We believe Close never throw error currently.
+                Close(path, fd);
+            state->cpp_done_time_us = steady_clock_now_us();
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
+        state->cpp_done_time_us = steady_clock_now_us();
         return std::make_unique<AsyncResultIntOnly>(ret);
     };
     state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
     return (PyObject*)state;
 }
 
-static PyMethodDef PyFalconFSInternalMethods[] = 
+static PyObject* PyWrapper_GetSteadyClockUs(PyObject* self, PyObject* args)
+{
+    return PyLong_FromLongLong(steady_clock_now_us());
+}
+
+static PyMethodDef PyFalconFSInternalMethods[] =
 {
     {
         "Init", 
@@ -1021,15 +1094,17 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "  write size (int): write byte size"
     },
     {
-        "Stat", 
-        PyWrapper_Stat, 
-        METH_VARARGS, 
-        "Write data to file in FalconFS\n"
+        "Stat",
+        PyWrapper_Stat,
+        METH_VARARGS,
+        "Get file/directory status in FalconFS\n"
         "Parameters:\n"
         "  path (str): Target file/directory path, must start with '/', which corresponding to mount point\n"
         "Returns:\n"
         "  errno (int): Refer to errno in linux\n"
-        "  stbuf (dict): Info of target"
+        "  stbuf (dict): Info of target\n"
+        "  entry_us (int): C++ function entry timestamp (steady_clock microseconds)\n"
+        "  exit_us (int): C++ function exit timestamp (steady_clock microseconds)"
     },
     {
         "OpenDir", 
@@ -1089,9 +1164,9 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "  read size (int): read byte size"
     },
     {
-        "AsyncPut", 
-        PyWrapper_AsyncPut, 
-        METH_VARARGS, 
+        "AsyncPut",
+        PyWrapper_AsyncPut,
+        METH_VARARGS,
         "Put data to file in FalconFS\n"
         "Parameters:\n"
         "  path (str): Target file path, must start with '/', which corresponding to mount point\n"
@@ -1100,6 +1175,14 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "  offset (int): Write offset\n"
         "Returns:\n"
         "  write size (int): write byte size"
+    },
+    {
+        "GetSteadyClockUs",
+        PyWrapper_GetSteadyClockUs,
+        METH_NOARGS,
+        "Get current steady_clock timestamp in microseconds\n"
+        "Returns:\n"
+        "  timestamp (int): microseconds since steady_clock epoch"
     },
     {
         NULL, 
