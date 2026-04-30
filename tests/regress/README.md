@@ -145,20 +145,24 @@
 
 ## Chaos fault injection (P0)
 
-- `tests/regress/chaos_run.sh` provides automated fault injection with recovery checks.
-- Current P0 scenarios include `S01~S05` (without `S06`):
+- `tests/chaos/chaos_run.sh` provides automated fault injection with recovery checks.
+- `tests/chaos/chaos_run.sh` is a thin entry script; core logic is in `tests/chaos/chaos_lib.sh`.
+- Current chaos scenarios include `S01~S08`:
   - `S01`: restart cn leader
-  - `S01C2`: restart `falcon-cn-2` (fixed target, useful for deterministic repro)
   - `S02`: restart one dn leader
   - `S03`: restart random dn (prefer follower)
   - `S04`: restart store container
   - `S05`: kill `falcon_client` process in store
+  - `S06`: stop cn leader, hold for supplement window, then start
+  - `S07`: stop random dn, hold for supplement window, then start
+  - `S08`: stop cn leader, wait new leader, stop new leader, hold, then recover both
 
-- Core checks after each action:
+- Recovery checks after each action:
   - `/falcon/ready` exists in ZK
   - liveness scripts of CN/DN/Store pass
-  - `check_replication.py` passes
   - `fuse.falcon_client` mount is ready
+  - metadata service returns to RW state
+  - topology reliability is restored for multi-replica metadata actions
 
 - Core dump protection:
   - regress compose sets `ulimit core=0` for services by default
@@ -169,13 +173,57 @@
   ```bash
   cd ~/code/falconfs
   export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
-  bash tests/regress/chaos_run.sh \
-    --data-path tests/regress/verify_data_chaos \
+  bash tests/chaos/chaos_run.sh \
+    --data-path tests/chaos/verify_data_chaos \
+    --compose-file tests/regress/docker-compose-dual.yaml \
+    --duration-min 120 \
+    --interval-sec 300 \
+    --actions S01,S02,S03,S04,S05,S06,S07 \
+    --topology auto \
+    --fresh-start
+  ```
+
+- Run all topologies (single/dual/triple) in one suite:
+
+  ```bash
+  cd ~/code/falconfs
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  bash tests/chaos/chaos_suite.sh \
+    --data-path tests/chaos/verify_data_chaos_suite \
+    --single-duration-min 60 \
+    --dual-duration-min 120 \
+    --triple-duration-min 120
+  ```
+
+- Config-driven long-run entry:
+
+  ```bash
+  # 1) edit tests/chaos/longrun_config.sh
+  # 2) dry run (print resolved suite command)
+  bash tests/chaos/run_longrun.sh --dry-run
+  # 3) execute
+  bash tests/chaos/run_longrun.sh
+  ```
+
+- Optional deterministic matrix for suite:
+  - default matrix file: `tests/chaos/chaos_case_matrix_default.txt`
+  - each line format:
+    `stage|compose_file|topology|duration_min|action_plan_file|required_actions`
+  - disable matrix by not passing `--case-matrix-file`; suite then uses action CSVs directly.
+
+- Example command when container core ulimit is not `0`:
+
+  ```bash
+  cd ~/code/falconfs
+  export FALCON_FULL_IMAGE=localhost:5000/falconfs-full-ubuntu24.04:v0.1.0
+  bash tests/chaos/chaos_run.sh \
+    --data-path tests/chaos/verify_data_chaos \
     --compose-file tests/regress/docker-compose-dual.yaml \
     --duration-min 120 \
     --interval-sec 300 \
     --actions S01,S02,S03,S04,S05 \
-    --fresh-start
+    --fresh-start \
+    --core-once-enable
   ```
 
 - Report file:
