@@ -44,6 +44,8 @@ run_standalone_unit_tests() {
 	cd "$FALCONFS_DIR"
 
 	local target_dirs=(
+		"$FALCONFS_DIR/build/tests/common/"
+		"$FALCONFS_DIR/build/tests/falcon_client/"
 		"$FALCONFS_DIR/build/tests/falcon_store/"
 		"$FALCONFS_DIR/build/tests/falcon_plugin/"
 		"$FALCONFS_DIR/build/tests/private-directory-test/"
@@ -54,7 +56,7 @@ run_standalone_unit_tests() {
 			echo "Running tests in: $target_dir"
 			find "$target_dir" -type f -executable -name "*UT" | while read -r executable_file; do
 				case "$(basename "$executable_file")" in
-				LocalRunWorkloadUT | MetadbCoverageUT)
+				FalconCMIT | LocalRunWorkloadUT | MetadbCoverageUT)
 					continue
 					;;
 				esac
@@ -73,6 +75,14 @@ run_standalone_unit_tests() {
 		"$executable_file"
 		echo "---------------------------------------------------------------------------------------"
 	done
+
+	local python_internal_dir="$FALCONFS_DIR/build/python_interface/_pyfalconfs_internal"
+	local python_internal_test="$FALCONFS_DIR/tests/python_interface/test_pyfalconfs_internal.py"
+	if [[ -d "$python_internal_dir" && -f "$python_internal_test" ]]; then
+		echo "Executing Python interface coverage test: $python_internal_test"
+		PYTHONPATH="$python_internal_dir${PYTHONPATH:+:$PYTHONPATH}" python3 "$python_internal_test"
+		echo "---------------------------------------------------------------------------------------"
+	fi
 }
 
 run_service_dependent_unit_tests() {
