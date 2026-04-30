@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <errno.h>
 #include <fcntl.h>
@@ -47,6 +49,12 @@ int dfs_write(int fd, const void *buf, size_t count, off_t offset);
 int dfs_close(int fd, const char* path = nullptr);
 int dfs_mkdir(const char *path, mode_t mode);
 int dfs_rmdir(const char *path);
+int dfs_opendir(const char *path, uint64_t *inode_id);
+int dfs_readdir(const char *path, std::vector<std::string> *entries);
+int dfs_rename(const char *src, const char *dst);
+int dfs_utimens(const char *path, int64_t atime, int64_t mtime);
+int dfs_chown(const char *path, uint32_t uid, uint32_t gid);
+int dfs_chmod(const char *path, uint32_t mode);
 int dfs_create(const char *path, mode_t mode);
 int dfs_unlink(const char *path);
 int dfs_stat(const char *path, struct stat *stbuf);

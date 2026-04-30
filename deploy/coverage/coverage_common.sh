@@ -40,7 +40,7 @@ resolve_gcov_tool() {
 	fi
 }
 
-run_non_service_unit_tests() {
+run_standalone_unit_tests() {
 	cd "$FALCONFS_DIR"
 
 	local target_dirs=(
@@ -53,9 +53,11 @@ run_non_service_unit_tests() {
 		if [[ -d "$target_dir" ]]; then
 			echo "Running tests in: $target_dir"
 			find "$target_dir" -type f -executable -name "*UT" | while read -r executable_file; do
-				if [[ "$(basename "$executable_file")" == "LocalRunWorkloadUT" ]]; then
+				case "$(basename "$executable_file")" in
+				LocalRunWorkloadUT | MetadbCoverageUT)
 					continue
-				fi
+					;;
+				esac
 				echo "Executing: $executable_file"
 				"$executable_file"
 				echo "---------------------------------------------------------------------------------------"
@@ -74,15 +76,22 @@ run_non_service_unit_tests() {
 }
 
 run_service_dependent_unit_tests() {
-	local local_run_ut="$FALCONFS_DIR/build/tests/private-directory-test/LocalRunWorkloadUT"
 	local service_server_ip
 	local service_server_port
 	service_server_ip="$(resolve_service_test_server_ip)"
 	service_server_port="$(resolve_service_test_server_port)"
-	if [[ -x "$local_run_ut" ]]; then
-		echo "Running service-dependent tests in: $FALCONFS_DIR/build/tests/private-directory-test/"
-		echo "Service-dependent UT endpoint: ${service_server_ip}:${service_server_port}"
-		echo "Executing: $local_run_ut"
+	local service_uts=(
+		"$FALCONFS_DIR/build/tests/private-directory-test/LocalRunWorkloadUT"
+		"$FALCONFS_DIR/build/tests/falcon/metadb/MetadbCoverageUT"
+	)
+
+	echo "Running service-dependent tests:"
+	echo "Service-dependent UT endpoint: ${service_server_ip}:${service_server_port}"
+	for service_ut in "${service_uts[@]}"; do
+		if [[ ! -x "$service_ut" ]]; then
+			continue
+		fi
+		echo "Executing: $service_ut"
 		SERVER_IP="$service_server_ip" \
 		SERVER_PORT="$service_server_port" \
 		LOCAL_RUN_MOUNT_DIR="${LOCAL_RUN_MOUNT_DIR:-/}" \
@@ -94,13 +103,13 @@ run_service_dependent_unit_tests() {
 		LOCAL_RUN_WAIT_PORT="${LOCAL_RUN_WAIT_PORT:-1111}" \
 		LOCAL_RUN_FILE_SIZE="${LOCAL_RUN_FILE_SIZE:-4096}" \
 		LOCAL_RUN_CLIENT_NUM="${LOCAL_RUN_CLIENT_NUM:-1}" \
-		"$local_run_ut"
+		"$service_ut"
 		echo "---------------------------------------------------------------------------------------"
-	fi
+	done
 }
 
-run_unit_tests() {
-	run_non_service_unit_tests
+run_all_unit_tests() {
+	run_standalone_unit_tests
 	run_service_dependent_unit_tests
 	echo "All unit tests passed."
 }

@@ -1,15 +1,11 @@
 #include "dfs.h"
+#include "local_run_workload_test_common.h"
 
-#include <arpa/inet.h>
 #include <gtest/gtest.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <chrono>
-#include <cstdlib>
-#include <cstring>
 #include <string>
 #include <thread>
 
@@ -24,129 +20,110 @@ volatile uint64_t latency_count[16384];
 
 namespace {
 
-int g_client_id = 0;
-int g_mount_per_client = 1;
-int g_wait_port = 1111;
-int g_client_num = 1;
-std::string g_mount_dir = "/";
-
-std::string GetEnvOrDefault(const char *key, const char *fallback)
-{
-    const char *value = std::getenv(key);
-    return value != nullptr ? std::string(value) : std::string(fallback);
-}
-
-bool IsMetaServerReachable(const std::string &ip, int port)
-{
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return false;
-    }
-
-    sockaddr_in addr;
-    std::memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(static_cast<uint16_t>(port));
-    if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) != 1) {
-        close(fd);
-        return false;
-    }
-
-    bool reachable = (connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0);
-    close(fd);
-    return reachable;
-}
-
-bool EnsureServerOrSkip()
-{
-    std::string ip = GetEnvOrDefault("SERVER_IP", "127.0.0.1");
-    std::string port_text = GetEnvOrDefault("SERVER_PORT", "55500");
-    int port = std::atoi(port_text.c_str());
-
-    constexpr int kMaxRetry = 6;
-    for (int i = 0; i < kMaxRetry; ++i) {
-        if (IsMetaServerReachable(ip, port)) {
-            return true;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    }
-    return false;
-}
-
-int GetIntEnvOrDefault(const char *key, int fallback)
-{
-    const char *value = std::getenv(key);
-    if (value == nullptr || *value == '\0') {
-        return fallback;
-    }
-    return std::atoi(value);
-}
-
-void LoadLocalRunParameters()
-{
-    g_mount_dir = GetEnvOrDefault("LOCAL_RUN_MOUNT_DIR", "/");
-    if (g_mount_dir.empty()) {
-        g_mount_dir = "/";
-    }
-    if (g_mount_dir.back() != '/') {
-        g_mount_dir.push_back('/');
-    }
-
-    files_per_dir = GetIntEnvOrDefault("LOCAL_RUN_FILE_PER_THREAD", 1);
-    int thread_num_per_client = GetIntEnvOrDefault("LOCAL_RUN_THREAD_NUM_PER_CLIENT", 1);
-    g_client_num = GetIntEnvOrDefault("LOCAL_RUN_CLIENT_NUM", 1);
-    if (thread_num_per_client < 1) {
-        thread_num_per_client = 1;
-    }
-    if (g_client_num < 1) {
-        g_client_num = 1;
-    }
-    thread_num = thread_num_per_client * g_client_num;
-
-    g_client_id = GetIntEnvOrDefault("LOCAL_RUN_CLIENT_ID", 0);
-    g_mount_per_client = GetIntEnvOrDefault("LOCAL_RUN_MOUNT_PER_CLIENT", 1);
-    g_wait_port = GetIntEnvOrDefault("LOCAL_RUN_WAIT_PORT", 1111);
-    client_cache_size = GetIntEnvOrDefault("LOCAL_RUN_CLIENT_CACHE_SIZE", 16384);
-    file_size = GetIntEnvOrDefault("LOCAL_RUN_FILE_SIZE", 4096);
-
-    if (files_per_dir < 1) {
-        files_per_dir = 1;
-    }
-    if (g_mount_per_client < 1) {
-        g_mount_per_client = 1;
-    }
-    if (client_cache_size < 1) {
-        client_cache_size = 1;
-    }
-    if (file_size < 1) {
-        file_size = 4096;
-    }
-}
+std::atomic<uint64_t> g_case_counter(0);
+local_run_test::LocalRunParameters g_params;
 
 std::string BuildRootPath(const char *tag)
 {
-    (void)tag;
-    return fmt::format("{}client_{}_{}/", g_mount_dir, g_client_id, g_wait_port);
+    uint64_t seq = g_case_counter.fetch_add(1, std::memory_order_relaxed);
+    return fmt::format("{}client_{}_{}_{}_{}_{}_{}/",
+                       g_params.mount_dir, g_params.client_id, g_params.wait_port,
+                       tag, getpid(), seq, time(nullptr));
 }
 
-void ResetCounters()
+std::string ThreadDir(const std::string &root, int thread_id)
 {
-    std::memset((void *)op_count, 0, sizeof(op_count));
-    std::memset((void *)latency_count, 0, sizeof(latency_count));
+    return fmt::format("{}thread_{}", root, thread_id);
+}
+
+std::string FilePath(const std::string &root, int thread_id, int file_id)
+{
+    return fmt::format("{}/file_{}", ThreadDir(root, thread_id), file_id);
+}
+
+std::string DirPath(const std::string &root, int thread_id, int dir_id)
+{
+    return fmt::format("{}/dir_{}", ThreadDir(root, thread_id), dir_id);
+}
+
+void ExpectThreadFilesExist(const std::string &root, int thread_id)
+{
+    for (int file_id = 0; file_id < files_per_dir; ++file_id) {
+        struct stat stbuf;
+        SCOPED_TRACE(FilePath(root, thread_id, file_id));
+        EXPECT_EQ(dfs_stat(FilePath(root, thread_id, file_id).c_str(), &stbuf), 0);
+    }
+}
+
+void ExpectFilesExist(const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        ExpectThreadFilesExist(root, thread_id);
+    }
+}
+
+void ExpectDirsExist(const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        for (int dir_id = 0; dir_id < files_per_dir; ++dir_id) {
+            struct stat stbuf;
+            SCOPED_TRACE(DirPath(root, thread_id, dir_id));
+            EXPECT_EQ(dfs_stat(DirPath(root, thread_id, dir_id).c_str(), &stbuf), 0);
+        }
+    }
+}
+
+void ExpectKvRecordExists(const std::string &root)
+{
+    std::string key = fmt::format("{}thread_{}_key_{}", root, 0, 0);
+    uint32_t value_len = 0;
+    uint16_t slice_num = 0;
+    EXPECT_EQ(dfs_kv_get(key.c_str(), &value_len, &slice_num), 0);
+    EXPECT_EQ(value_len, 4096U);
+    EXPECT_EQ(slice_num, 2U);
+}
+
+void ExpectSliceRecordExists(const std::string &root)
+{
+    uint32_t slice_num = 0;
+    EXPECT_EQ(dfs_slice_get(FilePath(root, 0, 0).c_str(), 0, 0, &slice_num), 0);
+    EXPECT_GT(slice_num, 0U);
+}
+
+void InitNamespaceRoot(const std::string &root)
+{
+    int saved_files_per_dir = files_per_dir;
+    files_per_dir = 1 + thread_num;
+    workload_init(root, 0);
+    files_per_dir = saved_files_per_dir;
+}
+
+void UninitNamespaceRoot(const std::string &root)
+{
+    int saved_files_per_dir = files_per_dir;
+    files_per_dir = 1 + thread_num;
+    workload_uninit(root, 0);
+    files_per_dir = saved_files_per_dir;
+}
+
+void RunForEachThread(void (*workload)(std::string, int), const std::string &root)
+{
+    for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+        workload(root, thread_id);
+    }
 }
 
 bool InitClientOrSkip()
 {
-    setenv("SERVER_IP", GetEnvOrDefault("SERVER_IP", "127.0.0.1").c_str(), 1);
-    setenv("SERVER_PORT", GetEnvOrDefault("SERVER_PORT", "55500").c_str(), 1);
-    LoadLocalRunParameters();
-    ResetCounters();
-    file_num = thread_num * files_per_dir;
+    setenv("SERVER_IP", local_run_test::GetEnvOrDefault("SERVER_IP", "127.0.0.1").c_str(), 1);
+    setenv("SERVER_PORT", local_run_test::GetEnvOrDefault("SERVER_PORT", "55500").c_str(), 1);
+    g_params = local_run_test::LoadLocalRunParameters();
+    local_run_test::ResetCounters();
 
     constexpr int kMaxRetry = 6;
     for (int i = 0; i < kMaxRetry; ++i) {
         try {
-            if (dfs_init(g_client_num) == 0) {
+            if (dfs_init(g_params.client_num) == 0) {
                 return true;
             }
         } catch (...) {
@@ -161,14 +138,9 @@ void CleanupRoot(const std::string &root, bool with_files)
 {
     try {
         if (with_files) {
-            workload_delete(root, 0);
+            RunForEachThread(workload_delete, root);
         }
-        int thread_dir_count = files_per_dir > 1 ? files_per_dir - 1 : 1;
-        for (int i = 0; i < thread_dir_count; ++i) {
-            std::string thread_dir = fmt::format("{}thread_{}", root, i);
-            dfs_rmdir(thread_dir.c_str());
-        }
-        workload_uninit(root, 0);
+        UninitNamespaceRoot(root);
     } catch (...) {
     }
     dfs_shutdown();
@@ -180,7 +152,7 @@ TEST(LocalRunWorkloadUT, InitCreateStatOpenCloseFlow)
 {
     constexpr int kFlowRetry = 2;
     for (int attempt = 0; attempt < kFlowRetry; ++attempt) {
-        if (!EnsureServerOrSkip()) {
+        if (!local_run_test::EnsureConfiguredServer()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
@@ -193,14 +165,12 @@ TEST(LocalRunWorkloadUT, InitCreateStatOpenCloseFlow)
         bool success = false;
         uint64_t start = op_count[0];
         try {
-            int files_per_dir_for_flow = files_per_dir;
-            files_per_dir = 1 + thread_num;
-            workload_init(root, 0);
-            files_per_dir = files_per_dir_for_flow;
+            InitNamespaceRoot(root);
             uint64_t after_init = op_count[0];
 
             workload_create(root, 0);
             uint64_t after_create = op_count[0];
+            ExpectThreadFilesExist(root, 0);
 
             workload_stat(root, 0);
             uint64_t after_stat = op_count[0];
@@ -227,6 +197,108 @@ TEST(LocalRunWorkloadUT, InitCreateStatOpenCloseFlow)
     }
 
     GTEST_SKIP() << "full workload flow failed after retries, likely due unstable service state";
+}
+
+TEST(LocalRunWorkloadUT, FullMetadataKvSliceFlow)
+{
+    constexpr int kFlowRetry = 2;
+    for (int attempt = 0; attempt < kFlowRetry; ++attempt) {
+        if (!local_run_test::EnsureConfiguredServer()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+        if (!InitClientOrSkip()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
+        std::string root = BuildRootPath("metadata_kv_slice_flow");
+        bool success = false;
+        bool files_deleted = false;
+        bool namespace_removed = false;
+        try {
+            InitNamespaceRoot(root);
+            uint64_t after_init = op_count[0];
+
+            RunForEachThread(workload_create, root);
+            uint64_t after_create = op_count[0];
+            ExpectFilesExist(root);
+
+            RunForEachThread(workload_stat, root);
+            uint64_t after_stat = op_count[0];
+
+            RunForEachThread(workload_open, root);
+            uint64_t after_open = op_count[0];
+
+            RunForEachThread(workload_close, root);
+            uint64_t after_close = op_count[0];
+
+            RunForEachThread(workload_mkdir, root);
+            uint64_t after_mkdir = op_count[0];
+            ExpectDirsExist(root);
+
+            RunForEachThread(workload_rmdir, root);
+            uint64_t after_rmdir = op_count[0];
+
+            RunForEachThread(workload_kv_put, root);
+            uint64_t after_kv_put = op_count[0];
+            ExpectKvRecordExists(root);
+
+            RunForEachThread(workload_kv_get, root);
+            uint64_t after_kv_get = op_count[0];
+
+            RunForEachThread(workload_kv_del, root);
+            uint64_t after_kv_del = op_count[0];
+
+            RunForEachThread(workload_slice_put, root);
+            uint64_t after_slice_put = op_count[0];
+            ExpectSliceRecordExists(root);
+
+            RunForEachThread(workload_slice_get, root);
+            uint64_t after_slice_get = op_count[0];
+
+            RunForEachThread(workload_slice_del, root);
+            uint64_t after_slice_del = op_count[0];
+
+            RunForEachThread(workload_delete, root);
+            files_deleted = true;
+            uint64_t after_delete = op_count[0];
+
+            UninitNamespaceRoot(root);
+            namespace_removed = true;
+            uint64_t after_uninit = op_count[0];
+
+            EXPECT_GT(after_init, 0U);
+            EXPECT_GT(after_create, after_init);
+            EXPECT_GT(after_stat, after_create);
+            EXPECT_GT(after_open, after_stat);
+            EXPECT_GT(after_close, after_open);
+            EXPECT_GT(after_mkdir, after_close);
+            EXPECT_GT(after_rmdir, after_mkdir);
+            EXPECT_GT(after_kv_put, after_rmdir);
+            EXPECT_GT(after_kv_get, after_kv_put);
+            EXPECT_GT(after_kv_del, after_kv_get);
+            EXPECT_GT(after_slice_put, after_kv_del);
+            EXPECT_GT(after_slice_get, after_slice_put);
+            EXPECT_GT(after_slice_del, after_slice_get);
+            EXPECT_GT(after_delete, after_slice_del);
+            EXPECT_GT(after_uninit, after_delete);
+            success = true;
+        } catch (...) {
+        }
+
+        if (namespace_removed) {
+            dfs_shutdown();
+        } else {
+            CleanupRoot(root, !files_deleted);
+        }
+        if (success && !HasFailure()) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+
+    GTEST_SKIP() << "metadata/kv/slice workload flow failed after retries, likely due unstable service state";
 }
 
 int main(int argc, char **argv)

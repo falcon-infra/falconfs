@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <atomic>
+#include <unordered_map>
 
 using namespace std;
 
@@ -94,16 +95,126 @@ int dfs_mkdir(const char *path, mode_t mode)
 }
 int dfs_rmdir(const char *path)
 {
+    std::string dirPath(path);
+    if (dirPath.length() > 1 && dirPath.back() == '/') {
+        dirPath.pop_back();
+    }
+
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
     std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
     if (!conn) {
         std::cout << "route error.\n";
         return PROGRAM_ERROR;
     }
-    int errorCode = conn->Rmdir(path);
+    int errorCode = conn->Rmdir(dirPath.c_str());
 
     return errorCode;
 }
+
+int dfs_opendir(const char *path, uint64_t *inode_id)
+{
+    std::string dirPath(path);
+    if (dirPath.length() > 1 && dirPath.back() == '/') {
+        dirPath.pop_back();
+    }
+
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+
+    uint64_t inodeId = 0;
+    int errorCode = conn->OpenDir(dirPath.c_str(), inodeId);
+    if (errorCode == 0 && inode_id) {
+        *inode_id = inodeId;
+    }
+    return errorCode;
+}
+
+int dfs_readdir(const char *path, std::vector<std::string> *entries)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::unordered_map<std::string, std::shared_ptr<Connection>> workerInfo;
+    int errorCode = routers[index]->GetAllWorkerConnection(workerInfo);
+    if (errorCode != 0) {
+        return errorCode;
+    }
+
+    for (const auto &worker : workerInfo) {
+        int32_t lastShardIndex = -1;
+        std::string lastFileName;
+        bool finished = false;
+        while (!finished) {
+            Connection::ReadDirResponse response;
+            errorCode = worker.second->ReadDir(path,
+                                               response,
+                                               128,
+                                               lastShardIndex,
+                                               lastFileName.empty() ? nullptr : lastFileName.c_str());
+            if (errorCode != 0) {
+                return errorCode;
+            }
+
+            lastShardIndex = response.response->last_shard_index();
+            lastFileName = response.response->last_file_name() ? response.response->last_file_name()->str() : "";
+            auto resultList = response.response->result_list();
+            if (entries && resultList) {
+                for (uint32_t i = 0; i < resultList->size(); ++i) {
+                    entries->push_back(resultList->Get(i)->file_name()->str());
+                }
+            }
+            finished = resultList == nullptr || resultList->size() < 128;
+        }
+    }
+    return 0;
+}
+
+int dfs_rename(const char *src, const char *dst)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetCoordinatorConn();
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+    return conn->Rename(src, dst);
+}
+
+int dfs_utimens(const char *path, int64_t atime, int64_t mtime)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+    return conn->UtimeNs(path, atime, mtime);
+}
+
+int dfs_chown(const char *path, uint32_t uid, uint32_t gid)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+    return conn->Chown(path, uid, gid);
+}
+
+int dfs_chmod(const char *path, uint32_t mode)
+{
+    uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
+    std::shared_ptr<Connection> conn = routers[index]->GetWorkerConnByPath(std::string(path));
+    if (!conn) {
+        std::cout << "route error.\n";
+        return PROGRAM_ERROR;
+    }
+    return conn->Chmod(path, mode);
+}
+
 int dfs_create(const char *path, mode_t mode)
 {
     uint64_t index = routerIndex.fetch_add(1, std::memory_order_relaxed) % s_clientNumber;
