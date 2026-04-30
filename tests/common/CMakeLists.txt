@@ -21,3 +21,22 @@ target_link_libraries(FalconCMIT
 )
 
 gtest_discover_tests(FalconCMIT)
+
+# ==================== CommonCoverageUT =================
+add_executable(CommonCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/common/test_common_coverage.cpp
+    ${common_src}
+)
+target_link_libraries(CommonCoverageUT
+    FalconStore
+    FalconClient
+    zookeeper_mt
+    glog
+    jsoncpp
+    gtest
+    pq
+    ${BRPC_LIBRARIES}
+    ${DYNAMIC_LIB}
+)
+
+gtest_discover_tests(CommonCoverageUT)

@@ -421,6 +421,7 @@ DEFINE_string(o, "", "fuse ops, unneeded");
 DEFINE_string(d, "", "fuse ops, unneeded");
 DEFINE_string(brpc, "", "optional ops, unneeded");
 
+#ifndef FALCONFS_FUSE_MAIN_DISABLE_MAIN
 int main(int argc, char *argv[])
 {
     int fuseArgc = argc;
@@ -560,3 +561,4 @@ int main(int argc, char *argv[])
     fuse_opt_free_args(&args);
     return ret;
 }
+#endif
