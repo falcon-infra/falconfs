@@ -23,6 +23,9 @@
 
 class PGConnectionPool {
   private:
+#ifdef UNIT_TEST
+    friend int FalconConnectionPoolTestAdjustWaitTime(int prevTime, size_t reqInLoop);
+#endif
     std::unordered_set<PGConnection *> currentManagedConn;
 
     bool working;
@@ -85,6 +88,17 @@ class PGConnectionPool {
               const uint16_t batchTaskBufferMaxSize);
     void Destroy();
 };
+
+static FalconBatchServiceType ResolveBatchServiceTypeForJob(BaseMetaServiceJob *job,
+                                                            FalconMetaServiceType *serviceTypeOut)
+{
+    FalconMetaServiceType serviceType = job->GetFalconMetaServiceType(0);
+    if (serviceTypeOut != nullptr) {
+        *serviceTypeOut = serviceType;
+    }
+    return job->IsAllowBatchProcess() ? FalconMetaServiceTypeToBatchServiceType(serviceType)
+                                      : FalconBatchServiceType::NOT_SUPPORT;
+}
 
 void PGConnectionPool::BackgroundPoolManager()
 {
@@ -224,10 +238,8 @@ void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
         return;
     }
 
-    FalconMetaServiceType falconSupportType = job->GetFalconMetaServiceType(0);
-    FalconBatchServiceType FalconBatchServiceType = job->IsAllowBatchProcess()
-                                                        ? FalconMetaServiceTypeToBatchServiceType(falconSupportType)
-                                                        : FalconBatchServiceType::NOT_SUPPORT;
+    FalconMetaServiceType falconSupportType = FalconMetaServiceType::NOT_SUPPORTED;
+    FalconBatchServiceType FalconBatchServiceType = ResolveBatchServiceTypeForJob(job, &falconSupportType);
 
     job->opcodeForE2E = falconSupportType;
 
@@ -307,3 +319,20 @@ void FalconDispatchMetaJob2PGConnectionPool(void *job)
     BaseMetaServiceJob *metaJob = static_cast<BaseMetaServiceJob *>(job);
     PGConnectionPool::GetInstance().DispatchMetaServiceJob(metaJob);
 }
+
+#ifdef UNIT_TEST
+int FalconConnectionPoolTestAdjustWaitTime(int prevTime, size_t reqInLoop)
+{
+    return PGConnectionPool::GetInstance().AdjustWaitTime(prevTime, reqInLoop);
+}
+
+int FalconConnectionPoolTestResolveBatchType(BaseMetaServiceJob *job, int *serviceType)
+{
+    FalconMetaServiceType resolvedServiceType = FalconMetaServiceType::NOT_SUPPORTED;
+    FalconBatchServiceType batchType = ResolveBatchServiceTypeForJob(job, &resolvedServiceType);
+    if (serviceType != nullptr) {
+        *serviceType = static_cast<int>(resolvedServiceType);
+    }
+    return static_cast<int>(batchType);
+}
+#endif

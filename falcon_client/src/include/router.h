@@ -60,5 +60,11 @@ class Router {
 
     std::shared_ptr<Connection> GetWorkerConnBySvrId(int id);
 
+#ifdef UNIT_TEST
+    auto &TestShardTable() { return shardTable; }
+    auto &TestRouteMap() { return routeMap; }
+    auto &TestCoordinatorConn() { return coordinatorConn; }
+#endif
+
     ~Router() = default;
 };

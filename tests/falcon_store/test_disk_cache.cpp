@@ -201,6 +201,104 @@ TEST_F(DiskCacheUT, StartScansExistingCacheFiles)
     std::filesystem::remove_all(cacheRoot);
 }
 
+TEST_F(DiskCacheUT, ConstructorWalkAndSpaceFailureBranches)
+{
+    DiskCache ratioCache(0.7);
+    EXPECT_FLOAT_EQ(ratioCache.freeRatio, 0.7F);
+
+    EXPECT_EQ(DiskCache::Walk("/tmp/falconfs_missing_disk_cache_dir"), RETURN_ERROR);
+
+    DiskCache cache;
+    cache.totalCap = 100;
+    cache.freeCap.store(10);
+    cache.usedCap = 0;
+    cache.totalInodes = 100;
+    cache.freeInodes = 10;
+    cache.bgFreeRatio = 0.2;
+    cache.freeRatio = 0.2;
+    EXPECT_EQ(cache.CheckSpaceEnough(), RETURN_ERROR);
+}
+
+TEST_F(DiskCacheUT, DeleteFailureAndStopModeBranches)
+{
+    std::string cacheRoot = "/tmp/testdir_delete_failure";
+    std::filesystem::remove_all(cacheRoot);
+    std::filesystem::create_directories(cacheRoot + "/0");
+    SetRootPath(cacheRoot);
+    SetTotalDirectory(1);
+
+    DiskCache cache;
+    cache.rootDir = cacheRoot;
+    cache.totalDirNum = 1;
+    cache.stop = false;
+    cache.freeCap.store(1000);
+    cache.InsertAndUpdate(500, 10, false);
+    EXPECT_LT(cache.Delete(500), 0);
+
+    cache.InsertAndUpdate(501, 10, false);
+    cache.DeleteOldCacheWithNoPin(501);
+    EXPECT_TRUE(cache.inodeToCacheIter.find(501) != cache.inodeToCacheIter.end());
+
+    std::string directFile = GetFilePath(502);
+    {
+        std::ofstream out(directFile);
+        out << "direct";
+    }
+    cache.stop = true;
+    EXPECT_TRUE(cache.Find(502, false));
+    EXPECT_EQ(cache.Delete(502), 0);
+    EXPECT_FALSE(cache.Find(502, false));
+
+    std::filesystem::remove_all(cacheRoot);
+}
+
+TEST_F(DiskCacheUT, CleanupForEvictAndPreAllocFailureBranches)
+{
+    std::string cacheRoot = "/tmp/testdir_cleanup_for_evict";
+    std::filesystem::remove_all(cacheRoot);
+    std::filesystem::create_directories(cacheRoot + "/0");
+    SetRootPath(cacheRoot);
+    SetTotalDirectory(1);
+
+    DiskCache cache;
+    cache.rootDir = cacheRoot;
+    cache.totalDirNum = 1;
+    cache.stop = false;
+    cache.totalCap = 100;
+    cache.totalInodes = 100;
+    cache.freeCap.store(1);
+    cache.freeInodes = 1;
+    cache.blockRatio = 0.01;
+    cache.inodeRatio = 0.01;
+    cache.freeRatio = 0.5;
+    cache.bgFreeRatio = 0.5;
+    cache.hasFreeSpace.store(true);
+
+    uint64_t pinnedKey = 601;
+    uint64_t missingKey = 602;
+    std::string pinnedFile = GetFilePath(pinnedKey);
+    {
+        std::ofstream out(pinnedFile);
+        out << "pinned";
+    }
+    cache.InsertAndUpdate(pinnedKey, 20, true);
+    cache.InsertAndUpdate(missingKey, 20, false);
+
+    cache.CleanupForEvict(10);
+    EXPECT_TRUE(cache.Find(pinnedKey, false));
+    EXPECT_TRUE(cache.inodeToCacheIter.find(missingKey) != cache.inodeToCacheIter.end());
+
+    cache.rootDir = "/tmp/testdir_cleanup_for_evict_missing_root";
+    cache.freeCap.store(1);
+    cache.reservedCap.store(0);
+    EXPECT_FALSE(cache.PreAllocSpace(1000));
+    EXPECT_FALSE(cache.HasFreeSpace());
+
+    cache.Unpin(pinnedKey);
+    cache.Delete(pinnedKey);
+    std::filesystem::remove_all(cacheRoot);
+}
+
 int main(int argc, char **argv)
 {
     testing::InitGoogleTest(&argc, argv);

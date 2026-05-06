@@ -56,7 +56,7 @@ run_standalone_unit_tests() {
 			echo "Running tests in: $target_dir"
 			find "$target_dir" -type f -executable -name "*UT" | while read -r executable_file; do
 				case "$(basename "$executable_file")" in
-				FalconCMIT | LocalRunWorkloadUT | MetadbCoverageUT)
+				FalconCMIT | LocalRunWorkloadUT | MetadbCoverageUT | FalconClientCoverageUT)
 					continue
 					;;
 				esac
@@ -91,19 +91,40 @@ run_service_dependent_unit_tests() {
 	service_server_ip="$(resolve_service_test_server_ip)"
 	service_server_port="$(resolve_service_test_server_port)"
 	local service_uts=(
+		"$FALCONFS_DIR/build/tests/common/FalconCMIT"
+		"$FALCONFS_DIR/build/tests/falcon_client/FalconClientCoverageUT"
 		"$FALCONFS_DIR/build/tests/private-directory-test/LocalRunWorkloadUT"
 		"$FALCONFS_DIR/build/tests/falcon/metadb/MetadbCoverageUT"
 	)
 
 	echo "Running service-dependent tests:"
 	echo "Service-dependent UT endpoint: ${service_server_ip}:${service_server_port}"
+
+	local python_internal_dir="$FALCONFS_DIR/build/python_interface/_pyfalconfs_internal"
+	local python_internal_test="$FALCONFS_DIR/tests/python_interface/test_pyfalconfs_internal.py"
+	if [[ -d "$python_internal_dir" && -f "$python_internal_test" ]]; then
+		echo "Executing Python interface service coverage test: $python_internal_test"
+		SERVER_IP="$service_server_ip" \
+		SERVER_PORT="$service_server_port" \
+		FALCON_PY_SERVICE_COVERAGE=1 \
+		PYTHONPATH="$python_internal_dir${PYTHONPATH:+:$PYTHONPATH}" \
+		python3 "$python_internal_test"
+		echo "---------------------------------------------------------------------------------------"
+	fi
+
 	for service_ut in "${service_uts[@]}"; do
 		if [[ ! -x "$service_ut" ]]; then
+			continue
+		fi
+		if [[ "$(basename "$service_ut")" == "FalconCMIT" && -z "${zk_endpoint:-}" ]]; then
+			echo "Skipping FalconCMIT because zk_endpoint is not set."
+			echo "---------------------------------------------------------------------------------------"
 			continue
 		fi
 		echo "Executing: $service_ut"
 		SERVER_IP="$service_server_ip" \
 		SERVER_PORT="$service_server_port" \
+		FALCON_CLIENT_SERVICE_COVERAGE=1 \
 		LOCAL_RUN_MOUNT_DIR="${LOCAL_RUN_MOUNT_DIR:-/}" \
 		LOCAL_RUN_FILE_PER_THREAD="${LOCAL_RUN_FILE_PER_THREAD:-1}" \
 		LOCAL_RUN_THREAD_NUM_PER_CLIENT="${LOCAL_RUN_THREAD_NUM_PER_CLIENT:-1}" \

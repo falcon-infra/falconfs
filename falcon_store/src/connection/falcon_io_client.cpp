@@ -28,6 +28,13 @@ static int BrpcErrorCodeToFuseErrno(int brpcErrorCode)
     }
 }
 
+#ifdef UNIT_TEST
+int FalconIOClientTestBrpcErrorCodeToFuseErrno(int brpcErrorCode)
+{
+    return BrpcErrorCodeToFuseErrno(brpcErrorCode);
+}
+#endif
+
 /* return 0: OK; return negative: remote IO error, return positive: network error */
 int FalconIOClient::OpenFile(uint64_t inodeId,
                              int oflags,
