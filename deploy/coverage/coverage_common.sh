@@ -56,6 +56,8 @@ run_standalone_unit_tests() {
 			echo "Running tests in: $target_dir"
 			find "$target_dir" -type f -executable -name "*UT" | while read -r executable_file; do
 				case "$(basename "$executable_file")" in
+				# These tests need a running local service or external zk config, so run them in
+				# run_service_dependent_unit_tests instead of the standalone phase.
 				FalconCMIT | LocalRunWorkloadUT | MetadbCoverageUT | FalconClientCoverageUT)
 					continue
 					;;
@@ -116,6 +118,7 @@ run_service_dependent_unit_tests() {
 		if [[ ! -x "$service_ut" ]]; then
 			continue
 		fi
+		# FalconCMIT talks to zookeeper; local coverage environments may not provide it.
 		if [[ "$(basename "$service_ut")" == "FalconCMIT" && -z "${zk_endpoint:-}" ]]; then
 			echo "Skipping FalconCMIT because zk_endpoint is not set."
 			echo "---------------------------------------------------------------------------------------"

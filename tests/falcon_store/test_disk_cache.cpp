@@ -1,10 +1,8 @@
-#include "test_disk_cache.h"
-#define private public
-#include "disk_cache/disk_cache.h"
-#undef private
-#include "util/utils.h"
-
 #include <fstream>
+
+#include "test_disk_cache.h"
+#include "disk_cache/disk_cache.h"
+#include "util/utils.h"
 
 std::string DiskCacheUT::rootPath = "/tmp/testdir/";
 
@@ -116,67 +114,6 @@ TEST_F(DiskCacheUT, DeleteOldCacheSkipsPinnedEntry)
     std::filesystem::remove_all(cacheRoot);
 }
 
-TEST_F(DiskCacheUT, PreAllocSpaceReservesAndReleasesCapacity)
-{
-    DiskCache cache;
-    cache.freeCap.store(1024);
-    cache.reservedCap.store(0);
-
-    EXPECT_TRUE(cache.PreAllocSpace(256));
-    EXPECT_EQ(cache.reservedCap.load(), 256U);
-    EXPECT_TRUE(cache.HasFreeSpace());
-
-    cache.FreePreAllocSpace(128);
-    EXPECT_EQ(cache.reservedCap.load(), 128U);
-}
-
-TEST_F(DiskCacheUT, CleanupEvictsUnpinnedFilesAndKeepsPinnedFiles)
-{
-    std::string cacheRoot = "/tmp/testdir_cleanup";
-    std::filesystem::remove_all(cacheRoot);
-    for (int i = 0; i < 2; ++i) {
-        std::filesystem::create_directories(cacheRoot + "/" + std::to_string(i));
-    }
-    SetRootPath(cacheRoot);
-    SetTotalDirectory(2);
-
-    DiskCache cache;
-    cache.rootDir = cacheRoot;
-    cache.totalCap = 100;
-    cache.totalInodes = 100;
-    cache.freeCap.store(10);
-    cache.freeInodes = 10;
-    cache.blockRatio = 0.1;
-    cache.inodeRatio = 0.1;
-    cache.bgFreeRatio = 0.5;
-
-    uint64_t pinnedKey = 200;
-    uint64_t evictKey = 201;
-    std::string pinnedFile = GetFilePath(pinnedKey);
-    std::string evictFile = GetFilePath(evictKey);
-    {
-        std::ofstream out(pinnedFile);
-        out << "pinned";
-    }
-    {
-        std::ofstream out(evictFile);
-        out << "evict";
-    }
-
-    cache.InsertAndUpdate(pinnedKey, 20, true);
-    cache.InsertAndUpdate(evictKey, 20, false);
-    cache.Cleanup();
-
-    EXPECT_TRUE(cache.Find(pinnedKey, false));
-    EXPECT_TRUE(std::filesystem::exists(pinnedFile));
-    EXPECT_FALSE(cache.Find(evictKey, false));
-    EXPECT_FALSE(std::filesystem::exists(evictFile));
-
-    cache.Unpin(pinnedKey);
-    EXPECT_EQ(cache.Delete(pinnedKey), 0);
-    std::filesystem::remove_all(cacheRoot);
-}
-
 TEST_F(DiskCacheUT, StartScansExistingCacheFiles)
 {
     std::string cacheRoot = "/tmp/testdir_scan";
@@ -201,101 +138,131 @@ TEST_F(DiskCacheUT, StartScansExistingCacheFiles)
     std::filesystem::remove_all(cacheRoot);
 }
 
-TEST_F(DiskCacheUT, ConstructorWalkAndSpaceFailureBranches)
+TEST_F(DiskCacheUT, ZeroRatioStopModeCoversNoopBranches)
 {
-    DiskCache ratioCache(0.7);
-    EXPECT_FLOAT_EQ(ratioCache.freeRatio, 0.7F);
-
-    EXPECT_EQ(DiskCache::Walk("/tmp/falconfs_missing_disk_cache_dir"), RETURN_ERROR);
-
-    DiskCache cache;
-    cache.totalCap = 100;
-    cache.freeCap.store(10);
-    cache.usedCap = 0;
-    cache.totalInodes = 100;
-    cache.freeInodes = 10;
-    cache.bgFreeRatio = 0.2;
-    cache.freeRatio = 0.2;
-    EXPECT_EQ(cache.CheckSpaceEnough(), RETURN_ERROR);
-}
-
-TEST_F(DiskCacheUT, DeleteFailureAndStopModeBranches)
-{
-    std::string cacheRoot = "/tmp/testdir_delete_failure";
+    std::string cacheRoot = "/tmp/testdir_zero_stop";
     std::filesystem::remove_all(cacheRoot);
     std::filesystem::create_directories(cacheRoot + "/0");
     SetRootPath(cacheRoot);
     SetTotalDirectory(1);
 
     DiskCache cache;
-    cache.rootDir = cacheRoot;
-    cache.totalDirNum = 1;
-    cache.stop = false;
-    cache.freeCap.store(1000);
-    cache.InsertAndUpdate(500, 10, false);
-    EXPECT_LT(cache.Delete(500), 0);
+    ASSERT_EQ(cache.Start(cacheRoot, 1, 0.0, 0.0), 0);
 
-    cache.InsertAndUpdate(501, 10, false);
-    cache.DeleteOldCacheWithNoPin(501);
-    EXPECT_TRUE(cache.inodeToCacheIter.find(501) != cache.inodeToCacheIter.end());
-
-    std::string directFile = GetFilePath(502);
+    uint64_t key = 404;
+    std::string file = GetFilePath(key);
     {
-        std::ofstream out(directFile);
-        out << "direct";
+        std::ofstream out(file);
+        out << "stop-mode";
     }
-    cache.stop = true;
-    EXPECT_TRUE(cache.Find(502, false));
-    EXPECT_EQ(cache.Delete(502), 0);
-    EXPECT_FALSE(cache.Find(502, false));
+
+    EXPECT_TRUE(cache.Find(key, true));
+    cache.InsertAndUpdate(key, 9, true);
+    EXPECT_TRUE(cache.Update(key, 10));
+    EXPECT_TRUE(cache.Add(key, 1));
+    cache.Pin(key);
+    cache.Unpin(key);
+    EXPECT_TRUE(cache.PreAllocSpace(1024));
+    cache.FreePreAllocSpace(1024);
+    EXPECT_TRUE(cache.HasFreeSpace());
+    EXPECT_EQ(cache.Delete(key), 0);
+    EXPECT_EQ(cache.Delete(key), -1);
 
     std::filesystem::remove_all(cacheRoot);
 }
 
-TEST_F(DiskCacheUT, CleanupForEvictAndPreAllocFailureBranches)
+TEST_F(DiskCacheUT, UtilityEnvironmentBranches)
 {
-    std::string cacheRoot = "/tmp/testdir_cleanup_for_evict";
+    SetRootPath("/tmp/util_root");
+    SetTotalDirectory(8);
+    EXPECT_EQ(GetFilePath(17), "/tmp/util_root/1/17-large");
+
+    int randomValue = GenerateRandom(1, 3);
+    EXPECT_GE(randomValue, 1);
+    EXPECT_LE(randomValue, 3);
+
+    setenv("USER", "falcon_user", 1);
+    ASSERT_TRUE(GetUserName().has_value());
+    EXPECT_EQ(GetUserName().value(), "falcon_user");
+    unsetenv("USER");
+    EXPECT_FALSE(GetUserName().has_value());
+
+    EXPECT_EQ(SplitIp("10.0.0.1:56039").value(), "10.0.0.1");
+    EXPECT_EQ(SplitIp("10.0.0.1").value(), "10.0.0.1");
+
+    unsetenv("POD_IP");
+    unsetenv("BRPC_PORT");
+    EXPECT_EQ(GetPodIPPort(), "127.0.0.1:56039");
+    setenv("POD_IP", "10.1.1.1", 1);
+    EXPECT_EQ(GetPodIPPort(), "10.1.1.1:56039");
+    setenv("BRPC_PORT", "56100", 1);
+    EXPECT_EQ(GetPodIPPort(), "10.1.1.1:56100");
+    unsetenv("POD_IP");
+    unsetenv("BRPC_PORT");
+
+    unsetenv("STORAGE_THRESHOLD");
+    EXPECT_FLOAT_EQ(GetStorageThreshold(true), 0.8F);
+    EXPECT_FLOAT_EQ(GetStorageThreshold(false), 1.0F);
+    setenv("STORAGE_THRESHOLD", "0.42", 1);
+    EXPECT_FLOAT_EQ(GetStorageThreshold(true), 0.42F);
+    unsetenv("STORAGE_THRESHOLD");
+
+    unsetenv("PARENT_PATH_LEVEL");
+    EXPECT_EQ(GetParentPathLevel(), -1);
+    setenv("PARENT_PATH_LEVEL", "3", 1);
+    EXPECT_EQ(GetParentPathLevel(), 3);
+    unsetenv("PARENT_PATH_LEVEL");
+}
+
+TEST_F(DiskCacheUT, PublicEvictAndFailureBranches)
+{
+    std::string cacheRoot = "/tmp/testdir_public_evict";
     std::filesystem::remove_all(cacheRoot);
     std::filesystem::create_directories(cacheRoot + "/0");
     SetRootPath(cacheRoot);
     SetTotalDirectory(1);
 
-    DiskCache cache;
-    cache.rootDir = cacheRoot;
-    cache.totalDirNum = 1;
-    cache.stop = false;
-    cache.totalCap = 100;
-    cache.totalInodes = 100;
-    cache.freeCap.store(1);
-    cache.freeInodes = 1;
-    cache.blockRatio = 0.01;
-    cache.inodeRatio = 0.01;
-    cache.freeRatio = 0.5;
-    cache.bgFreeRatio = 0.5;
-    cache.hasFreeSpace.store(true);
+    DiskCache cache(0.4);
+    EXPECT_EQ(cache.Start(cacheRoot, 1, 2.0, 2.0), RETURN_ERROR);
 
-    uint64_t pinnedKey = 601;
-    uint64_t missingKey = 602;
-    std::string pinnedFile = GetFilePath(pinnedKey);
+    uint64_t pinnedKey = 501;
+    uint64_t removableKey = 502;
+    uint64_t missingFileKey = 503;
     {
-        std::ofstream out(pinnedFile);
+        std::ofstream out(GetFilePath(pinnedKey));
         out << "pinned";
     }
-    cache.InsertAndUpdate(pinnedKey, 20, true);
-    cache.InsertAndUpdate(missingKey, 20, false);
+    {
+        std::ofstream out(GetFilePath(removableKey));
+        out << "removable";
+    }
+    cache.InsertAndUpdate(pinnedKey, 10, true);
+    cache.InsertAndUpdate(removableKey, 10, false);
+    cache.InsertAndUpdate(missingFileKey, 10, false);
+    cache.InsertAndUpdate(missingFileKey, 20, false);
 
-    cache.CleanupForEvict(10);
+    cache.Evict(UINT64_MAX / 4);
     EXPECT_TRUE(cache.Find(pinnedKey, false));
-    EXPECT_TRUE(cache.inodeToCacheIter.find(missingKey) != cache.inodeToCacheIter.end());
+    EXPECT_FALSE(cache.Find(removableKey, false));
+    EXPECT_FALSE(std::filesystem::exists(GetFilePath(removableKey)));
 
-    cache.rootDir = "/tmp/testdir_cleanup_for_evict_missing_root";
-    cache.freeCap.store(1);
-    cache.reservedCap.store(0);
-    EXPECT_FALSE(cache.PreAllocSpace(1000));
-    EXPECT_FALSE(cache.HasFreeSpace());
+    std::string missingRoot = "/tmp/testdir_public_evict_start_missing";
+    std::filesystem::remove_all(missingRoot);
+    DiskCache startFailureCache;
+    EXPECT_EQ(startFailureCache.Start(missingRoot, 1, 0.1, 0.1), RETURN_ERROR);
+
+    uint64_t deleteMissingKey = 504;
+    cache.InsertAndUpdate(deleteMissingKey, 1, false);
+    EXPECT_LT(cache.Delete(deleteMissingKey), 0);
+
+    uint64_t oldMissingKey = 505;
+    cache.InsertAndUpdate(oldMissingKey, 1, false);
+    cache.DeleteOldCacheWithNoPin(oldMissingKey);
+    EXPECT_TRUE(cache.Find(oldMissingKey, false));
 
     cache.Unpin(pinnedKey);
-    cache.Delete(pinnedKey);
+    EXPECT_EQ(cache.Delete(pinnedKey), 0);
+
     std::filesystem::remove_all(cacheRoot);
 }
 

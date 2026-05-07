@@ -10,7 +10,9 @@
 
 #include "brpc/brpc_server.h"
 #include "conf/falcon_property_key.h"
+#define private public
 #include "falcon_store/falcon_store.h"
+#undef private
 #include "init/falcon_init.h"
 #include "remote_connection_utils/error_code_def.h"
 

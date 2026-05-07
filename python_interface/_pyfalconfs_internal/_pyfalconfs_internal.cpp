@@ -788,15 +788,14 @@ static PyObject* PyWrapper_AsyncExists(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "s", &path)) 
         return nullptr;
 
-    std::string pathStr(path);
     AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [pathStr]() -> std::unique_ptr<AsyncResultBase>
+    auto task = [path]() -> std::unique_ptr<AsyncResultBase>
     {
         int ret = -1;
         struct stat stbuf;
         try
         {
-            ret = Stat(pathStr.c_str(), &stbuf);
+            ret = Stat(path, &stbuf);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
         }
@@ -819,34 +818,33 @@ static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
         return nullptr;
 
-    std::string pathStr(path);
     AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [pathStr, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
+    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
     {
         int ret = -1;
         int readSize;
         uint64_t fd = UINT64_MAX;
         try
         {
-            ret = Open(pathStr.c_str(), O_RDONLY, fd);
+            ret = Open(path, O_RDONLY, fd);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
             
-            readSize = Read(pathStr.c_str(), fd, (char*)buffer.buf, size, offset);
+            readSize = Read(path, fd, (char*)buffer.buf, size, offset);
             if (readSize < 0)
             {
-                Close(pathStr.c_str(), fd);
+                Close(path, fd);
                 return std::make_unique<AsyncResultIntOnly>(readSize);
             }
             
-            ret = Close(pathStr.c_str(), fd);
+            ret = Close(path, fd);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
         }
         catch (const std::exception& e)
         {
             if (fd != UINT64_MAX)
-                Close(pathStr.c_str(), fd);    // We believe Close never throw error currently.
+                Close(path, fd);    // We believe Close never throw error currently.
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
         return std::make_unique<AsyncResultIntOnly>(ret);
@@ -864,40 +862,39 @@ static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "sw*ii", &path, &buffer, &size, &offset)) 
         return nullptr;
 
-    std::string pathStr(path);
     AsyncState* state = (AsyncState*)AsyncStateType.tp_new(&AsyncStateType, nullptr, nullptr);
-    auto task = [pathStr, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
+    auto task = [path, buffer, size, offset]() -> std::unique_ptr<AsyncResultBase>
     {
         int ret = -1;
         uint64_t fd = UINT64_MAX;
         try
         {
-            ret = Create(pathStr.c_str(), O_WRONLY, fd);
+            ret = Create(path, O_WRONLY, fd);
             if (ret != 0 && ret != -EEXIST)
                 return std::make_unique<AsyncResultIntOnly>(ret);
 
-            ret = Write(pathStr.c_str(), fd, (char*)buffer.buf, size, offset);
+            ret = Write(path, fd, (char*)buffer.buf, size, offset);
             if (ret != 0)
             {
-                Close(pathStr.c_str(), fd);
+                Close(path, fd);
                 return std::make_unique<AsyncResultIntOnly>(ret);
             }
 
-            ret = Flush(pathStr.c_str(), fd);
+            ret = Flush(path, fd);
             if (ret != 0)
             {
-                Close(pathStr.c_str(), fd);
+                Close(path, fd);
                 return std::make_unique<AsyncResultIntOnly>(ret);
             }
             
-            ret = Close(pathStr.c_str(), fd);
+            ret = Close(path, fd);
             if (ret != 0)
                 return std::make_unique<AsyncResultIntOnly>(ret);
         }
         catch (const std::exception& e)
         {
             if (fd != UINT64_MAX)
-                Close(pathStr.c_str(), fd);    // We believe Close never throw error currently.
+                Close(path, fd);    // We believe Close never throw error currently.
             return std::make_unique<AsyncResultBase>(strdup(e.what()));
         }
         return std::make_unique<AsyncResultIntOnly>(ret);

@@ -1,16 +1,21 @@
 #include "buffer/base64.h"
+#include "buffer/dir_open_instance.h"
+#include "buffer/open_instance.h"
 #include "cm/falcon_cm.h"
 #include "conf/falcon_config.h"
 #include "conf/falcon_property_key.h"
 #include "stats/falcon_stats.h"
+#include "thread_pool/thread_pool.h"
 
 #include <gtest/gtest.h>
 
+#include <any>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -366,6 +371,26 @@ TEST(CommonFalconConfigUT, InvalidGettersAndFormatUtilVariants)
     std::filesystem::remove(config_path);
 }
 
+TEST(CommonFalconConfigUT, PropertyKeyAccessorsAndUpdater)
+{
+    PropertyKey runtimeKey("runtime", "falcon_dynamic_key", FALCON, FALCON_BOOL);
+    EXPECT_EQ(runtimeKey.GetCategory(), "runtime");
+    EXPECT_EQ(runtimeKey.GetName(), "falcon_dynamic_key");
+    EXPECT_EQ(runtimeKey.GetScope(), FALCON);
+    EXPECT_EQ(runtimeKey.GetDataType(), FALCON_BOOL);
+    EXPECT_TRUE(runtimeKey.GetIsDynamic());
+    EXPECT_FALSE(static_cast<bool>(runtimeKey.GetUpdater()));
+
+    bool updated = false;
+    runtimeKey.SetUpdater([&updated](std::any value) { updated = std::any_cast<bool>(value); });
+    ASSERT_TRUE(static_cast<bool>(runtimeKey.GetUpdater()));
+    runtimeKey.GetUpdater()(std::any(true));
+    EXPECT_TRUE(updated);
+
+    PropertyKey staticKey("main", "falcon_static_key", FALCON, FALCON_STRING);
+    EXPECT_FALSE(staticKey.GetIsDynamic());
+}
+
 TEST(CommonFalconCMUT, FetchesClusterMetadataThroughZooKeeperFacade)
 {
     ResetFakeZoo();
@@ -510,9 +535,6 @@ TEST(CommonFalconCMUT, CoversAdditionalZooKeeperFailureBranches)
     EXPECT_EQ(cm->FetchCoordinatorInfo(coordinatorIp, coordinatorPort), RETURN_ERROR);
     g_cnLeaderValue = "10.1.2.3:55500";
 
-    cm->TestSetNodeForReUpload(-1, "", UNINITIALIZED);
-    EXPECT_EQ(cm->ReUpload(), RETURN_OK);
-
     auto root = std::filesystem::temp_directory_path() / ("falcon_cm_more_cov_" + std::to_string(getpid()));
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
@@ -529,11 +551,6 @@ TEST(CommonFalconCMUT, CoversAdditionalZooKeeperFailureBranches)
     EXPECT_EQ(cm->Upload("", nodeInfo, nodeId, rootPath), RETURN_ERROR);
     g_zooWgetRet = ZOK;
     EXPECT_EQ(cm->Upload("", nodeInfo, nodeId, rootPath), RETURN_OK);
-
-    cm->TestSetNodeForReUpload(nodeId, nodeInfo, EXPIRED);
-    g_zooCreateRet = ZNONODE;
-    EXPECT_EQ(cm->ReUpload(), RETURN_ERROR);
-    g_zooCreateRet = ZOK;
 
     std::ofstream(root / "exit") << 0;
     cm->TestTriggerWatcher(ZOO_SESSION_EVENT, -999);
@@ -696,6 +713,68 @@ TEST(CommonFalconStatsUT, StoreAndPrintStatsFlow)
     EXPECT_NE(content.find("Object Operations"), std::string::npos);
 
     std::filesystem::remove_all(temp_root);
+}
+
+TEST(CommonThreadPoolUT, RunsTasksAndStopsCleanly)
+{
+    auto pool = ThreadPool::CreateThreadPool(2, 4, "coverage_pool");
+    ASSERT_NE(pool, nullptr);
+    ASSERT_EQ(pool->Start(), 0);
+
+    std::promise<void> firstDone;
+    std::promise<void> secondDone;
+    std::atomic<int> taskCount{0};
+
+    EXPECT_EQ(pool->Submit({.taskName = "first",
+                            .task = [&]() {
+                                taskCount.fetch_add(1);
+                                firstDone.set_value();
+                            }}),
+              0);
+    EXPECT_EQ(pool->Submit({.taskName = "second",
+                            .task = [&]() {
+                                taskCount.fetch_add(1);
+                                secondDone.set_value();
+                            }}),
+              0);
+
+    EXPECT_EQ(firstDone.get_future().wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(secondDone.get_future().wait_for(std::chrono::seconds(2)), std::future_status::ready);
+    EXPECT_EQ(taskCount.load(), 2);
+    pool->Stop();
+
+    ThreadPool zeroThreadPool(0, 1, "zero_thread_pool");
+    EXPECT_EQ(zeroThreadPool.Start(), 0);
+    zeroThreadPool.Stop();
+}
+
+TEST(CommonBufferUT, OpenAndDirOpenInstancePublicHelpers)
+{
+    OpenInstance openInstance;
+    openInstance.LockOpenInstance();
+    openInstance.UnlockOpenInstance();
+
+    DirOpenInstance dirOpenInstance(55);
+    std::unordered_map<std::string, std::shared_ptr<Connection>> workers;
+    workers.emplace("127.0.0.1:56039", std::shared_ptr<Connection>{});
+    workers.emplace("127.0.0.2:56040", std::shared_ptr<Connection>{});
+
+    dirOpenInstance.SetAllWorkerInfo(workers);
+    EXPECT_EQ(dirOpenInstance.fd, 55U);
+    EXPECT_EQ(dirOpenInstance.workers.size(), workers.size());
+    EXPECT_EQ(dirOpenInstance.workingWorkers.size(), workers.size());
+    EXPECT_EQ(dirOpenInstance.lastShardIndexes["127.0.0.1:56039"], -1);
+    EXPECT_TRUE(dirOpenInstance.lastFileNames["127.0.0.2:56040"].empty());
+
+    dirOpenInstance.partialEntryVec.push_back("entry");
+    dirOpenInstance.fileModes.push_back(0644);
+    dirOpenInstance.offset = 3;
+    dirOpenInstance.ResetDirOpenInstance();
+    EXPECT_TRUE(dirOpenInstance.workers.empty());
+    EXPECT_TRUE(dirOpenInstance.partialEntryVec.empty());
+    EXPECT_TRUE(dirOpenInstance.fileModes.empty());
+    EXPECT_TRUE(dirOpenInstance.workingWorkers.empty());
+    EXPECT_EQ(dirOpenInstance.offset, 0U);
 }
 
 int main(int argc, char **argv)

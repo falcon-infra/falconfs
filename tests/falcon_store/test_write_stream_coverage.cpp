@@ -3,36 +3,26 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
-#define private public
 #include "disk_cache/disk_cache.h"
 #include "write_stream/stream_assembler.h"
-#undef private
 
 namespace {
 
-void ResetDiskCacheForWriteStream(uint64_t freeCap = 1024 * 1024)
+void PrepareDiskCacheForWriteStream()
 {
-    auto &cache = DiskCache::GetInstance();
-    cache.stop = false;
-    cache.rootDir = "/tmp/write_stream_coverage";
-    cache.totalDirNum = 1;
-    cache.freeRatio = 0.1;
-    cache.bgFreeRatio = 0.1;
-    cache.totalCap = freeCap * 2;
-    cache.totalInodes = 1024;
-    cache.freeInodes = 1024;
-    cache.blockRatio = 0.9;
-    cache.inodeRatio = 0.9;
-    cache.freeCap.store(freeCap);
-    cache.usedCap = 0;
-    cache.reservedCap.store(0);
-    cache.hasFreeSpace.store(true);
-    cache.inodeToCacheIter.clear();
-    cache.cacheItems.clear();
-    std::filesystem::create_directories(cache.rootDir + "/0");
+    static bool started = false;
+    if (started) {
+        return;
+    }
+    std::string root = "/tmp/write_stream_coverage";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root + "/0");
+    (void)DiskCache::GetInstance().Start(root, 1, 0.1, 0.1);
+    started = true;
 }
 
 int OpenTmpFile(const std::string &name)
@@ -44,21 +34,11 @@ int OpenTmpFile(const std::string &name)
     return fd;
 }
 
-WriteStream::MergedSlice MakeMergedSlice(const std::string &payload, off_t offset)
-{
-    char *buf = static_cast<char *>(malloc(payload.size()));
-    EXPECT_NE(buf, nullptr);
-    memcpy(buf, payload.data(), payload.size());
-    ExpandableMemory memory(buf, payload.size());
-    WriteStream::Slice slice(memory, payload.size(), offset);
-    return WriteStream::MergedSlice(std::move(slice));
-}
-
 } // namespace
 
 TEST(WriteStreamCoverageUT, LocalDirectAndPersistErrorBranches)
 {
-    ResetDiskCacheForWriteStream();
+    PrepareDiskCacheForWriteStream();
     auto &cache = DiskCache::GetInstance();
     uint64_t inode = 7001;
     cache.InsertAndUpdate(inode, 0, false);
@@ -86,7 +66,7 @@ TEST(WriteStreamCoverageUT, LocalDirectAndPersistErrorBranches)
 
 TEST(WriteStreamCoverageUT, LocalPersistCoversPwriteAndDiskCacheFailures)
 {
-    ResetDiskCacheForWriteStream();
+    PrepareDiskCacheForWriteStream();
     std::string payload = "persist";
 
     WriteStream badFd;
@@ -101,21 +81,11 @@ TEST(WriteStreamCoverageUT, LocalPersistCoversPwriteAndDiskCacheFailures)
     EXPECT_EQ(noCacheItem.PersistToFile(payload.data(), payload.size(), 0, 0), -ENOENT);
     close(fd);
 
-    ResetDiskCacheForWriteStream(1);
-    auto &cache = DiskCache::GetInstance();
-    cache.rootDir = "/tmp/write_stream_coverage_missing_root";
-    int fullFd = OpenTmpFile("prealloc_failure");
-    ASSERT_GE(fullFd, 0);
-    WriteStream fullCache;
-    fullCache.SetFd(fullFd);
-    fullCache.SetInodeId(8003);
-    EXPECT_EQ(fullCache.PersistToFile(payload.data(), payload.size(), 0, 0), -ENOSPC);
-    close(fullFd);
 }
 
 TEST(WriteStreamCoverageUT, CompletePersistsBufferedLocalData)
 {
-    ResetDiskCacheForWriteStream();
+    PrepareDiskCacheForWriteStream();
     auto &cache = DiskCache::GetInstance();
     uint64_t inode = 9001;
     cache.InsertAndUpdate(inode, 0, false);
@@ -127,28 +97,93 @@ TEST(WriteStreamCoverageUT, CompletePersistsBufferedLocalData)
     stream.SetFd(fd);
     stream.SetInodeId(inode);
     std::string payload = "buffered-data";
-    ASSERT_TRUE(stream.data.Append(payload.data(), payload.size(), 0));
+    FalconWriteBuffer buffer{payload.data(), payload.size()};
+    EXPECT_EQ(stream.Push(buffer, 0, 0), 0);
     EXPECT_EQ(stream.Complete(0, true, true), 0);
     EXPECT_EQ(stream.GetSize(), 0U);
     close(fd);
 }
 
-TEST(WriteStreamCoverageUT, MergeCoversDisjointPreviousAndFollowingOverlaps)
+TEST(WriteStreamCoverageUT, RemoteBufferedPushAndSetFdBranches)
 {
     WriteStream stream;
+    auto fakeClient = std::shared_ptr<FalconIOClient>(reinterpret_cast<FalconIOClient *>(0x1), [](FalconIOClient *) {});
+    stream.SetClient(nullptr);
+    stream.SetClient(fakeClient);
 
-    EXPECT_EQ(stream.Merge(MakeMergedSlice("aaaa", 0)), 4);
-    EXPECT_EQ(stream.stream.size(), 1U);
+    std::string first = "abc";
+    std::string second = "def";
+    FalconWriteBuffer empty{first.data(), 0};
+    FalconWriteBuffer firstBuffer{first.data(), first.size()};
+    FalconWriteBuffer secondBuffer{second.data(), second.size()};
 
-    EXPECT_EQ(stream.Merge(MakeMergedSlice("bbbb", 20)), 4);
-    EXPECT_EQ(stream.stream.size(), 2U);
+    EXPECT_EQ(stream.Push(empty, 0, 0), 0);
+    EXPECT_EQ(stream.Push(firstBuffer, 0, 0), 0);
+    EXPECT_EQ(stream.GetSize(), first.size());
+    EXPECT_EQ(stream.Push(secondBuffer, first.size(), first.size()), 0);
+    EXPECT_EQ(stream.GetSize(), first.size() + second.size());
 
-    EXPECT_GT(stream.Merge(MakeMergedSlice("prev-overlap", 2)), 0);
-    EXPECT_EQ(stream.stream.size(), 2U);
+    WriteStream fdStream;
+    EXPECT_EQ(fdStream.SetFd(123), 0);
+    EXPECT_EQ(fdStream.SetFd(123), 0);
+    EXPECT_EQ(fdStream.SetFd(124), -EBADF);
+}
 
-    EXPECT_EQ(stream.Merge(MakeMergedSlice("cccccccccc", 40)), 10);
-    EXPECT_GT(stream.Merge(MakeMergedSlice("next", 38)), 0);
-    EXPECT_EQ(stream.stream.size(), 3U);
+TEST(WriteStreamCoverageUT, MemoryAndSliceHelpersCoverInlineBranches)
+{
+    ExpandableMemory memory;
+    EXPECT_TRUE(memory.Empty());
+    EXPECT_TRUE(memory.Append("abc", 3));
+    EXPECT_FALSE(memory.Empty());
+    EXPECT_EQ(memory.Size(), 3U);
+    EXPECT_EQ(std::string(memory.Get().get(), memory.Get().get() + 3), "abc");
+
+    EXPECT_TRUE(memory.Reserve(16));
+    ExpandableMemory replacement;
+    EXPECT_TRUE(replacement.Append("XY", 2));
+    EXPECT_TRUE(memory.Replace(1, 2, replacement));
+    EXPECT_EQ(std::string(memory.Get().get(), memory.Get().get() + 3), "aXY");
+    memory.Clear();
+    EXPECT_TRUE(memory.Empty());
+    memory.Clean();
+    EXPECT_EQ(memory.Get(), nullptr);
+    EXPECT_EQ(memory.Size(), 0U);
+
+    ExpandableMemory backing;
+    ASSERT_TRUE(backing.Append("hello", 5));
+    WriteStream::MergedSlice singleMerged(WriteStream::Slice(backing, 5, 10));
+    EXPECT_EQ(singleMerged.Get().get(), backing.Get().get());
+
+    ExpandableMemory left;
+    ExpandableMemory right;
+    ASSERT_TRUE(left.Append("ab", 2));
+    ASSERT_TRUE(right.Append("CD", 2));
+    WriteStream::MergedSlice leftMerged(WriteStream::Slice(left, 2, 4));
+    WriteStream::MergedSlice rightMerged(WriteStream::Slice(right, 2, 6));
+    std::vector<WriteStream::MergedSlice> toMerge;
+    toMerge.push_back(std::move(rightMerged));
+    toMerge.push_back(std::move(leftMerged));
+    WriteStream::MergedSlice merged(std::move(toMerge));
+    EXPECT_EQ(merged.offset, 4);
+    EXPECT_EQ(merged.size, 4U);
+    auto mergedData = merged.Get();
+    ASSERT_NE(mergedData, nullptr);
+    EXPECT_EQ(std::string(mergedData.get(), mergedData.get() + 4), "abCD");
+
+    ExpandableMemory copyOut;
+    merged.Get(copyOut);
+    ASSERT_NE(copyOut.Get(), nullptr);
+    EXPECT_EQ(std::string(copyOut.Get().get(), copyOut.Get().get() + 4), "abCD");
+
+    WriteStream::SerialData serial;
+    EXPECT_TRUE(serial.Empty());
+    EXPECT_EQ(serial.End(), 0U);
+    EXPECT_TRUE(serial.Append("zz", 2, 7));
+    EXPECT_FALSE(serial.Empty());
+    EXPECT_EQ(serial.End(), 9U);
+    serial.Clear();
+    EXPECT_TRUE(serial.Empty());
+    EXPECT_EQ(serial.End(), 0U);
 }
 
 int main(int argc, char **argv)

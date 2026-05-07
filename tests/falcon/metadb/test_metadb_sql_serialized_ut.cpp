@@ -303,6 +303,28 @@ TEST(MetadbCoverageUT, AdminSqlCacheAndShardFlow)
     GTEST_SKIP() << "metadb admin SQL flow failed after retries, likely due unstable service state";
 }
 
+TEST(MetadbCoverageUT, AdminSqlMoveShardErrorBranches)
+{
+    SqlConnections connections;
+    if (!PrepareSqlConnections(&connections)) {
+        GTEST_SKIP() << "local-run SQL endpoints are not ready";
+    }
+
+    int function_count = 0;
+    ASSERT_TRUE(connections.cn->ScalarInt("SELECT count(*) FROM pg_proc WHERE proname = 'falcon_move_shard'",
+                                          &function_count))
+        << connections.cn->ErrorMessage();
+    if (function_count == 0) {
+        GTEST_SKIP() << "falcon_move_shard is not installed in this extension build";
+    }
+
+    EXPECT_FALSE(connections.cn->ExecOk("SELECT falcon_move_shard(-2147483648, 0)"));
+    EXPECT_FALSE(connections.cn->ExecOk(
+        "SELECT falcon_move_shard("
+        "(SELECT max(range_point)::int FROM falcon_shard_table), "
+        "(SELECT server_id FROM falcon_shard_table ORDER BY range_point DESC LIMIT 1))"));
+}
+
 
 TEST(MetadbCoverageUT, SerializedDirectoryFileAttributeFlow)
 {

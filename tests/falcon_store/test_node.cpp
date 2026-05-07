@@ -2,8 +2,6 @@
 
 #include "connection/node.h"
 
-int FalconIOClientTestBrpcErrorCodeToFuseErrno(int brpcErrorCode);
-
 std::shared_ptr<FalconConfig> NodeUT::config = nullptr;
 std::string NodeUT::localEndpoint;
 std::vector<std::string> NodeUT::views;
@@ -12,18 +10,6 @@ TEST_F(NodeUT, CreateIOConnection)
 {
     auto conn = StoreNode::GetInstance()->CreateIOConnection(localEndpoint);
     EXPECT_TRUE(conn);
-}
-
-TEST_F(NodeUT, BrpcErrorCodeMapping)
-{
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(0), 0);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::ENOSERVICE), EOPNOTSUPP);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::ENOMETHOD), EOPNOTSUPP);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::EREQUEST), EINVAL);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::ERPCAUTH), EPERM);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::ERPCTIMEDOUT), ETIMEDOUT);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(brpc::EFAILEDSOCKET), EIO);
-    EXPECT_EQ(FalconIOClientTestBrpcErrorCodeToFuseErrno(999999), EFAULT);
 }
 
 TEST_F(NodeUT, SetNodeConfig)

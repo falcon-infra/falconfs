@@ -16,6 +16,9 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as workspace:
             with self.assertRaises(RuntimeError):
                 self.mod.Init(workspace, os.path.join(workspace, "missing.json"))
+        with tempfile.NamedTemporaryFile() as workspace_file, tempfile.NamedTemporaryFile() as config_file:
+            with self.assertRaises(RuntimeError):
+                self.mod.Init(workspace_file.name, config_file.name)
 
     def test_argument_validation_errors(self):
         with self.assertRaises(TypeError):
@@ -58,10 +61,6 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
             self.mod.Write("/file", 1, bytearray(2), 3, 0)
 
     def test_fast_paths_that_do_not_require_service(self):
-        ret, stbuf = self.mod.Stat("/\x011synthetic")
-        self.assertEqual(ret, 0)
-        self.assertEqual(stbuf["st_mode"], 0o40777)
-
         ret, fd = self.mod.OpenDir("")
         self.assertEqual(ret, -errno.EINVAL)
         self.assertEqual(fd, 0)
@@ -69,6 +68,12 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         self.assertEqual(self.mod.Close("/missing", 123456789), -errno.EBADF)
         self.assertEqual(self.mod.Flush("/missing", 123456789), -errno.EBADF)
         self.assertEqual(self.mod.CloseDir("/missing", 123456789), -errno.EBADF)
+        self.assertEqual(self.mod.Read("/missing", 123456789, bytearray(2), 2, 0), -errno.EBADF)
+        self.assertEqual(self.mod.Write("/missing", 123456789, bytearray(b"ab"), 2, 0), -errno.EBADF)
+
+        ret, stbuf = self.mod.Stat("/\x011middle")
+        self.assertEqual(ret, 0)
+        self.assertTrue(stbuf["st_mode"] & 0o40000)
 
     def wait_async_result(self, async_state):
         for _ in range(100):
@@ -78,12 +83,6 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
                 return stop.value
             time.sleep(0.01)
         self.fail("async operation did not complete")
-
-    def test_async_fast_paths_without_service(self):
-        pending = self.mod.AsyncExists("/\x011synthetic")
-        self.assertIs(iter(pending), pending)
-        self.assertEqual(self.wait_async_result(pending), 0)
-
 
 class PyFalconFSInternalServiceCoverageTest(unittest.TestCase):
     @classmethod

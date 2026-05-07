@@ -59,34 +59,6 @@ class FalconStore {
     int GetInitStatus();
     int InitStore();
 
-#ifdef UNIT_TEST
-    int TestPathToNodeId(std::string path) { return PathToNodeId(path); }
-    void TestAllocNodeId(OpenInstance *openInstance) { AllocNodeId(openInstance); }
-    void TestSetPlacementOptions(bool inference, int pathLevel, bool preferLocal)
-    {
-        isInference = inference;
-        parentPathLevel = pathLevel;
-        toLocal = preferLocal;
-    }
-    void TestSetStorage(Storage *testStorage, bool persist)
-    {
-        storage = testStorage;
-        persistToStorage = persist;
-    }
-    int TestDownLoadFromStorage(OpenInstance *openInstance, bool isSync, bool toBuffer = false)
-    {
-        return DownLoadFromStorage(openInstance, isSync, toBuffer);
-    }
-    int TestFlushToStorage(std::string path, uint64_t inodeId) { return FlushToStorage(path, inodeId); }
-    int TestRandomRead(FalconReadBuffer buf, OpenInstance *openInstance, off_t offset)
-    {
-        return RandomRead(buf, openInstance, offset);
-    }
-    void TestSetDataPath(std::string path) { dataPath = std::move(path); }
-    bool TestConnectionError(int err) { return ConnectionError(err); }
-    bool TestIoError(int err) { return IoError(err); }
-#endif
-
   private:
     /*-----------------read-----------------*/
     bool StartPreReadThreaded(OpenInstance *openInstance);

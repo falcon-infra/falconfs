@@ -201,9 +201,7 @@ int PGConnection::stopCount = 0;
 std::shared_ptr<BaseWorkerTask> PGConnection::lastTask;
 #endif
 
-#define private public
 #include "../../falcon/connection_pool/pg_connection_pool.cpp"
-#undef private
 #include "../../falcon/connection_pool/falcon_worker_task.cpp"
 
 static std::vector<char> MakeSerializedPlainCommand(const char *command)
@@ -346,39 +344,6 @@ class FakeMetaServiceJob : public BaseMetaServiceJob {
     std::vector<char> requestData_;
 };
 
-TEST(ConnectionPoolCoverageUT, ResolvesBatchSupportedAndUnsupportedServiceTypes)
-{
-    FakeMetaServiceJob mkdirJob(FalconMetaServiceType::MKDIR, true);
-    int serviceType = -1;
-    EXPECT_EQ(FalconConnectionPoolTestResolveBatchType(&mkdirJob, &serviceType),
-              static_cast<int>(FalconBatchServiceType::MKDIR));
-    EXPECT_EQ(serviceType, static_cast<int>(FalconMetaServiceType::MKDIR));
-
-    FakeMetaServiceJob plainJob(FalconMetaServiceType::PLAIN_COMMAND, true);
-    EXPECT_EQ(FalconConnectionPoolTestResolveBatchType(&plainJob, &serviceType),
-              static_cast<int>(FalconBatchServiceType::NOT_SUPPORT));
-    EXPECT_EQ(serviceType, static_cast<int>(FalconMetaServiceType::PLAIN_COMMAND));
-
-    FakeMetaServiceJob nonBatchCreateJob(FalconMetaServiceType::CREATE, false);
-    EXPECT_EQ(FalconConnectionPoolTestResolveBatchType(&nonBatchCreateJob, nullptr),
-              static_cast<int>(FalconBatchServiceType::NOT_SUPPORT));
-}
-
-TEST(ConnectionPoolCoverageUT, AdjustWaitTimeHonorsConfigAndBounds)
-{
-    FalconConnectionPoolWaitAdjust = 0;
-    EXPECT_EQ(FalconConnectionPoolTestAdjustWaitTime(64, 0), 64);
-
-    FalconConnectionPoolWaitAdjust = 1;
-    FalconConnectionPoolBatchSize = 4;
-    FalconConnectionPoolWaitMin = 2;
-    FalconConnectionPoolWaitMax = 100;
-
-    EXPECT_EQ(FalconConnectionPoolTestAdjustWaitTime(64, 8), 100);
-    EXPECT_EQ(FalconConnectionPoolTestAdjustWaitTime(64, 9), 32);
-    EXPECT_EQ(FalconConnectionPoolTestAdjustWaitTime(3, 9), 2);
-}
-
 TEST(ConnectionPoolCoverageUT, WorkerTaskDestructorsFailAndCompleteOwnedJobs)
 {
     FakeMetaServiceJob::ResetCounters();
@@ -405,82 +370,52 @@ TEST(ConnectionPoolCoverageUT, WorkerTaskDestructorsFailAndCompleteOwnedJobs)
     EXPECT_EQ(FakeMetaServiceJob::failedCount, 3);
 }
 
-TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
+TEST(ConnectionPoolCoverageUT, MapsMetaServiceTypesToBatchServiceTypes)
 {
-    PGConnection::Reset();
-    PGConnectionPool &pool = PGConnectionPool::GetInstance();
-
-    ASSERT_TRUE(pool.Init(55510, "tester", 2, 20, 40));
-    EXPECT_EQ(PGConnection::constructed, 2);
-
-    pool.Destroy();
-    EXPECT_EQ(PGConnection::stopCount, 2);
-    EXPECT_EQ(PGConnection::destructed, 2);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::MKDIR), FalconBatchServiceType::MKDIR);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::CREATE), FalconBatchServiceType::CREATE);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::STAT), FalconBatchServiceType::STAT);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::UNLINK), FalconBatchServiceType::UNLINK);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::OPEN), FalconBatchServiceType::OPEN);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::CLOSE), FalconBatchServiceType::CLOSE);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::KV_PUT), FalconBatchServiceType::KV_PUT);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::KV_GET), FalconBatchServiceType::KV_GET);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::KV_DEL), FalconBatchServiceType::KV_DEL);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::SLICE_PUT), FalconBatchServiceType::SLICE_PUT);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::SLICE_GET), FalconBatchServiceType::SLICE_GET);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::SLICE_DEL), FalconBatchServiceType::SLICE_DEL);
+    EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::PLAIN_COMMAND),
+              FalconBatchServiceType::NOT_SUPPORT);
 }
 
-TEST(ConnectionPoolCoverageUT, DispatchAndDequeueExecuteBatchAndSingleJobs)
+TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
 {
     PGConnection::Reset();
     FakeMetaServiceJob::ResetCounters();
     PGConnectionPool &pool = PGConnectionPool::GetInstance();
 
-    auto drainQueue = [](auto &queue) {
-        std::vector<BaseMetaServiceJob *> drained;
-        auto collect = [&drained](BaseMetaServiceJob *job) {
-            drained.emplace_back(job);
-        };
-        while (queue.dequeue_bulk(collect, 16) > 0) {
-        }
-        for (auto *job : drained) {
-            delete job;
-        }
-    };
-    for (int i = 0; i <= static_cast<int>(FalconBatchServiceType::NOT_SUPPORT); ++i) {
-        drainQueue(pool.supportBatchTaskList[i].jobList);
-    }
-    {
-        std::unique_lock<std::mutex> lock(pool.connPoolMutex);
-        while (!pool.connPool.empty()) {
-            pool.connPool.pop();
-        }
-    }
+    ASSERT_TRUE(pool.Init(55510, "tester", 1, 20, 40));
+    EXPECT_EQ(PGConnection::constructed, 1);
 
-    FakeMetaServiceJob emptyJob(FalconMetaServiceType::MKDIR, true, true);
-    pool.DispatchMetaServiceJob(&emptyJob);
-    EXPECT_EQ(pool.supportBatchTaskList[static_cast<int>(FalconBatchServiceType::MKDIR)].jobList.size_approx(), 0U);
+    auto *emptyJob = new FakeMetaServiceJob(FalconMetaServiceType::CREATE, true, true);
+    pool.DispatchMetaServiceJob(emptyJob);
+    delete emptyJob;
 
-    auto *batchJobA = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true);
-    auto *batchJobB = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true);
-    pool.DispatchMetaServiceJob(batchJobA);
-    pool.DispatchMetaServiceJob(batchJobB);
-    EXPECT_GE(batchJobA->statArrayIndex, -1);
-
-    PGConnection batchConn(nullptr, "127.0.0.1", 55510, "tester");
-    {
-        std::unique_lock<std::mutex> lock(pool.connPoolMutex);
-        pool.connPool.push(&batchConn);
-    }
-    pool.cvPoolNotEmpty.notify_one();
-    EXPECT_EQ(pool.BatchDequeueExec(2, static_cast<int>(FalconBatchServiceType::MKDIR)), 2);
-    EXPECT_EQ(PGConnection::execCount, 1);
-    PGConnection::lastTask.reset();
-    EXPECT_EQ(FakeMetaServiceJob::doneCount, 2);
-
-    auto *singleJob = new FakeMetaServiceJob(FalconMetaServiceType::PLAIN_COMMAND, false);
+    auto *batchJob = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true);
+    auto *singleJob = new FakeMetaServiceJob(FalconMetaServiceType::STAT, false);
+    pool.DispatchMetaServiceJob(batchJob);
     pool.DispatchMetaServiceJob(singleJob);
-    PGConnection singleConn(nullptr, "127.0.0.1", 55510, "tester");
-    {
-        std::unique_lock<std::mutex> lock(pool.connPoolMutex);
-        pool.connPool.push(&singleConn);
-    }
-    pool.cvPoolNotEmpty.notify_one();
-    EXPECT_EQ(pool.SingleDequeueExec(1), 1);
-    EXPECT_EQ(PGConnection::execCount, 2);
-    PGConnection::lastTask.reset();
-    EXPECT_EQ(FakeMetaServiceJob::doneCount, 3);
 
-    EXPECT_EQ(pool.BatchDequeueExec(1, static_cast<int>(FalconBatchServiceType::MKDIR)), 0);
-    EXPECT_EQ(pool.SingleDequeueExec(1), 0);
+    for (int i = 0; i < 200 && PGConnection::execCount < 2; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_GE(PGConnection::execCount, 2);
+    EXPECT_NE(PGConnection::lastTask, nullptr);
+
+    PGConnection::lastTask.reset();
+    pool.Destroy();
+    EXPECT_EQ(PGConnection::stopCount, 1);
+    EXPECT_EQ(PGConnection::destructed, 1);
 }
 
 TEST(ConnectionPoolCoverageUT, WorkerTasksRejectInvalidInputs)

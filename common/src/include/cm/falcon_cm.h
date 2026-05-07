@@ -74,12 +74,6 @@ class FalconCM {
         InitWatcher(nullptr, type, state, nullptr, this);
     }
     void ResetState() { connectionStatus = ZOO_NOTCONNECTED; }
-    void TestSetNodeForReUpload(int testNodeId, const std::string &testNodeInfo, StoreNodeStatus status)
-    {
-        nodeId = testNodeId;
-        nodeInfo = testNodeInfo;
-        localNodeStatus = status;
-    }
     #endif
 
   private:

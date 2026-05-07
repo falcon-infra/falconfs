@@ -76,6 +76,41 @@ target_include_directories(PGConnectionCoverageUT PUBLIC
 
 gtest_discover_tests(PGConnectionCoverageUT)
 
+# ==================== FalconErrorCodeCoverageUT =================
+add_executable(FalconErrorCodeCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_error_code_coverage.cpp
+    ${PROJECT_SOURCE_DIR}/falcon/utils/error_code.c
+)
+target_link_libraries(FalconErrorCodeCoverageUT
+    gtest
+    gtest_main
+)
+
+target_include_directories(FalconErrorCodeCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PROJECT_SOURCE_DIR}/remote_connection_def
+    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+gtest_discover_tests(FalconErrorCodeCoverageUT)
+
+# ==================== HcomMetaServiceInterfaceCoverageUT =================
+add_executable(HcomMetaServiceInterfaceCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_hcom_meta_service_interface_coverage.cpp
+)
+target_link_libraries(HcomMetaServiceInterfaceCoverageUT
+    gtest
+    gtest_main
+)
+
+target_include_directories(HcomMetaServiceInterfaceCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+)
+
+gtest_discover_tests(HcomMetaServiceInterfaceCoverageUT)
+
 # ==================== PerfCounterCoverageUT =================
 add_executable(PerfCounterCoverageUT
     ${PROJECT_SOURCE_DIR}/tests/falcon/test_perf_counter_coverage.cpp
