@@ -2,6 +2,7 @@ import errno
 import importlib
 import json
 import os
+import socket
 import tempfile
 import time
 import unittest
@@ -68,6 +69,9 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         self.assertEqual(self.mod.Close("/missing", 123456789), -errno.EBADF)
         self.assertEqual(self.mod.Flush("/missing", 123456789), -errno.EBADF)
         self.assertEqual(self.mod.CloseDir("/missing", 123456789), -errno.EBADF)
+        ret, entries = self.mod.ReadDir("/missing", 123456789)
+        self.assertEqual(ret, -errno.EBADF)
+        self.assertEqual(entries, [])
         self.assertEqual(self.mod.Read("/missing", 123456789, bytearray(2), 2, 0), -errno.EBADF)
         self.assertEqual(self.mod.Write("/missing", 123456789, bytearray(b"ab"), 2, 0), -errno.EBADF)
 
@@ -91,6 +95,14 @@ class PyFalconFSInternalServiceCoverageTest(unittest.TestCase):
         if os.environ.get("FALCON_PY_SERVICE_COVERAGE") != "1":
             raise unittest.SkipTest("Python service coverage is disabled")
 
+        server_ip = os.environ.get("SERVER_IP", "127.0.0.1")
+        server_port = int(os.environ.get("SERVER_PORT", "55510"))
+        try:
+            with socket.create_connection((server_ip, server_port), timeout=1):
+                pass
+        except OSError as exc:
+            raise unittest.SkipTest("Falcon service is unavailable") from exc
+
         cls.workspace = tempfile.TemporaryDirectory()
         cls.config_file = os.path.join(cls.workspace.name, "config.json")
         config = {
@@ -107,8 +119,8 @@ class PyFalconFSInternalServiceCoverageTest(unittest.TestCase):
                 "falcon_node_id": 0,
                 "falcon_cluster_view": ["127.0.0.1:56039", "0.0.0.0:56039"],
                 "falcon_thread_num": 4,
-                "falcon_server_ip": os.environ.get("SERVER_IP", "127.0.0.1"),
-                "falcon_server_port": os.environ.get("SERVER_PORT", "55510"),
+                "falcon_server_ip": server_ip,
+                "falcon_server_port": str(server_port),
                 "falcon_async": False,
                 "falcon_persist": False,
                 "falcon_eviction": 0.1,

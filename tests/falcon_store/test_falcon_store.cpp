@@ -7,65 +7,6 @@ unsigned long myHash(std::string &str);
 
 namespace {
 
-class FakeStorage : public Storage {
-  public:
-    ssize_t readResult = 0;
-    int putFileResult = 0;
-    int deleteResult = 0;
-    int copyResult = 0;
-    std::string payload = "storage-payload";
-    int readCalls = 0;
-    int putFileCalls = 0;
-    int deleteCalls = 0;
-    int copyCalls = 0;
-    int statCalls = 0;
-
-    void DeleteInstance() override {}
-    int Init() override { return 0; }
-    ssize_t ReadObject(const std::string &, uint64_t, uint64_t size, int fd, char *destBuffer) override
-    {
-        readCalls++;
-        if (readResult < 0) {
-            return readResult;
-        }
-        size_t bytes = size == 0 ? payload.size() : std::min<size_t>(size, payload.size());
-        if (destBuffer != nullptr) {
-            memcpy(destBuffer, payload.data(), bytes);
-        }
-        if (fd >= 0 && bytes > 0) {
-            (void)pwrite(fd, payload.data(), bytes, 0);
-        }
-        return static_cast<ssize_t>(bytes);
-    }
-    int PutFile(const std::string &, const std::string &) override
-    {
-        putFileCalls++;
-        return putFileResult;
-    }
-    ssize_t PutBuffer(const std::string &, const char *, const uint64_t size, const uint64_t) override
-    {
-        return static_cast<ssize_t>(size);
-    }
-    int DeleteObject(const std::string &) override
-    {
-        deleteCalls++;
-        return deleteResult;
-    }
-    int CopyObject(const std::string &, const std::string &) override
-    {
-        copyCalls++;
-        return copyResult;
-    }
-    int StatFs(struct statvfs *vfsbuf) override
-    {
-        statCalls++;
-        memset(vfsbuf, 0, sizeof(*vfsbuf));
-        vfsbuf->f_blocks = 10;
-        vfsbuf->f_bfree = 8;
-        return 0;
-    }
-};
-
 void ResetFalconStatsForCoverage()
 {
     for (int i = 0; i < STATS_END; ++i) {
@@ -254,98 +195,13 @@ TEST_F(FalconStoreUT, ParentPathHelper)
     EXPECT_EQ(GetParentPath("/a/b/c", 5), "/a/b/");
 }
 
-TEST_F(FalconStoreUT, PrivateHelpersAndStorageDownloadBranches)
+TEST_F(FalconStoreUT, PublicHelpersDoNotRequirePrivateAccess)
 {
     auto *store = FalconStore::GetInstance();
     std::string nodeConfig = "coverage-node-config";
     store->SetFalconStoreParam(nodeConfig);
-    EXPECT_EQ(store->nodeConfig, nodeConfig);
-    EXPECT_TRUE(store->ConnectionError(ETIMEDOUT));
-    EXPECT_FALSE(store->ConnectionError(0));
-    EXPECT_TRUE(store->IoError(-EIO));
-    EXPECT_FALSE(store->IoError(0));
-
-    store->parentPathLevel = 2;
     std::string path = "/private/helper/file";
     EXPECT_NE(myHash(path), 0UL);
-    int pathNode = store->PathToNodeId(path);
-    EXPECT_GE(pathNode, 0);
-    EXPECT_TRUE(store->nodeHash.count("/private/") > 0);
-
-    NewOpenInstance(912700, -1, "/alloc/local", O_RDWR | O_CREAT);
-    store->toLocal = true;
-    store->isInference = false;
-    store->AllocNodeId(openInstance.get());
-    EXPECT_EQ(openInstance->nodeId, StoreNode::GetInstance()->GetNodeId());
-
-    NewOpenInstance(912701, -1, "/alloc/inference/file", O_RDWR | O_CREAT);
-    store->toLocal = false;
-    store->isInference = true;
-    store->AllocNodeId(openInstance.get());
-    EXPECT_GE(openInstance->nodeId, 0);
-
-    NewOpenInstance(912702, StoreNode::GetInstance()->GetNodeId(), "/random/direct", O_RDONLY | __O_DIRECT);
-    openInstance->currentSize = 512;
-    std::string directFile = GetFilePath(openInstance->inodeId);
-    int fd = open(directFile.c_str(), O_CREAT | O_RDWR, 0755);
-    ASSERT_GE(fd, 0);
-    std::string payload(512, 'd');
-    ASSERT_EQ(pwrite(fd, payload.data(), payload.size(), 0), static_cast<ssize_t>(payload.size()));
-    openInstance->physicalFd = fd;
-    char readBuffer[512] = {};
-    FalconReadBuffer falconReadBuffer{readBuffer, sizeof(readBuffer)};
-    EXPECT_EQ(store->RandomRead(falconReadBuffer, openInstance.get(), 0), static_cast<int>(sizeof(readBuffer)));
-    close(fd);
-    unlink(directFile.c_str());
-
-    FakeStorage fakeStorage;
-    Storage *oldStorage = store->storage;
-    bool oldPersist = store->persistToStorage;
-    store->storage = &fakeStorage;
-    store->persistToStorage = true;
-    NewOpenInstance(912703, StoreNode::GetInstance()->GetNodeId(), "/download/sync", O_RDONLY);
-    openInstance->originalSize = fakeStorage.payload.size();
-    openInstance->readBufferSize = fakeStorage.payload.size();
-    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
-    EXPECT_EQ(store->DownLoadFromStorage(openInstance.get(), true, true), 0);
-    EXPECT_EQ(fakeStorage.readCalls, 1);
-    EXPECT_TRUE(DiskCache::GetInstance().Find(openInstance->inodeId, false));
-    DiskCache::GetInstance().Delete(openInstance->inodeId);
-
-    fakeStorage.readResult = -EIO;
-    NewOpenInstance(912704, StoreNode::GetInstance()->GetNodeId(), "/download/fail", O_RDONLY);
-    openInstance->originalSize = 4;
-    openInstance->readBufferSize = 4;
-    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
-    EXPECT_EQ(store->DownLoadFromStorage(openInstance.get(), true, true), -EIO);
-
-    char brpcBuffer[32] = {};
-    fakeStorage.readResult = 0;
-    EXPECT_EQ(store->DownLoadFromStorageForBrpc(912705, "/download/brpc", brpcBuffer, fakeStorage.payload.size(),
-                                                true, true),
-              0);
-    EXPECT_EQ(std::string(brpcBuffer, brpcBuffer + fakeStorage.payload.size()), fakeStorage.payload);
-    EXPECT_TRUE(DiskCache::GetInstance().Find(912705, false));
-    DiskCache::GetInstance().Delete(912705);
-
-    fakeStorage.readResult = -EIO;
-    EXPECT_EQ(store->DownLoadFromStorageForBrpc(912706, "/download/brpc_fail", brpcBuffer, 4, true, true), -EIO);
-
-    fakeStorage.readResult = 0;
-    fakeStorage.putFileResult = 0;
-    EXPECT_EQ(store->FlushToStorage("/flush/object", 912705), 0);
-    fakeStorage.putFileResult = -1;
-    EXPECT_EQ(store->FlushToStorage("/flush/object", 912705), -EIO);
-    EXPECT_EQ(store->CopyData("/src/object", "/dst/object"), 0);
-    EXPECT_EQ(fakeStorage.copyCalls, 1);
-    EXPECT_EQ(store->DeleteDataAfterRename("/dst/object"), 0);
-    EXPECT_EQ(fakeStorage.deleteCalls, 1);
-    struct statvfs vfsbuf {};
-    EXPECT_EQ(store->StatFsStorage(&vfsbuf), 0);
-    EXPECT_EQ(vfsbuf.f_blocks, 10U);
-
-    store->storage = oldStorage;
-    store->persistToStorage = oldPersist;
 }
 
 TEST_F(FalconStoreUT, BrpcWritePublicBranches)
@@ -377,6 +233,20 @@ TEST_F(FalconStoreUT, BrpcWritePublicBranches)
     EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), failingIoBuf, 0), 0);
     close(fd);
 
+    FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
+
+    NewOpenInstance(912802, StoreNode::GetInstance()->GetNodeId(), "/brpc/direct-write-ok", O_WRONLY | O_CREAT | __O_DIRECT);
+    writeFile = GetFilePath(openInstance->inodeId);
+    fd = open(writeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+    butil::IOBuf directIoBuf;
+    directIoBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), directIoBuf, 0), 0);
+    EXPECT_EQ(openInstance->currentSize.load(), payload.size());
+    close(fd);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
     FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
 }
 

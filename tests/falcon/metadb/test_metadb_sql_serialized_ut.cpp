@@ -13,13 +13,25 @@ struct SqlConnections {
 
 bool PrepareSqlConnections(SqlConnections *connections)
 {
+    static bool service_checked = false;
+    static bool service_ready = false;
+    if (service_checked && !service_ready) {
+        return false;
+    }
+
     constexpr int kRetry = 2;
     for (int attempt = 0; attempt < kRetry; ++attempt) {
-        if (!local_run_test::EnsureConfiguredServer()) {
+        if (!local_run_test::WaitForEndpoint(local_run_test::GetEnvOrDefault("SERVER_IP", "127.0.0.1"),
+                                             local_run_test::GetIntEnvOrDefault("SERVER_PORT", 55500),
+                                             1)) {
+            service_checked = true;
+            service_ready = false;
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
         if (!InitClientOrSkip()) {
+            service_checked = true;
+            service_ready = false;
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
@@ -32,6 +44,8 @@ bool PrepareSqlConnections(SqlConnections *connections)
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
+        service_checked = true;
+        service_ready = true;
         return true;
     }
     return false;

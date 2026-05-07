@@ -4,6 +4,8 @@
 #include "cm/falcon_cm.h"
 #include "conf/falcon_config.h"
 #include "conf/falcon_property_key.h"
+#include "falcon_code.h"
+#include "log/logging.h"
 #include "stats/falcon_stats.h"
 #include "thread_pool/thread_pool.h"
 
@@ -18,8 +20,12 @@
 #include <future>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
+
+#include <utime.h>
+#include <unistd.h>
 
 namespace {
 
@@ -748,6 +754,65 @@ TEST(CommonThreadPoolUT, RunsTasksAndStopsCleanly)
     zeroThreadPool.Stop();
 }
 
+TEST(CommonLoggingUT, PublicLogInitializationAndCleanupBranches)
+{
+    auto temp_root = std::filesystem::temp_directory_path() / ("falcon_log_cov_" + std::to_string(getpid()));
+    std::filesystem::remove_all(temp_root);
+    std::filesystem::create_directories(temp_root);
+
+    FalconLog missingLog;
+    EXPECT_NE(missingLog.InitLog(LOG_INFO, STD_LOGGER, (temp_root / "missing").string()), FALCON_SUCCESS);
+
+    FalconLog invalidGlog;
+    EXPECT_NE(invalidGlog.InitLog(LOG_INFO, GLOGGER, temp_root.string(), "", 0), FALCON_SUCCESS);
+
+    std::vector<std::tuple<FalconLogLevel, std::string, int>> externalMessages;
+    FalconLog::SetExternalLogger([&](FalconLogLevel level, const char *file, int line, const char *message) {
+        externalMessages.emplace_back(level, file, line);
+        EXPECT_NE(std::string(message).find("external-message"), std::string::npos);
+    });
+    FALCON_LOG_CM("external.cc", 77, LOG_WARNING) << "external-message";
+    ASSERT_EQ(externalMessages.size(), 1U);
+    EXPECT_EQ(std::get<0>(externalMessages.front()), LOG_WARNING);
+    EXPECT_EQ(std::get<1>(externalMessages.front()), "external.cc");
+    EXPECT_EQ(std::get<2>(externalMessages.front()), 77);
+
+    auto old_file = temp_root / "falcon.old";
+    auto old_file2 = temp_root / "falcon.old2";
+    auto non_falcon_file = temp_root / "other.log";
+    auto link_target = temp_root / "falcon.current";
+    auto link_path = temp_root / "falcon.INFO";
+    std::ofstream(old_file) << "old";
+    std::ofstream(old_file2) << "old2";
+    std::ofstream(non_falcon_file) << "other";
+    std::ofstream(link_target) << "current";
+    std::filesystem::create_symlink(link_target, link_path);
+
+    struct utimbuf old_time {};
+    old_time.actime = 1;
+    old_time.modtime = 1;
+    ASSERT_EQ(utime(old_file.c_str(), &old_time), 0);
+    ASSERT_EQ(utime(old_file2.c_str(), &old_time), 0);
+
+    FalconLog stdLog;
+    ASSERT_EQ(stdLog.InitLog(LOG_TRACE, STD_LOGGER, temp_root.string(), "falcon", 1, 1, 0), FALCON_SUCCESS);
+    EXPECT_EQ(FalconLog::GetFalconLogLevel(), LOG_TRACE);
+    EXPECT_TRUE(FalconLog("common.cc", 12, LOG_TRACE).IsEnabled());
+    FalconLog::SetFalconLogLevel(LOG_ERROR);
+    EXPECT_FALSE(FalconLog("common.cc", 12, LOG_INFO).IsEnabled());
+
+    for (int i = 0; i < 30 && (std::filesystem::exists(old_file) || std::filesystem::exists(old_file2)); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    EXPECT_FALSE(std::filesystem::exists(old_file));
+    EXPECT_FALSE(std::filesystem::exists(old_file2));
+    EXPECT_TRUE(std::filesystem::exists(non_falcon_file));
+    EXPECT_TRUE(std::filesystem::exists(link_path));
+
+    FalconLog::SetFalconLogLevel(LOG_INFO);
+    std::filesystem::remove_all(temp_root);
+}
+
 TEST(CommonBufferUT, OpenAndDirOpenInstancePublicHelpers)
 {
     OpenInstance openInstance;
@@ -775,6 +840,51 @@ TEST(CommonBufferUT, OpenAndDirOpenInstancePublicHelpers)
     EXPECT_TRUE(dirOpenInstance.fileModes.empty());
     EXPECT_TRUE(dirOpenInstance.workingWorkers.empty());
     EXPECT_EQ(dirOpenInstance.offset, 0U);
+}
+
+TEST(CommonBufferUT, FalconFdPublicLifecycleBranches)
+{
+    auto *fdManager = FalconFd::GetInstance();
+    SetMaxOpenInstanceNum(2);
+
+    auto instance = fdManager->WaitGetNewOpenInstance();
+    ASSERT_NE(instance, nullptr);
+    instance->inodeId = 71001;
+    instance->path = "/fd/lifecycle";
+
+    uint64_t fd = fdManager->AttachFd(instance->path, instance);
+    EXPECT_GE(fd, static_cast<uint64_t>(START_FD));
+    EXPECT_EQ(fdManager->GetOpenInstanceByFd(fd), instance);
+    EXPECT_EQ(fdManager->GetCurrentOpenInstanceCount(), 1U);
+    EXPECT_EQ(fdManager->GetInodetoOpenInstanceSet(instance->inodeId).size(), 1U);
+
+    fdManager->AddOpenInstance(fd, instance);
+    EXPECT_EQ(fdManager->DeleteOpenInstance(UINT64_MAX), 0);
+    EXPECT_EQ(fdManager->DeleteOpenInstance(fd), 0);
+    EXPECT_EQ(fdManager->DeleteOpenInstance(fd), -EBADF);
+    EXPECT_EQ(fdManager->GetCurrentOpenInstanceCount(), 0U);
+
+    std::shared_ptr<char> readBuffer(new char[8], std::default_delete<char[]>());
+    uint64_t readFd = fdManager->AttachFd(71002, O_RDONLY, readBuffer, 8, "/fd/read", 3, 4, true);
+    ASSERT_NE(readFd, UINT64_MAX);
+    auto readInstance = fdManager->GetOpenInstanceByFd(readFd);
+    ASSERT_NE(readInstance, nullptr);
+    EXPECT_EQ(readInstance->readBuffer, readBuffer);
+    EXPECT_EQ(readInstance->nodeId, 3);
+    EXPECT_EQ(readInstance->backupNodeId, 4);
+    EXPECT_EQ(fdManager->DeleteOpenInstance(readFd), 0);
+
+    uint64_t dirFd = fdManager->AttachDirFd(71003);
+    ASSERT_NE(dirFd, UINT64_MAX);
+    ASSERT_NE(fdManager->GetDirOpenInstanceByFd(dirFd), nullptr);
+    auto *duplicateDir = new DirOpenInstance(dirFd);
+    EXPECT_EQ(fdManager->AddDirOpenInstance(dirFd, duplicateDir), -EBADF);
+    delete duplicateDir;
+    EXPECT_EQ(fdManager->DeleteDirOpenInstance(dirFd), 0);
+    EXPECT_EQ(fdManager->DeleteDirOpenInstance(dirFd), -EBADF);
+    EXPECT_EQ(fdManager->GetDirOpenInstanceByFd(dirFd), nullptr);
+
+    SetMaxOpenInstanceNum(40000);
 }
 
 int main(int argc, char **argv)

@@ -260,6 +260,9 @@ TEST_F(DiskCacheUT, PublicEvictAndFailureBranches)
     cache.DeleteOldCacheWithNoPin(oldMissingKey);
     EXPECT_TRUE(cache.Find(oldMissingKey, false));
 
+    EXPECT_FALSE(cache.PreAllocSpace(UINT64_MAX / 4));
+    EXPECT_FALSE(cache.HasFreeSpace());
+
     cache.Unpin(pinnedKey);
     EXPECT_EQ(cache.Delete(pinnedKey), 0);
 

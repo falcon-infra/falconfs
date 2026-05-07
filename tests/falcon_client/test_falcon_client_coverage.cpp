@@ -12,10 +12,13 @@
 #include <fcntl.h>
 #include <cstring>
 #include <memory>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 #include <sys/statvfs.h>
 #include <thread>
 #include <unordered_map>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <vector>
 
@@ -171,6 +174,26 @@ int GetIntEnvOrDefault(const char *key, int fallback)
     return std::atoi(value);
 }
 
+bool ServiceEndpointReady(const std::string &serverIp, int serverPort)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return false;
+    }
+
+    sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(serverPort));
+    if (inet_pton(AF_INET, serverIp.c_str(), &addr.sin_addr) != 1) {
+        close(fd);
+        return false;
+    }
+
+    int ret = connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+    close(fd);
+    return ret == 0;
+}
+
 bool InitFalconClientOrSkip()
 {
     if (!ServiceCoverageEnabled()) {
@@ -179,6 +202,9 @@ bool InitFalconClientOrSkip()
 
     std::string serverIp = GetEnvOrDefault("SERVER_IP", "127.0.0.1");
     int serverPort = GetIntEnvOrDefault("SERVER_PORT", 55510);
+    if (!ServiceEndpointReady(serverIp, serverPort)) {
+        return false;
+    }
 
     constexpr int kMaxRetry = 6;
     for (int i = 0; i < kMaxRetry; ++i) {

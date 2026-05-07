@@ -9,13 +9,23 @@ namespace {
 
 bool PrepareDfsClient()
 {
+    static bool checked = false;
+    static bool ready = false;
+    if (checked) {
+        return ready;
+    }
+    checked = true;
+
     constexpr int kRetry = 2;
     for (int attempt = 0; attempt < kRetry; ++attempt) {
-        if (!local_run_test::EnsureConfiguredServer()) {
+        if (!local_run_test::WaitForEndpoint(local_run_test::GetEnvOrDefault("SERVER_IP", "127.0.0.1"),
+                                             local_run_test::GetIntEnvOrDefault("SERVER_PORT", 55500),
+                                             1)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
         if (InitClientOrSkip()) {
+            ready = true;
             return true;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
