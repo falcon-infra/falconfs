@@ -1,0 +1,4 @@
+# stage|compose_file|topology|duration_min|action_plan_file|required_actions
+single|tests/regress/docker-compose-single.yaml|single|8|tests/chaos/plans/single_all.txt|S01,S03,S04,S05
+dual|tests/regress/docker-compose-dual.yaml|dual|20|tests/chaos/plans/dual_all.txt|S01,S02,S03,S04,S05,S06,S07,S08
+triple|tests/regress/docker-compose-triple.yaml|triple|20|tests/chaos/plans/triple_all.txt|S01,S02,S03,S04,S05,S06,S07,S08
