@@ -649,6 +649,7 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
             toHandleMetaProcessList = lappend(toHandleMetaProcessList, info);
         }
 
+        // force the info written to memory
         volatile MetaProcessInfo info = NULL;
         while (list_length(toHandleMetaProcessList) != 0) {
             BeginInternalSubTransaction(NULL);
@@ -661,7 +662,6 @@ void FalconCreateHandle(MetaProcessInfo *infoArray, int count, bool updateExiste
                 int currentGroupHandled = BATCH_OPERATION_GROUP_SIZE;
                 int toHandleMetaProcessIndex = list_length(toHandleMetaProcessList) - 1;
                 while (currentGroupHandled > 0 && toHandleMetaProcessIndex >= 0) {
-                    // force the info writen to memory
                     info = list_nth(toHandleMetaProcessList, toHandleMetaProcessIndex);
                     --toHandleMetaProcessIndex;
                     if (info->errorCode != SUCCESS) {
