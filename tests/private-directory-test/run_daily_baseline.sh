@@ -20,9 +20,9 @@ TEST_DIR="$INSTALL_DIR/private-directory-test"
 ROUNDS="${FALCONFS_BASELINE_ROUNDS:-0 1 2 3}"
 SUDO_CMD_TEXT="${FALCONFS_BASELINE_SUDO_CMD:-sudo -n}"
 REPORT_ENABLED="${FALCONFS_BASELINE_REPORT:-1}"
-CONFIRM_ON_DEGRADATION="${FALCONFS_BASELINE_CONFIRM_ON_DEGRADATION:-1}"
 FAIL_ON_ALERT="${FALCONFS_BASELINE_FAIL_ON_ALERT:-0}"
-REPORT_SCRIPT="${FALCONFS_BASELINE_REPORT_SCRIPT:-$TEST_DIR/baseline_report.py}"
+REPORT_SCRIPT="${FALCONFS_BASELINE_REPORT_SCRIPT:-$SCRIPT_DIR/baseline_report.py}"
+ITERATIONS="${FALCONFS_BASELINE_ITERATIONS:-3}"
 
 read -r -a SUDO_CMD <<< "$SUDO_CMD_TEXT"
 
@@ -73,7 +73,6 @@ run_private_directory_baseline() {
 
 run_baseline_report() {
     local current_dir="$1"
-    local confirm_dir="${2:-}"
     local script_path="$REPORT_SCRIPT"
 
     if [ ! -x "$script_path" ]; then
@@ -89,15 +88,115 @@ run_baseline_report() {
         --result-root "$RESULT_ROOT"
         --current-dir "$current_dir"
     )
-    if [ -n "$confirm_dir" ]; then
-        report_args+=(--confirm-dir "$confirm_dir")
-    fi
 
     set +e
     python3 "${report_args[@]}"
     local status=$?
     set -e
     return "$status"
+}
+
+aggregate_iteration_summaries() {
+    python3 - "$RESULT_DIR" "$ITERATIONS" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+result_dir = Path(sys.argv[1])
+iterations = int(sys.argv[2])
+rows = {}
+
+for idx in range(1, iterations + 1):
+    summary = result_dir / f"iter_{idx}" / "summary.csv"
+    if not summary.is_file():
+        raise SystemExit(f"missing iteration summary: {summary}")
+
+    with summary.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row.get("round_name", "")
+            if not name:
+                continue
+            item = rows.setdefault(name, {
+                "round_idx": row.get("round_idx", ""),
+                "round_name": name,
+                "throughput": [],
+                "avg_latency": [],
+                "ops": [],
+                "time": [],
+                "raw_log": [],
+            })
+
+            for key in ("throughput", "ops", "time"):
+                value = row.get(key, "")
+                try:
+                    item[key].append(float(value))
+                except ValueError:
+                    pass
+
+            try:
+                latency = float(row.get("avg_latency", ""))
+                if latency > 0:
+                    item["avg_latency"].append(latency)
+            except ValueError:
+                pass
+
+            raw_log = row.get("raw_log", "")
+            if raw_log:
+                item["raw_log"].append(raw_log)
+
+def avg(values):
+    return sum(values) / len(values) if values else ""
+
+output = result_dir / "summary.csv"
+with output.open("w", newline="", encoding="utf-8") as f:
+    fieldnames = ["round_idx", "round_name", "throughput", "avg_latency", "ops", "time", "iterations", "raw_log"]
+    writer = csv.DictWriter(f, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in sorted(rows.values(), key=lambda item: int(item["round_idx"])):
+        writer.writerow({
+            "round_idx": row["round_idx"],
+            "round_name": row["round_name"],
+            "throughput": avg(row["throughput"]),
+            "avg_latency": avg(row["avg_latency"]),
+            "ops": avg(row["ops"]),
+            "time": avg(row["time"]),
+            "iterations": iterations,
+            "raw_log": ";".join(row["raw_log"]),
+        })
+PY
+}
+
+write_host_info() {
+    local host_info_file="$RESULT_DIR/host_info.txt"
+    local primary_ip=""
+    primary_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+    local cpu_model=""
+    cpu_model=$(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)
+    local mem_total=""
+    mem_total=$(awk '/MemTotal/{print $2 " " $3}' /proc/meminfo 2>/dev/null || true)
+    local os_release=""
+    os_release=$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+
+    {
+        printf 'hostname=%s\n' "$(hostname 2>/dev/null || true)"
+        printf 'primary_ip=%s\n' "$primary_ip"
+        printf 'user=%s\n' "$(id -un)"
+        printf 'repo_dir=%s\n' "$REPO_DIR"
+        printf 'result_dir=%s\n' "$RESULT_DIR"
+        printf 'install_dir=%s\n' "$INSTALL_DIR"
+        printf 'kernel=%s\n' "$(uname -srmo 2>/dev/null || true)"
+        printf 'os_release=%s\n' "$os_release"
+        printf 'cpu_model=%s\n' "$cpu_model"
+        printf 'cpu_count=%s\n' "$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+        printf 'mem_total=%s\n' "$mem_total"
+        printf 'rounds=%s\n' "$ROUNDS"
+        printf 'iterations=%s\n' "$ITERATIONS"
+        printf 'file_per_thread=%s\n' "${FALCONFS_BASELINE_FILE_PER_THREAD:-1000}"
+        printf 'thread_num_per_client=%s\n' "${FALCONFS_BASELINE_THREAD_NUM_PER_CLIENT:-2000}"
+        printf 'client_num=%s\n' "${FALCONFS_BASELINE_CLIENT_NUM:-1}"
+        printf 'file_size=%s\n' "${FALCONFS_BASELINE_FILE_SIZE:-1572864}"
+    } > "$host_info_file"
 }
 
 mkdir -p "$RESULT_DIR"
@@ -143,29 +242,49 @@ git_dirty=$git_dirty
 git_status_file=$git_status_file
 baseline_ref=$BASELINE_REF
 result_dir=$RESULT_DIR
+host_info_file=$RESULT_DIR/host_info.txt
+iterations=$ITERATIONS
+rounds=$ROUNDS
+file_per_thread=${FALCONFS_BASELINE_FILE_PER_THREAD:-1000}
+thread_num_per_client=${FALCONFS_BASELINE_THREAD_NUM_PER_CLIENT:-2000}
+client_num=${FALCONFS_BASELINE_CLIENT_NUM:-1}
+file_size=${FALCONFS_BASELINE_FILE_SIZE:-1572864}
 EOF
-
-if [ "$RUN_BUILD" = "1" ]; then
-    log "Cleaning FalconFS build"
-    ./build.sh clean falcon
-    log "Building FalconFS"
-    ./build.sh build falcon
-    log "Installing FalconFS to $INSTALL_DIR"
-    "${SUDO_CMD[@]}" ./build.sh install falcon
-fi
-
-if [ "$RUN_DEPLOY" = "1" ]; then
-    log "Stopping FalconFS"
-    ./deploy/falcon_stop.sh
-    log "Starting FalconFS"
-    ./deploy/falcon_start.sh
-fi
 
 meta_server_ip="${FALCONFS_BASELINE_META_SERVER_IP:-$(resolve_meta_server_ip)}"
 meta_server_port="${FALCONFS_BASELINE_META_SERVER_PORT:-$(resolve_meta_server_port)}"
+write_host_info
 
-log "Running private-directory baseline rounds: $ROUNDS"
-run_private_directory_baseline "$RESULT_DIR" "$RUN_ID"
+for ((iteration = 1; iteration <= ITERATIONS; iteration++)); do
+    iteration_run_id="${RUN_ID}_iter_${iteration}"
+    iteration_dir="$RESULT_DIR/iter_${iteration}"
+
+    log "Starting iteration $iteration/$ITERATIONS"
+    if [ "$RUN_DEPLOY" = "1" ]; then
+        log "Stopping FalconFS for iteration $iteration"
+        ./deploy/falcon_stop.sh
+    fi
+
+    if [ "$RUN_BUILD" = "1" ]; then
+        log "Cleaning FalconFS build for iteration $iteration"
+        ./build.sh clean falcon
+        log "Building FalconFS for iteration $iteration"
+        ./build.sh build falcon
+        log "Installing FalconFS to $INSTALL_DIR for iteration $iteration"
+        "${SUDO_CMD[@]}" ./build.sh install falcon
+    fi
+
+    if [ "$RUN_DEPLOY" = "1" ]; then
+        log "Starting FalconFS for iteration $iteration"
+        ./deploy/falcon_start.sh
+    fi
+
+    log "Running private-directory baseline rounds for iteration $iteration: $ROUNDS"
+    run_private_directory_baseline "$iteration_dir" "$iteration_run_id"
+done
+
+log "Aggregating $ITERATIONS iteration summaries"
+aggregate_iteration_summaries
 
 if [ "$REPORT_ENABLED" = "1" ]; then
     log "Generating baseline report"
@@ -176,29 +295,7 @@ if [ "$REPORT_ENABLED" = "1" ]; then
     if [ "$report_status" -ne 0 ] && [ "$report_status" -ne 10 ]; then
         exit "$report_status"
     fi
-    if [ "$report_status" -eq 10 ] && [ "$CONFIRM_ON_DEGRADATION" = "1" ]; then
-        CONFIRM_RUN_ID="${RUN_ID}_confirm"
-        CONFIRM_RESULT_DIR="${RESULT_DIR}_confirm"
-        log "Suspected degradation detected; rerunning benchmark only for confirmation"
-        run_private_directory_baseline "$CONFIRM_RESULT_DIR" "$CONFIRM_RUN_ID"
-        cat >> "$CONFIRM_RESULT_DIR/run_info.env" <<EOF
-confirm_of=$RUN_ID
-confirm_of_result_dir=$RESULT_DIR
-EOF
-        set +e
-        run_baseline_report "$RESULT_DIR" "$CONFIRM_RESULT_DIR"
-        final_report_status=$?
-        set -e
-        if [ "$final_report_status" -ne 0 ] && [ "$final_report_status" -ne 10 ]; then
-            exit "$final_report_status"
-        fi
-        if [ "$final_report_status" -eq 10 ]; then
-            log "Confirmed baseline degradation"
-            if [ "$FAIL_ON_ALERT" = "1" ]; then
-                exit 10
-            fi
-        fi
-    elif [ "$report_status" -eq 10 ] && [ "$FAIL_ON_ALERT" = "1" ]; then
+    if [ "$report_status" -eq 10 ] && [ "$FAIL_ON_ALERT" = "1" ]; then
         exit 10
     fi
 fi

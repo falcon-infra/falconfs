@@ -72,21 +72,32 @@ sudo -iu <runner-user>
 ~/falconfs-baseline-runner/tests/private-directory-test/run_daily_baseline.sh
 ```
 
-Results are written to `~/falconfs-baseline-results/<timestamp>/` by default. Each run includes `run_info.env`, `git_status.txt`, per-round raw logs, `summary.csv`, `baseline_report.txt`, and `email_preview.txt`.
+Results are written to `~/falconfs-baseline-results/<timestamp>/` by default. Each run includes `run_info.env`, `git_status.txt`, `host_info.txt`, per-iteration raw logs, aggregated `summary.csv`, `baseline_report.txt`, and `email_preview.txt`.
 
-The wrapper uses this deploy flow by default:
+The wrapper runs three complete iterations by default. Each iteration uses this flow:
 
 ```bash
+./deploy/falcon_stop.sh
 ./build.sh clean falcon
 ./build.sh build falcon
 sudo -n ./build.sh install falcon
-./deploy/falcon_stop.sh
 ./deploy/falcon_start.sh
+local-run.sh
 ```
+
+Per-iteration results are written under `iter_1/`, `iter_2/`, and `iter_3/`. The parent `summary.csv` contains the average throughput, average latency, average operation count, and average elapsed time across all iterations.
 
 The wrapper refuses to reset any branch except `baseline/upstream-main` unless `FALCONFS_BASELINE_ALLOW_BRANCH_RESET=1` is set. This protects normal development branches from nightly automation.
 
-After each run, the wrapper compares current throughput against the median of the most recent successful baseline summaries under `FALCONFS_BASELINE_RESULT_ROOT`. The default window is 7 runs, and the default alert threshold is a 10% throughput drop in any round. If a suspected degradation is detected, the wrapper reruns only the benchmark once for confirmation and then regenerates the report.
+After each run, the wrapper compares the aggregated daily result against the median of recent successful baseline summaries under `FALCONFS_BASELINE_RESULT_ROOT`. The default history window is 7 runs. The default alert rules are a 10% throughput drop or a 10% average latency increase in any round. Latency is reported in `ns/op`.
+
+The report includes host metadata from `host_info.txt`, including hostname, primary IP, user, repo path, result path, kernel, OS, CPU model, CPU count, memory, iteration count, rounds, and benchmark parameters.
+
+Smoke runs should use a separate result root so they do not pollute daily history:
+
+```bash
+FALCONFS_BASELINE_RESULT_ROOT=$HOME/falconfs-baseline-smoke-results
+```
 
 Email sending is disabled by default. `email_preview.txt` is always generated so the report can be inspected without SMTP credentials.
 
@@ -103,10 +114,12 @@ FALCONFS_BASELINE_ROUNDS="0 1 2 3"
 FALCONFS_BASELINE_META_SERVER_IP=127.0.0.1
 FALCONFS_BASELINE_META_SERVER_PORT=55510
 FALCONFS_BASELINE_SUDO_CMD="sudo -n"
+FALCONFS_BASELINE_ITERATIONS=3
 FALCONFS_BASELINE_HISTORY_WINDOW=7
 FALCONFS_BASELINE_MIN_HISTORY=3
 FALCONFS_BASELINE_ALERT_THRESHOLD_PCT=10
-FALCONFS_BASELINE_CONFIRM_ON_DEGRADATION=1
+FALCONFS_BASELINE_LATENCY_ALERT_THRESHOLD_PCT=10
+FALCONFS_BASELINE_LATENCY_ALERT_ENABLED=1
 FALCONFS_BASELINE_MAIL_ENABLED=0
 ```
 
