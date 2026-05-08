@@ -134,3 +134,7 @@ class Client:
             cpp_recv_time_us=state.cpp_recv_time_us,
             cpp_done_time_us=state.cpp_done_time_us,
         )
+
+    def AsyncPutNoWait(self, path, buffer, size, offset, memory_obj):
+        """Fire-and-forget async put: 0-copy with ref_count safety."""
+        _pyfalconfs_internal.AsyncPutNoWait(path, buffer, size, offset, memory_obj)

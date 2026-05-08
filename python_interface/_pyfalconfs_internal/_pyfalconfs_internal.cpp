@@ -2,6 +2,7 @@
 
 #include <Python.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <fcntl.h>
 #include <fstream>
@@ -551,124 +552,68 @@ static PyObject* PyWrapper_ReadDir(PyObject* self, PyObject* args)
 }
 
 /* =================== Non-Blocking Methods =======================*/
-class AsyncTaskThreadPool 
+
+// Priority constants: lower value = higher priority
+constexpr int TASK_PRIORITY_GET = 0;
+constexpr int TASK_PRIORITY_PUT = 10;
+
+class AsyncTaskThreadPool
 {
 private:
-    class Worker 
-    {
-    private:
-        std::thread thread;
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::function<void()> task = nullptr;
-        bool stop = false;
+    struct TaskItem {
+        int priority;
+        uint64_t sequence;  // FIFO within same priority
+        std::function<void()> task;
 
-        void Run(std::function<void(Worker*)> onIdleCallback) 
-        {
-            while (true) 
-            {
-                std::function<void()> localTask;
-                {
-                    std::unique_lock<std::mutex> lock(mutex);
-                    cv.wait(lock, [&] { return stop || task; });
-
-                    if (stop) 
-                        return;
-                }
-
-                task();
-                task = nullptr;
-
-                onIdleCallback(this);
-            }
-        }
-    
-    public:
-        explicit Worker(std::function<void(Worker*)> idleCb) :
-            thread(&Worker::Run, this, idleCb)
-        {
-        }
-
-        ~Worker()
-        {
-            Stop();
-            
-            if (thread.joinable())
-                thread.join();
-        }
-
-        void AssignTask(std::function<void()> newTask) 
-        {
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                assert(!task);
-                task = std::move(newTask);
-            }
-            cv.notify_one();
-        }
-
-        void Stop() 
-        {
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                if (stop)
-                    return;
-
-                stop = true;
-            }
-            cv.notify_one();
+        bool operator<(const TaskItem& other) const {
+            if (priority != other.priority)
+                return priority > other.priority;  // lower value = higher priority
+            return sequence > other.sequence;       // FIFO within same priority
         }
     };
 
-    std::vector<std::unique_ptr<Worker>> allWorkers;
-    std::mutex allWorkersMutex;
-    std::vector<Worker*> idleWorkers;
-    std::mutex idleWorkersMutex;
+    std::priority_queue<TaskItem> taskQueue_;
+    std::mutex queueMutex_;
+    std::condition_variable queueCV_;
+    std::vector<std::thread> workers_;
+    std::atomic<bool> stop_{false};
+    std::atomic<uint64_t> sequenceCounter_{0};
+    size_t numWorkers_;
 
-    std::function<void(Worker*)> OnWorkerIdleCallback;
+    void workerLoop() {
+        while (true) {
+            TaskItem item;
+            {
+                std::unique_lock<std::mutex> lock(queueMutex_);
+                queueCV_.wait(lock, [this] {
+                    return stop_.load() || !taskQueue_.empty();
+                });
+                if (stop_.load() && taskQueue_.empty())
+                    return;
+                item = std::move(taskQueue_.top());
+                taskQueue_.pop();
+            }
+            item.task();
+        }
+    }
 
 public:
-    explicit AsyncTaskThreadPool(size_t initSize) :
-        OnWorkerIdleCallback([this](Worker* worker) {
-            std::lock_guard<std::mutex> guard(idleWorkersMutex);
-            idleWorkers.emplace_back(worker);
-        })
+    explicit AsyncTaskThreadPool(size_t numWorkers)
+        : numWorkers_(numWorkers)
     {
-        {
-            std::lock_guard<std::mutex> guard(allWorkersMutex);
-            for (size_t i = 0; i < initSize; ++i)
-            {
-                allWorkers.emplace_back(std::make_unique<Worker>(OnWorkerIdleCallback));
-            }
-        }
-
-        {
-            std::lock_guard<std::mutex> guard(idleWorkersMutex);
-            for (size_t i = 0; i < initSize; ++i)
-            {
-                idleWorkers.emplace_back(allWorkers[i].get());
-            }
+        for (size_t i = 0; i < numWorkers; ++i) {
+            workers_.emplace_back([this] { workerLoop(); });
         }
     }
 
-    ~AsyncTaskThreadPool() 
-    {
-        {
-            std::lock_guard<std::mutex> guard1(allWorkersMutex);
-            std::lock_guard<std::mutex> guard2(idleWorkersMutex);
-
-            for (auto& worker : allWorkers) 
-            {
-                worker->Stop();
-            }
-
-            allWorkers.clear();
-            idleWorkers.clear();
-        }
+    ~AsyncTaskThreadPool() {
+        shutdown();
     }
 
+    // Dispatch with priority, returns future for awaiting result
     template<class F, class... Args>
-    auto Dispatch(F&& f, Args&&... args) -> std::future<decltype(f(args...))>
+    auto DispatchWithPriority(int priority, F&& f, Args&&... args)
+        -> std::future<decltype(f(args...))>
     {
         using return_type = decltype(f(args...));
         auto task = std::make_shared<std::packaged_task<return_type()>>(
@@ -676,25 +621,43 @@ public:
         );
         std::future<return_type> res = task->get_future();
 
-        Worker* worker = nullptr;
         {
-            std::lock_guard<std::mutex> lock(idleWorkersMutex);
-            if (!idleWorkers.empty())
-            {
-                worker = idleWorkers.back();
-                idleWorkers.pop_back();
-            }
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            taskQueue_.push(TaskItem{
+                priority,
+                sequenceCounter_.fetch_add(1),
+                [task]() { (*task)(); }
+            });
         }
-        if (!worker)
-        {
-            std::lock_guard<std::mutex> lock(allWorkersMutex);
-            allWorkers.emplace_back(std::make_unique<Worker>(OnWorkerIdleCallback));
-            worker = allWorkers.back().get();
-        }
-
-        worker->AssignTask([task]() { (*task)(); });
-
+        queueCV_.notify_one();
         return res;
+    }
+
+    // Fire-and-forget: no future returned, for PUT tasks
+    template<class F, class... Args>
+    void DispatchFireAndForget(int priority, F&& f, Args&&... args)
+    {
+        {
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            taskQueue_.push(TaskItem{
+                priority,
+                sequenceCounter_.fetch_add(1),
+                std::bind(std::forward<F>(f), std::forward<Args>(args)...)
+            });
+        }
+        queueCV_.notify_one();
+    }
+
+    void shutdown() {
+        bool expected = false;
+        if (!stop_.compare_exchange_strong(expected, true))
+            return;  // already shut down
+        queueCV_.notify_all();
+        for (auto& w : workers_) {
+            if (w.joinable())
+                w.join();
+        }
+        workers_.clear();
     }
 };
 
@@ -853,7 +816,7 @@ static PyObject* PyWrapper_AsyncExists(PyObject* self, PyObject* args)
         state->cpp_done_time_us = steady_clock_now_us();
         return std::make_unique<AsyncResultIntOnly>(ret);
     };
-    state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
+    state->future = AsyncTaskThreadPoolForPy->DispatchWithPriority(TASK_PRIORITY_GET, task);
     return (PyObject*)state;
 }
 
@@ -906,7 +869,7 @@ static PyObject* PyWrapper_AsyncGet(PyObject* self, PyObject* args)
         state->cpp_done_time_us = steady_clock_now_us();
         return std::make_unique<AsyncResultReadSize>(readSize);
     };
-    state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
+    state->future = AsyncTaskThreadPoolForPy->DispatchWithPriority(TASK_PRIORITY_GET, task);
     return (PyObject*)state;
 }
 
@@ -967,8 +930,66 @@ static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
         state->cpp_done_time_us = steady_clock_now_us();
         return std::make_unique<AsyncResultIntOnly>(ret);
     };
-    state->future = AsyncTaskThreadPoolForPy->Dispatch(task);
+    state->future = AsyncTaskThreadPoolForPy->DispatchWithPriority(TASK_PRIORITY_PUT, task);
     return (PyObject*)state;
+}
+
+static PyObject* PyWrapper_AsyncPutNoWait(PyObject* self, PyObject* args)
+{
+    char* path = nullptr;
+    Py_buffer buffer;
+    int size;
+    int offset;
+    PyObject* memobj = nullptr;
+    if (!PyArg_ParseTuple(args, "sy*iiO", &path, &buffer, &size, &offset, &memobj))
+        return nullptr;
+
+    // 0-copy: only take the raw pointer, no memcpy
+    char* dataPtr = (char*)buffer.buf;
+    std::string pathStr(path);
+
+    // Keep both Python objects alive until async task completes
+    PyObject* bufObj = buffer.obj;
+    Py_INCREF(bufObj);   // prevents memoryview from being GC'd
+    Py_INCREF(memobj);   // prevents MemoryObj from being GC'd
+
+    // Release the buffer view (we already have the raw pointer)
+    PyBuffer_Release(&buffer);
+
+    AsyncTaskThreadPoolForPy->DispatchFireAndForget(
+        TASK_PRIORITY_PUT,
+        [pathStr, dataPtr, size, offset, bufObj, memobj]() -> void {
+            uint64_t fd = UINT64_MAX;
+            try {
+                int ret = Create(pathStr.c_str(), O_CREAT | O_WRONLY | O_TRUNC, fd);
+                if (ret != 0) goto done;
+
+                ret = Write(pathStr.c_str(), fd, dataPtr, size, offset);
+                if (ret != 0) {
+                    Close(pathStr.c_str(), fd);
+                    goto done;
+                }
+
+                ret = Flush(pathStr.c_str(), fd);
+                Close(pathStr.c_str(), fd);
+            } catch (...) {
+                if (fd != UINT64_MAX)
+                    Close(pathStr.c_str(), fd);
+            }
+
+        done:
+            // Cleanup: acquire GIL to release Python references
+            PyGILState_STATE gstate = PyGILState_Ensure();
+            // Call ref_count_down to allow memory pool to reclaim
+            PyObject* r = PyObject_CallMethod(memobj, "ref_count_down", NULL);
+            Py_XDECREF(r);
+            Py_DECREF(memobj);
+            Py_DECREF(bufObj);
+            PyGILState_Release(gstate);
+        }
+    );
+
+    Py_RETURN_NONE;
 }
 
 static PyObject* PyWrapper_GetSteadyClockUs(PyObject* self, PyObject* args)
@@ -1177,6 +1198,20 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "  write size (int): write byte size"
     },
     {
+        "AsyncPutNoWait",
+        PyWrapper_AsyncPutNoWait,
+        METH_VARARGS,
+        "Fire-and-forget async put: 0-copy with ref_count safety\n"
+        "Parameters:\n"
+        "  path (str): Target file path\n"
+        "  buffer (memoryview): Data buffer (read from MemoryObj.byte_array)\n"
+        "  size (int): Data size\n"
+        "  offset (int): Write offset\n"
+        "  memory_obj (MemoryObj): Memory object for ref_count management\n"
+        "Returns:\n"
+        "  None"
+    },
+    {
         "GetSteadyClockUs",
         PyWrapper_GetSteadyClockUs,
         METH_NOARGS,
@@ -1208,8 +1243,11 @@ extern "C" PyMODINIT_FUNC PyInit__pyfalconfs_internal(void)
 {
     {
         std::lock_guard guard(AsyncTaskThreadPoolForPyMutex);
-        if (!AsyncTaskThreadPoolForPy)
-            AsyncTaskThreadPoolForPy = std::make_shared<AsyncTaskThreadPool>(8);
+        if (!AsyncTaskThreadPoolForPy) {
+            const char* envWorkers = std::getenv("FALCON_ASYNC_WORKERS");
+            size_t numWorkers = envWorkers ? std::stoul(envWorkers) : 8;
+            AsyncTaskThreadPoolForPy = std::make_shared<AsyncTaskThreadPool>(numWorkers);
+        }
     }
     PyObject* module = PyModule_Create(&PyFalconFSInternalModule);
     if (PyType_Ready(&AsyncStateType) < 0) 
