@@ -72,6 +72,26 @@ target_link_libraries(ReadStreamUT
 
 gtest_discover_tests(ReadStreamUT)
 
+# ==================== WriteStreamCoverageUT =================
+
+add_executable(WriteStreamCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon_store/test_write_stream_coverage.cpp
+    ${common_src}
+)
+target_link_libraries(WriteStreamCoverageUT
+    FalconStore
+    FalconClient
+    zookeeper_mt
+    glog
+    jsoncpp
+    gtest
+    pq
+    ${BRPC_LIBRARIES}
+    ${DYNAMIC_LIB}
+)
+
+gtest_discover_tests(WriteStreamCoverageUT)
+
 # ==================== NodeUT =================
 
 add_executable(NodeUT

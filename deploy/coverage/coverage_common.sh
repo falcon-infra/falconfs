@@ -44,6 +44,8 @@ run_standalone_unit_tests() {
 	cd "$FALCONFS_DIR"
 
 	local target_dirs=(
+		"$FALCONFS_DIR/build/tests/common/"
+		"$FALCONFS_DIR/build/tests/falcon_client/"
 		"$FALCONFS_DIR/build/tests/falcon_store/"
 		"$FALCONFS_DIR/build/tests/falcon_plugin/"
 		"$FALCONFS_DIR/build/tests/private-directory-test/"
@@ -54,7 +56,9 @@ run_standalone_unit_tests() {
 			echo "Running tests in: $target_dir"
 			find "$target_dir" -type f -executable -name "*UT" | while read -r executable_file; do
 				case "$(basename "$executable_file")" in
-				LocalRunWorkloadUT | MetadbCoverageUT)
+				# These tests need a running local service or external zk config, so run them in
+				# run_service_dependent_unit_tests instead of the standalone phase.
+				FalconCMIT | LocalRunWorkloadUT | MetadbCoverageUT | FalconClientCoverageUT)
 					continue
 					;;
 				esac
@@ -73,6 +77,14 @@ run_standalone_unit_tests() {
 		"$executable_file"
 		echo "---------------------------------------------------------------------------------------"
 	done
+
+	local python_internal_dir="$FALCONFS_DIR/build/python_interface/_pyfalconfs_internal"
+	local python_internal_test="$FALCONFS_DIR/tests/python_interface/test_pyfalconfs_internal.py"
+	if [[ -d "$python_internal_dir" && -f "$python_internal_test" ]]; then
+		echo "Executing Python interface coverage test: $python_internal_test"
+		PYTHONPATH="$python_internal_dir${PYTHONPATH:+:$PYTHONPATH}" python3 "$python_internal_test"
+		echo "---------------------------------------------------------------------------------------"
+	fi
 }
 
 run_service_dependent_unit_tests() {
@@ -81,19 +93,41 @@ run_service_dependent_unit_tests() {
 	service_server_ip="$(resolve_service_test_server_ip)"
 	service_server_port="$(resolve_service_test_server_port)"
 	local service_uts=(
+		"$FALCONFS_DIR/build/tests/common/FalconCMIT"
+		"$FALCONFS_DIR/build/tests/falcon_client/FalconClientCoverageUT"
 		"$FALCONFS_DIR/build/tests/private-directory-test/LocalRunWorkloadUT"
 		"$FALCONFS_DIR/build/tests/falcon/metadb/MetadbCoverageUT"
 	)
 
 	echo "Running service-dependent tests:"
 	echo "Service-dependent UT endpoint: ${service_server_ip}:${service_server_port}"
+
+	local python_internal_dir="$FALCONFS_DIR/build/python_interface/_pyfalconfs_internal"
+	local python_internal_test="$FALCONFS_DIR/tests/python_interface/test_pyfalconfs_internal.py"
+	if [[ -d "$python_internal_dir" && -f "$python_internal_test" ]]; then
+		echo "Executing Python interface service coverage test: $python_internal_test"
+		SERVER_IP="$service_server_ip" \
+		SERVER_PORT="$service_server_port" \
+		FALCON_PY_SERVICE_COVERAGE=1 \
+		PYTHONPATH="$python_internal_dir${PYTHONPATH:+:$PYTHONPATH}" \
+		python3 "$python_internal_test"
+		echo "---------------------------------------------------------------------------------------"
+	fi
+
 	for service_ut in "${service_uts[@]}"; do
 		if [[ ! -x "$service_ut" ]]; then
+			continue
+		fi
+		# FalconCMIT talks to zookeeper; local coverage environments may not provide it.
+		if [[ "$(basename "$service_ut")" == "FalconCMIT" && -z "${zk_endpoint:-}" ]]; then
+			echo "Skipping FalconCMIT because zk_endpoint is not set."
+			echo "---------------------------------------------------------------------------------------"
 			continue
 		fi
 		echo "Executing: $service_ut"
 		SERVER_IP="$service_server_ip" \
 		SERVER_PORT="$service_server_port" \
+		FALCON_CLIENT_SERVICE_COVERAGE=1 \
 		LOCAL_RUN_MOUNT_DIR="${LOCAL_RUN_MOUNT_DIR:-/}" \
 		LOCAL_RUN_FILE_PER_THREAD="${LOCAL_RUN_FILE_PER_THREAD:-1}" \
 		LOCAL_RUN_THREAD_NUM_PER_CLIENT="${LOCAL_RUN_THREAD_NUM_PER_CLIENT:-1}" \

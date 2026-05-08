@@ -13,13 +13,25 @@ struct SqlConnections {
 
 bool PrepareSqlConnections(SqlConnections *connections)
 {
+    static bool service_checked = false;
+    static bool service_ready = false;
+    if (service_checked && !service_ready) {
+        return false;
+    }
+
     constexpr int kRetry = 2;
     for (int attempt = 0; attempt < kRetry; ++attempt) {
-        if (!local_run_test::EnsureConfiguredServer()) {
+        if (!local_run_test::WaitForEndpoint(local_run_test::GetEnvOrDefault("SERVER_IP", "127.0.0.1"),
+                                             local_run_test::GetIntEnvOrDefault("SERVER_PORT", 55500),
+                                             1)) {
+            service_checked = true;
+            service_ready = false;
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
         if (!InitClientOrSkip()) {
+            service_checked = true;
+            service_ready = false;
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
@@ -32,6 +44,8 @@ bool PrepareSqlConnections(SqlConnections *connections)
             std::this_thread::sleep_for(std::chrono::seconds(1));
             continue;
         }
+        service_checked = true;
+        service_ready = true;
         return true;
     }
     return false;
@@ -126,6 +140,73 @@ TEST(MetadbCoverageUT, PlainSqlFileCreateStatAndReadDirFlow)
     EXPECT_NE(ret, 0);
 
     // TC-FILE-006 / TC-DIR-006: 清理文件和根目录。
+    EXPECT_EQ(dfs_unlink(file.c_str()), 0);
+    EXPECT_TRUE(connections.cn->ScalarInt("SELECT falcon_plain_rmdir(" + SqlQuote(root) + ")", &ret));
+    EXPECT_EQ(ret, 0);
+    namespace_removed = true;
+
+    if (!namespace_removed) {
+        dfs_unlink(file.c_str());
+        dfs_rmdir(root.c_str());
+    }
+    dfs_shutdown();
+}
+
+TEST(MetadbCoverageUT, DirPathHashSqlLockAndPrintFlow)
+{
+    SqlConnections connections;
+    if (!PrepareSqlConnections(&connections)) {
+        GTEST_SKIP() << "local-run SQL endpoints are not ready";
+    }
+
+    std::string root = BuildSqlRoot("dir_path_hash_sql");
+    std::string file = fmt::format("{}/hash_file", root);
+    int ret = -1;
+    int count = 0;
+    int parent_id = -1;
+    std::string hash_file_name;
+    bool namespace_removed = false;
+
+    ASSERT_TRUE(connections.cn->ScalarInt("SELECT falcon_plain_mkdir(" + SqlQuote(root) + ")", &ret))
+        << connections.cn->ErrorMessage();
+    ASSERT_EQ(ret, 0);
+    ASSERT_TRUE(connections.worker->ScalarInt("SELECT falcon_plain_create(" + SqlQuote(file) + ")", &ret))
+        << connections.worker->ErrorMessage();
+    ASSERT_EQ(ret, 0);
+
+    ASSERT_TRUE(connections.cn->ScalarInt("SELECT count(*) FROM falcon_print_dir_path_hash_elem()", &count))
+        << connections.cn->ErrorMessage();
+    EXPECT_GT(count, 0);
+    ASSERT_TRUE(connections.cn->ScalarText(
+        "SELECT fileName FROM falcon_print_dir_path_hash_elem() LIMIT 1",
+        &hash_file_name))
+        << connections.cn->ErrorMessage();
+    ASSERT_FALSE(hash_file_name.empty());
+    ASSERT_TRUE(connections.cn->ScalarInt(
+        "SELECT parentId FROM falcon_print_dir_path_hash_elem() WHERE fileName = " + SqlQuote(hash_file_name) +
+            " LIMIT 1",
+        &parent_id))
+        << connections.cn->ErrorMessage();
+    ASSERT_GE(parent_id, 0);
+
+    EXPECT_FALSE(connections.cn->ScalarInt("SELECT falcon_acquire_hash_lock(" + SqlQuote(hash_file_name) +
+                                              "::cstring, " +
+                                              std::to_string(parent_id) + ", 1)",
+                                          &ret));
+    EXPECT_FALSE(connections.cn->ScalarInt("SELECT falcon_release_hash_lock(" + SqlQuote(hash_file_name) +
+                                              "::cstring, " +
+                                              std::to_string(parent_id) + ")",
+                                          &ret));
+
+    EXPECT_FALSE(connections.cn->ScalarInt("SELECT falcon_acquire_hash_lock(" + SqlQuote(hash_file_name) +
+                                              "::cstring, " +
+                                              std::to_string(parent_id) + ", 2)",
+                                          &ret));
+    EXPECT_FALSE(connections.cn->ScalarInt("SELECT falcon_release_hash_lock(" + SqlQuote(hash_file_name) +
+                                              "::cstring, " +
+                                              std::to_string(parent_id) + ")",
+                                          &ret));
+
     EXPECT_EQ(dfs_unlink(file.c_str()), 0);
     EXPECT_TRUE(connections.cn->ScalarInt("SELECT falcon_plain_rmdir(" + SqlQuote(root) + ")", &ret));
     EXPECT_EQ(ret, 0);
@@ -234,6 +315,28 @@ TEST(MetadbCoverageUT, AdminSqlCacheAndShardFlow)
     }
 
     GTEST_SKIP() << "metadb admin SQL flow failed after retries, likely due unstable service state";
+}
+
+TEST(MetadbCoverageUT, AdminSqlMoveShardErrorBranches)
+{
+    SqlConnections connections;
+    if (!PrepareSqlConnections(&connections)) {
+        GTEST_SKIP() << "local-run SQL endpoints are not ready";
+    }
+
+    int function_count = 0;
+    ASSERT_TRUE(connections.cn->ScalarInt("SELECT count(*) FROM pg_proc WHERE proname = 'falcon_move_shard'",
+                                          &function_count))
+        << connections.cn->ErrorMessage();
+    if (function_count == 0) {
+        GTEST_SKIP() << "falcon_move_shard is not installed in this extension build";
+    }
+
+    EXPECT_FALSE(connections.cn->ExecOk("SELECT falcon_move_shard(-2147483648, 0)"));
+    EXPECT_FALSE(connections.cn->ExecOk(
+        "SELECT falcon_move_shard("
+        "(SELECT max(range_point)::int FROM falcon_shard_table), "
+        "(SELECT server_id FROM falcon_shard_table ORDER BY range_point DESC LIMIT 1))"));
 }
 
 
@@ -462,5 +565,38 @@ TEST(MetadbCoverageUT, SerializedSliceFlow)
         dfs_unlink(file.c_str());
         dfs_rmdir(root.c_str());
     }
+    dfs_shutdown();
+}
+
+TEST(MetadbCoverageUT, AdminSqlClearDataFlowRunsLast)
+{
+    SqlConnections connections;
+    if (!PrepareSqlConnections(&connections)) {
+        GTEST_SKIP() << "local-run SQL endpoints are not ready";
+    }
+
+    int ret = -1;
+    int function_count = 0;
+    ASSERT_TRUE(connections.cn->ScalarInt(
+        "SELECT count(*) FROM pg_proc WHERE proname IN "
+        "('falcon_clear_cached_relation_oid_func', 'falcon_clear_user_data_func', 'falcon_clear_all_data_func')",
+        &function_count))
+        << connections.cn->ErrorMessage();
+    if (function_count != 3) {
+        GTEST_SKIP() << "admin clear SQL functions are not installed in this extension build";
+    }
+
+    EXPECT_TRUE(connections.cn->ScalarInt("SELECT falcon_clear_cached_relation_oid_func()", &ret))
+        << connections.cn->ErrorMessage();
+    EXPECT_EQ(ret, 0);
+
+    EXPECT_TRUE(connections.cn->ScalarInt("SELECT falcon_clear_user_data_func()", &ret))
+        << connections.cn->ErrorMessage();
+    EXPECT_EQ(ret, 0);
+
+    EXPECT_TRUE(connections.cn->ScalarInt("SELECT falcon_clear_all_data_func()", &ret))
+        << connections.cn->ErrorMessage();
+    EXPECT_EQ(ret, 0);
+
     dfs_shutdown();
 }

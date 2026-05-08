@@ -1,6 +1,21 @@
 #include "test_falcon_store.h"
 
 #include "connection/node.h"
+#include "disk_cache/disk_cache.h"
+
+unsigned long myHash(std::string &str);
+
+namespace {
+
+void ResetFalconStatsForCoverage()
+{
+    for (int i = 0; i < STATS_END; ++i) {
+        FalconStats::GetInstance().stats[i] = 0;
+        FalconStats::GetInstance().storedStats[i] = 0;
+    }
+}
+
+} // namespace
 
 std::shared_ptr<FalconConfig> FalconStoreUT::config = GetInit().GetFalconConfig();
 std::shared_ptr<OpenInstance> FalconStoreUT::openInstance = nullptr;
@@ -170,6 +185,264 @@ TEST_F(FalconStoreUT, OpenStats)
     EXPECT_EQ(stats[BLOCKCACHE_WRITE], 0);
     EXPECT_EQ(stats[OBJ_GET], 0);
     EXPECT_EQ(stats[OBJ_PUT], 0);
+}
+
+TEST_F(FalconStoreUT, ParentPathHelper)
+{
+    EXPECT_EQ(GetParentPath("/a/b/c", -1), "/a/b");
+    EXPECT_EQ(GetParentPath("/a/b/c", 1), "/");
+    EXPECT_EQ(GetParentPath("/a/b/c", 2), "/a/");
+    EXPECT_EQ(GetParentPath("/a/b/c", 5), "/a/b/");
+}
+
+TEST_F(FalconStoreUT, PublicHelpersDoNotRequirePrivateAccess)
+{
+    auto *store = FalconStore::GetInstance();
+    std::string nodeConfig = "coverage-node-config";
+    store->SetFalconStoreParam(nodeConfig);
+    std::string path = "/private/helper/file";
+    EXPECT_NE(myHash(path), 0UL);
+}
+
+TEST_F(FalconStoreUT, BrpcWritePublicBranches)
+{
+    auto *store = FalconStore::GetInstance();
+    const std::string payload = "brpc-nondirect-payload";
+
+    NewOpenInstance(912800, StoreNode::GetInstance()->GetNodeId(), "/brpc/write-ok", O_WRONLY | O_CREAT);
+    std::string writeFile = GetFilePath(openInstance->inodeId);
+    int fd = open(writeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+
+    butil::IOBuf ioBuf;
+    ioBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), ioBuf, 0), 0);
+    EXPECT_EQ(openInstance->currentSize.load(), payload.size());
+    close(fd);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+
+    NewOpenInstance(912801, StoreNode::GetInstance()->GetNodeId(), "/brpc/write-update-fail", O_WRONLY | O_CREAT);
+    writeFile = GetFilePath(openInstance->inodeId);
+    fd = open(writeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    butil::IOBuf failingIoBuf;
+    failingIoBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), failingIoBuf, 0), 0);
+    close(fd);
+
+    FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
+
+    NewOpenInstance(912802, StoreNode::GetInstance()->GetNodeId(), "/brpc/direct-write-ok", O_WRONLY | O_CREAT | __O_DIRECT);
+    writeFile = GetFilePath(openInstance->inodeId);
+    fd = open(writeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+    butil::IOBuf directIoBuf;
+    directIoBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), directIoBuf, 0), 0);
+    EXPECT_EQ(openInstance->currentSize.load(), payload.size());
+    close(fd);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+    FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
+}
+
+TEST_F(FalconStoreUT, CloseTmpFilesPublicBranches)
+{
+    auto *store = FalconStore::GetInstance();
+
+    NewOpenInstance(912900, StoreNode::GetInstance()->GetNodeId(), "/close/no-fd", O_WRONLY | O_CREAT);
+    openInstance->physicalFd = UINT64_MAX;
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), true, false), 0);
+
+    NewOpenInstance(912901, -1, "/close/no-node", O_WRONLY | O_CREAT);
+    std::string closeFile = GetFilePath(openInstance->inodeId);
+    int fd = open(closeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), true, false), 0);
+    close(fd);
+
+    NewOpenInstance(912902, StoreNode::GetInstance()->GetNodeId(), "/close/local", O_WRONLY | O_CREAT);
+    closeFile = GetFilePath(openInstance->inodeId);
+    fd = open(closeFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    openInstance->currentSize = 4;
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), true, false), -EBADF);
+    EXPECT_TRUE(openInstance->isFlushed);
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), false, false), -EBADF);
+    close(fd);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+}
+
+TEST_F(FalconStoreUT, SmallFilePublicMissBranches)
+{
+    auto *store = FalconStore::GetInstance();
+    const std::string payload = "small-miss-payload";
+
+    NewOpenInstance(913000, StoreNode::GetInstance()->GetNodeId(), "/small/missing-cache", O_RDONLY);
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
+
+    NewOpenInstance(913001, StoreNode::GetInstance()->GetNodeId(), "/small/stale-cache", O_RDONLY);
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
+
+    char buffer[64] = {};
+    DiskCache::GetInstance().InsertAndUpdate(913100, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(913100, "/brpc/stale-cache", buffer, payload.size(), O_RDONLY, false),
+              -ENOENT);
+
+    memset(buffer, 0, sizeof(buffer));
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(913101, "/brpc/no-storage", buffer, payload.size(), O_RDONLY, false),
+              -ENOENT);
+
+    FalconStats::GetInstance().stats[BLOCKCACHE_READ] = 0;
+    FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
+}
+
+TEST_F(FalconStoreUT, OpenStatAndTruncatePublicBranches)
+{
+    auto *store = FalconStore::GetInstance();
+
+    NewOpenInstance(913150, StoreNode::GetInstance()->GetNodeId(), "/open/missing-cache-write-exists", O_WRONLY);
+    openInstance->originalSize = 1;
+    std::string path = GetFilePath(openInstance->inodeId);
+    int fd = open(path.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    close(fd);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    close(openInstance->physicalFd);
+    unlink(path.c_str());
+
+    NewOpenInstance(913151, StoreNode::GetInstance()->GetNodeId(), "/open/missing-cache-read-exists", O_RDONLY);
+    openInstance->originalSize = 1;
+    path = GetFilePath(openInstance->inodeId);
+    fd = open(path.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    close(fd);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    close(openInstance->physicalFd);
+    unlink(path.c_str());
+
+    NewOpenInstance(913152, StoreNode::GetInstance()->GetNodeId(), "/open/node-fail-cache", O_RDONLY);
+    openInstance->nodeFail = true;
+    openInstance->originalSize = 1;
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 1, false);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), -ENOENT);
+
+    uint64_t fblocks = 0;
+    uint64_t fbfree = 0;
+    uint64_t fbavail = 0;
+    uint64_t ffiles = 0;
+    uint64_t fffree = 0;
+    EXPECT_EQ(store->StatFSForBrpc("not-local-endpoint", fblocks, fbfree, fbavail, ffiles, fffree), 0);
+    std::string localEndpoint = StoreNode::GetInstance()->GetRpcEndPoint(StoreNode::GetInstance()->GetNodeId());
+    EXPECT_EQ(store->StatFSForBrpc(localEndpoint, fblocks, fbfree, fbavail, ffiles, fffree), 0);
+    EXPECT_GT(fblocks, 0U);
+
+    NewOpenInstance(913200, StoreNode::GetInstance()->GetNodeId(), "/truncate/local", O_RDWR | O_CREAT);
+    std::string fileName = GetFilePath(openInstance->inodeId);
+    fd = open(fileName.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, "truncate-data", 13, 0), 13);
+    openInstance->physicalFd = fd;
+    openInstance->isOpened = true;
+    EXPECT_EQ(store->TruncateFile(openInstance.get(), 4), 0);
+    close(fd);
+
+    NewOpenInstance(913202, StoreNode::GetInstance()->GetNodeId(), "/truncate/bad-fd", O_RDWR | O_CREAT);
+    openInstance->physicalFd = static_cast<uint64_t>(-1);
+    openInstance->isOpened = true;
+    EXPECT_EQ(store->TruncateFile(openInstance.get(), 4), -EBADF);
+
+    NewOpenInstance(913201, StoreNode::GetInstance()->GetNodeId(), "/truncate/open-instance", O_RDWR | O_CREAT);
+    EXPECT_EQ(store->TruncateOpenInstance(openInstance.get(), 2), 0);
+    EXPECT_EQ(openInstance->currentSize.load(), 2U);
+    EXPECT_EQ(openInstance->originalSize, 2U);
+}
+
+TEST_F(FalconStoreUT, ReadPublicBranches)
+{
+    auto *store = FalconStore::GetInstance();
+
+    NewOpenInstance(913300, StoreNode::GetInstance()->GetNodeId(), "/read/small-buffer", O_RDONLY);
+    const std::string payload = "abcdef";
+    openInstance->originalSize = payload.size();
+    openInstance->currentSize = payload.size();
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[payload.size()], std::default_delete<char[]>());
+    memcpy(openInstance->readBuffer.get(), payload.data(), payload.size());
+
+    char smallBuf[16] = {};
+    EXPECT_EQ(store->ReadFile(openInstance.get(), smallBuf, 3, 1), 3);
+    EXPECT_EQ(std::string(smallBuf, 3), "bcd");
+    memset(smallBuf, 0, sizeof(smallBuf));
+    EXPECT_EQ(store->ReadFile(openInstance.get(), smallBuf, 4, 4), 2);
+    EXPECT_EQ(std::string(smallBuf, 2), "ef");
+    EXPECT_EQ(store->ReadFile(openInstance.get(), smallBuf, 4, payload.size()), 0);
+
+    NewOpenInstance(913301, StoreNode::GetInstance()->GetNodeId(), "/read/local-file", O_RDONLY);
+    std::string fileName = GetFilePath(openInstance->inodeId);
+    int fd = open(fileName.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size(), 0), static_cast<ssize_t>(payload.size()));
+    openInstance->physicalFd = fd;
+    openInstance->currentSize = payload.size();
+    char readFileBuf[16] = {};
+    EXPECT_EQ(store->ReadFileLR(readFileBuf, 1, openInstance.get(), 3), 3);
+    EXPECT_EQ(std::string(readFileBuf, 3), "bcd");
+    EXPECT_EQ(store->ReadFileLR(readFileBuf, payload.size(), openInstance.get(), 3), 0);
+
+    openInstance->originalSize = config->GetUint32(FalconPropertyKey::FALCON_BIG_FILE_READ_SIZE);
+    openInstance->isOpened = true;
+    openInstance->preReadStarted = true;
+    openInstance->directReadFile = true;
+    memset(readFileBuf, 0, sizeof(readFileBuf));
+    EXPECT_EQ(store->ReadFile(openInstance.get(), readFileBuf, 2, 2), 2);
+    EXPECT_EQ(std::string(readFileBuf, 2), "cd");
+    close(fd);
+
+    ResetFalconStatsForCoverage();
+}
+
+TEST_F(FalconStoreUT, DeleteAndStatPublicBranches)
+{
+    auto *store = FalconStore::GetInstance();
+
+    EXPECT_EQ(store->DeleteFiles(913400, StoreNode::GetInstance()->GetNodeId(), "/delete/missing"), -ENOENT);
+
+    uint64_t inodeId = 913401;
+    std::string fileName = GetFilePath(inodeId);
+    int fd = open(fileName.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, "delete", 6, 0), 6);
+    close(fd);
+    DiskCache::GetInstance().InsertAndUpdate(inodeId, 6, false);
+    EXPECT_EQ(store->DeleteFiles(inodeId, StoreNode::GetInstance()->GetNodeId(), "/delete/local"), 0);
+
+    EXPECT_EQ(store->DeleteFiles(913402, StoreNode::GetInstance()->GetNodeId() + 20, "/delete/remote-missing"),
+              -EHOSTUNREACH);
+
+    struct statvfs vfsBuf;
+    memset(&vfsBuf, 0, sizeof(vfsBuf));
+    EXPECT_EQ(store->StatFS(&vfsBuf), 0);
+    EXPECT_GT(vfsBuf.f_blocks, 0U);
+
+    std::vector<size_t> stats;
+    EXPECT_EQ(store->StatCluster(StoreNode::GetInstance()->GetNodeId() + 20, stats, true), 0);
+    EXPECT_EQ(store->StatCluster(StoreNode::GetInstance()->GetNodeId(), stats, false), 0);
+    EXPECT_EQ(stats.size(), static_cast<size_t>(STATS_END));
+
+    ResetFalconStatsForCoverage();
 }
 
 /* ------------------------------------------- write local -------------------------------------------*/

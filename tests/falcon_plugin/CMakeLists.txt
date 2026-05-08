@@ -47,3 +47,26 @@ target_link_libraries(PluginLoaderUT
 )
 
 gtest_discover_tests(PluginLoaderUT)
+
+# ==================== PluginLoaderCoverageUT =================
+add_executable(PluginLoaderCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon_plugin/test_plugin_loader_coverage.cpp
+    ${PROJECT_SOURCE_DIR}/falcon/plugin/falcon_plugin_loader.c
+)
+add_dependencies(PluginLoaderCoverageUT
+    test_plugin_inline
+    test_plugin_background
+    test_plugin_invalid
+)
+target_include_directories(PluginLoaderCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+target_link_libraries(PluginLoaderCoverageUT
+    gtest
+    gtest_main
+    dl
+)
+
+gtest_discover_tests(PluginLoaderCoverageUT)

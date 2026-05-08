@@ -77,6 +77,16 @@ TEST_F(NodeUT, GetRpcConnection)
     EXPECT_TRUE(conn);
 }
 
+TEST_F(NodeUT, MissingNodeAndInvalidEndpointBranches)
+{
+    int missingNodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID) + 10000;
+    EXPECT_EQ(StoreNode::GetInstance()->GetRpcConnection(missingNodeId), nullptr);
+    EXPECT_EQ(StoreNode::GetInstance()->GetNodeId("not-an-endpoint"), -1);
+    EXPECT_EQ(StoreNode::GetInstance()->GetNodeId("127.0.0.250:59999"), -1);
+    EXPECT_FALSE(StoreNode::GetInstance()->IsLocal("not-an-endpoint"));
+    EXPECT_EQ(StoreNode::GetInstance()->GetRpcEndPoint(missingNodeId), std::string(""));
+}
+
 TEST_F(NodeUT, AllocNode)
 {
     uint64_t inodeId = 100;
@@ -96,6 +106,8 @@ TEST_F(NodeUT, GetNextNode)
     EXPECT_NE(nodeId, nextNodeId);
     auto nextConn = StoreNode::GetInstance()->GetRpcConnection(nodeId);
     EXPECT_TRUE(nextConn);
+    EXPECT_NE(StoreNode::GetInstance()->GetNextNode(nodeId + 10000, inodeId), -1);
+    EXPECT_NE(StoreNode::GetInstance()->GetBackupNodeId(), nodeId);
 }
 
 TEST_F(NodeUT, UpdateNodeConfigByValueValid)
@@ -158,6 +170,10 @@ TEST_F(NodeUT, Delete)
     StoreNode::GetInstance()->Delete();
     int number = StoreNode::GetInstance()->GetNumberofAllNodes();
     EXPECT_EQ(number, 0);
+    int nodeId = config->GetUint32(FalconPropertyKey::FALCON_NODE_ID);
+    EXPECT_EQ(StoreNode::GetInstance()->AllocNode(100), nodeId);
+    EXPECT_EQ(StoreNode::GetInstance()->GetNextNode(nodeId, 100), nodeId);
+    EXPECT_FALSE(StoreNode::GetInstance()->IsLocal(localEndpoint));
 }
 
 int main(int argc, char **argv)
