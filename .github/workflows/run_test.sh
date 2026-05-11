@@ -10,7 +10,7 @@ collect_logs() {
     local exit_code=$1
 
     echo "Collecting failure diagnostics into $ARTIFACT_DIR"
-    rm -rf "$ARTIFACT_DIR"
+    rm -rf ci-artifacts
     mkdir -p "$ARTIFACT_DIR/meta" "$ARTIFACT_DIR/client"
 
     {
@@ -67,7 +67,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-rm -rf "$ARTIFACT_DIR"
+rm -rf ci-artifacts
 "$CURDIR"/deploy/falcon_stop.sh || true
 "$CURDIR"/build.sh test
 "$CURDIR"/deploy/falcon_start.sh
