@@ -2,6 +2,20 @@ include(GoogleTest)
 
 enable_testing()
 
+# Get PostgreSQL server headers from the system development package.
+find_program(PG_CONFIG_EXECUTABLE pg_config)
+if(NOT PG_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR "pg_config not found, please install PostgreSQL development package")
+endif()
+
+execute_process(
+    COMMAND ${PG_CONFIG_EXECUTABLE} --includedir-server
+    OUTPUT_VARIABLE PostgreSQL_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+set(PostgreSQL_TYPE_INCLUDE_DIR ${PostgreSQL_INCLUDE_DIR})
+
 # Create test plugins directory
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_plugins)
 
@@ -60,7 +74,7 @@ add_dependencies(PluginLoaderCoverageUT
 )
 target_include_directories(PluginLoaderCoverageUT PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon/include
-    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
     ${POSTGRES_INCLUDE_DIR}
 )
 target_link_libraries(PluginLoaderCoverageUT

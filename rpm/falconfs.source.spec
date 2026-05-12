@@ -66,9 +66,9 @@ It integrates seamlessly with cloud environments.
 
 %prep
 %if 0%{?release_pkg}
-%setup -q -n falconfs-%{version}
+%setup -c falconfs-%{version}
 %else
-%setup -q
+%setup -c
 %endif
 
 %build

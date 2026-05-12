@@ -1,6 +1,21 @@
 include(GoogleTest)
 
 enable_testing()
+
+# Get PostgreSQL server headers from the system development package.
+find_program(PG_CONFIG_EXECUTABLE pg_config)
+if(NOT PG_CONFIG_EXECUTABLE)
+    message(FATAL_ERROR "pg_config not found, please install PostgreSQL development package")
+endif()
+
+execute_process(
+    COMMAND ${PG_CONFIG_EXECUTABLE} --includedir-server
+    OUTPUT_VARIABLE PostgreSQL_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+set(PostgreSQL_TYPE_INCLUDE_DIR ${PostgreSQL_INCLUDE_DIR})
+
 link_directories(${POSTGRES_SRC_DIR}/src/interfaces/libpq)
 
 add_subdirectory(metadb)
@@ -89,7 +104,7 @@ target_link_libraries(FalconErrorCodeCoverageUT
 target_include_directories(FalconErrorCodeCoverageUT PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon/include
     ${PROJECT_SOURCE_DIR}/remote_connection_def
-    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
     ${POSTGRES_SRC_DIR}/src/include
     ${POSTGRES_INCLUDE_DIR}
 )
@@ -123,7 +138,7 @@ target_link_libraries(PerfCounterCoverageUT
 
 target_include_directories(PerfCounterCoverageUT PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon/include
-    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
     ${POSTGRES_SRC_DIR}/src/include
     ${POSTGRES_INCLUDE_DIR}
 )
@@ -156,7 +171,7 @@ target_link_libraries(FalconConnectionPoolCCoverageUT
 
 target_include_directories(FalconConnectionPoolCCoverageUT PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon/include
-    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/common/src/include
     ${POSTGRES_INCLUDE_DIR}
 )
