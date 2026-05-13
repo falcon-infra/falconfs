@@ -31,12 +31,12 @@ target_link_libraries(test_falcon
     zookeeper_mt
     glog
     jsoncpp
-    gtest
     pq
     ${BRPC_LIBRARIES}
     ${DYNAMIC_LIB}
 )
 
+if(BUILD_TEST)
 add_executable(LocalRunWorkloadUT test_local_run_workload_ut.cpp workloads.cc falconfs.cc)
 
 target_link_libraries(LocalRunWorkloadUT
@@ -58,3 +58,4 @@ target_link_libraries(LocalRunPosixWorkloadUT
     PUBLIC fmt
     PUBLIC gtest
 )
+endif()

@@ -78,8 +78,13 @@ export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 mkdir -p "${STAGE_ROOT}"
 echo "Using pg_config: $(command -v pg_config)"
 pg_config --pgxs
-./build.sh build falcon --comm-plugin=brpc
-./build.sh build falcon --comm-plugin=hcom
+%if 0%{?release_pkg}
+./build.sh build falcon --comm-plugin=brpc --no-tests
+./build.sh build falcon --comm-plugin=hcom --no-tests
+%else
+./build.sh build falcon --comm-plugin=brpc --no-tests --with-private-test
+./build.sh build falcon --comm-plugin=hcom --no-tests --with-private-test
+%endif
 
 test -f ./falcon/libbrpcplugin.so
 test -f ./falcon/libhcomplugin.so
@@ -90,7 +95,11 @@ export STAGE_ROOT="%{_builddir}/falconfs-stage"
 export FALCONFS_INSTALL_DIR="${STAGE_ROOT}/usr/local/falconfs"
 rm -rf "%{buildroot}" "${STAGE_ROOT}"
 mkdir -p "${STAGE_ROOT}"
-./build.sh install falcon --comm-plugin=brpc
+%if 0%{?release_pkg}
+./build.sh install falcon --comm-plugin=brpc --no-tests
+%else
+./build.sh install falcon --comm-plugin=brpc --no-tests --with-private-test
+%endif
 
 # Keep both communication plugins in RPM so runtime can switch via config.
 install -m 0755 -D ./falcon/libhcomplugin.so \
