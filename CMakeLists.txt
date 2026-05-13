@@ -60,6 +60,7 @@ add_compile_options(
 )
 
 option(BUILD_TEST "Enable test compile" OFF)
+option(BUILD_PRIVATE_TEST "Build private directory workload tools" OFF)
 if(BUILD_TEST)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNIT_TEST")
 endif()
@@ -208,7 +209,7 @@ install(TARGETS falcon_client
         ARCHIVE DESTINATION lib
 )
 
-if (BUILD_TEST)
+if (BUILD_TEST OR BUILD_PRIVATE_TEST)
     message("Building tests...")
     add_subdirectory(tests)
 endif()

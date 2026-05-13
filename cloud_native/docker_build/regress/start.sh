@@ -30,5 +30,7 @@ cd $TEST_DIR
 bash local-run.sh
 
 # run falcon_cm test
-export CONFIG_FILE=/opt/conf/config.json
-$TEST_DIR/bin/FalconCMIT
+if [ -x "$TEST_DIR/bin/FalconCMIT" ]; then
+    export CONFIG_FILE=/opt/conf/config.json
+    $TEST_DIR/bin/FalconCMIT
+fi

@@ -4,6 +4,7 @@ set -euo pipefail
 
 BUILD_TYPE="Release"
 BUILD_TEST=true
+BUILD_PRIVATE_TEST=false
 WITH_FUSE_OPT=false
 WITH_ZK_INIT=false
 WITH_RDMA=false
@@ -57,27 +58,39 @@ set_comm_plugin() {
 	esac
 }
 
-parse_comm_plugin_option() {
-	local args=("$@")
-	local count=${#args[@]}
-	for ((i = 0; i < count; i++)); do
-		case "${args[i]}" in
-		--comm-plugin=*)
-			set_comm_plugin "${args[i]#*=}"
-			;;
-		--comm-plugin)
-			if ((i + 1 < count)); then
-				set_comm_plugin "${args[i + 1]}"
-			else
-				echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
-				exit 1
-			fi
-			;;
-		esac
-	done
-}
+PARSED_OPTION_SHIFT=0
 
-parse_comm_plugin_option "$@"
+parse_common_build_install_option() {
+	local option="${1:-}"
+	local value="${2:-}"
+	PARSED_OPTION_SHIFT=1
+
+	case "$option" in
+	--with-tests)
+		BUILD_TEST=true
+		;;
+	--no-tests)
+		BUILD_TEST=false
+		;;
+	--with-private-test)
+		BUILD_PRIVATE_TEST=true
+		;;
+	--comm-plugin)
+		if [[ -z "$value" ]]; then
+			echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
+			exit 1
+		fi
+		set_comm_plugin "$value"
+		PARSED_OPTION_SHIFT=2
+		;;
+	--comm-plugin=*)
+		set_comm_plugin "${option#*=}"
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
 
 gen_proto() {
 	mkdir -p "$BUILD_DIR"
@@ -171,7 +184,8 @@ build_falconfs() {
 		-DWITH_OBS_STORAGE="$WITH_OBS_STORAGE" \
 		-DENABLE_COVERAGE="$cmake_coverage" \
 		-DENABLE_ASAN="$WITH_ASAN" \
-		-DBUILD_TEST=$BUILD_TEST &&
+		-DBUILD_TEST=$BUILD_TEST \
+		-DBUILD_PRIVATE_TEST=$BUILD_PRIVATE_TEST &&
 		cd "$BUILD_DIR" && ninja
 
 	build_comm_plugin
@@ -353,8 +367,8 @@ install_private_directory_test() {
 			"$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
 	fi
 
-	# 复制 FalconCMIT
-	if [[ -f "$FALCONFS_DIR/build/tests/common/FalconCMIT" ]]; then
+	# FalconCMIT is a gtest integration test; package-only private tools skip it.
+	if [[ "$BUILD_TEST" == true && -f "$FALCONFS_DIR/build/tests/common/FalconCMIT" ]]; then
 		cp "$FALCONFS_DIR/build/tests/common/FalconCMIT" \
 			"$PRIVATE_DIRECTORY_TEST_INSTALL_DIR/bin/"
 	fi
@@ -401,6 +415,9 @@ print_help() {
 		echo "  --debug              Build debug versions"
 		echo "  --release            Build release versions (default)"
 		echo "  --coverage           Build with gcov/lcov instrumentation"
+		echo "  --with-tests         Build all test targets (default)"
+		echo "  --no-tests           Skip all unit test targets"
+		echo "  --with-private-test  Build private-directory workload tools"
 		echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
 		echo "  -h, --help           Show this help message"
 		echo ""
@@ -477,26 +494,18 @@ build)
 			COVERAGE=true
 			shift
 			;;
+		--with-tests | --no-tests | --with-private-test | --comm-plugin | --comm-plugin=*)
+			parse_common_build_install_option "$2" "${3:-}"
+			shift "$PARSED_OPTION_SHIFT"
+			;;
 		--help | -h)
 			print_help "build"
 			exit 0
 			;;
-		--comm-plugin)
-			if [[ -z "${3:-}" ]]; then
-				echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
-				exit 1
-			fi
-			set_comm_plugin "$3"
-			shift 2
-			;;
-		--comm-plugin=*)
-			set_comm_plugin "${2#*=}"
-			shift
-			;;
 		*)
 			# Only break if this isn't the combined build case
 			[[ -z "${2:-}" || "$2" == "pg" || "$2" == "falcon" ]] && break
-			echo "Error: Combined build only supports --debug, --deploy, --coverage or --comm-plugin" >&2
+			echo "Error: Combined build only supports --debug, --deploy, --coverage, --with-tests, --no-tests, --with-private-test or --comm-plugin" >&2
 			exit 1
 			;;
 		esac
@@ -519,6 +528,12 @@ build)
 			--coverage)
 				COVERAGE=true
 				;;
+			--with-tests | --no-tests | --with-private-test | --comm-plugin | --comm-plugin=*)
+				parse_common_build_install_option "$1" "${2:-}"
+				if ((PARSED_OPTION_SHIFT > 1)); then
+					shift $((PARSED_OPTION_SHIFT - 1))
+				fi
+				;;
 			--with-fuse-opt)
 				WITH_FUSE_OPT=true
 				;;
@@ -537,17 +552,6 @@ build)
 			--with-asan)
 				WITH_ASAN=true
 				;;
-			--comm-plugin)
-				if [[ -z "${2:-}" ]]; then
-					echo "Error: --comm-plugin requires a value (brpc|hcom)" >&2
-					exit 1
-				fi
-				set_comm_plugin "$2"
-				shift
-				;;
-			--comm-plugin=*)
-				set_comm_plugin "${1#*=}"
-				;;
 			--help | -h)
 				echo "Usage: $0 build falcon [options]"
 				echo ""
@@ -558,6 +562,9 @@ build)
 				echo "  --release            Build in release mode"
 				echo "  --relwithdebinfo     Build with debug symbols"
 				echo "  --coverage           Build with gcov/lcov instrumentation"
+				echo "  --with-tests         Build all test targets (default)"
+				echo "  --no-tests           Skip all unit test targets"
+				echo "  --with-private-test  Build private-directory workload tools"
 				echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
 				echo "  --with-fuse-opt      Enable FUSE optimizations"
 				echo "  --with-zk-init       Enable Zookeeper initialization for containerized deployment"
@@ -647,32 +654,45 @@ coverage)
 	run_coverage
 	;;
 install)
-	case "${2:-}" in
-	falcon)
-		install_falcon_meta
-		install_falcon_client
-		install_falcon_python_sdk
-		install_falcon_cm
-		install_falcon_cn
-		install_falcon_dn
-		install_falcon_store
-		install_falcon_regress
-		install_private_directory_test
-		install_deploy_scripts
-		;;
-	*)
-		install_falcon_meta
-		install_falcon_client
-		install_falcon_python_sdk
-		install_falcon_cm
-		install_falcon_cn
-		install_falcon_dn
-		install_falcon_store
-		install_falcon_regress
-		install_private_directory_test
-		install_deploy_scripts
-		;;
-	esac
+	shift
+	if [[ "${1:-}" == "falcon" ]]; then
+		shift
+	fi
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--with-tests | --no-tests | --with-private-test | --comm-plugin | --comm-plugin=*)
+			parse_common_build_install_option "$1" "${2:-}"
+			if ((PARSED_OPTION_SHIFT > 1)); then
+				shift $((PARSED_OPTION_SHIFT - 1))
+			fi
+			;;
+		--help | -h)
+			echo "Usage: $0 install [falcon] [options]"
+			echo ""
+			echo "Options:"
+			echo "  --with-tests         Install test artifacts when built (default)"
+			echo "  --no-tests           Do not install unit test artifacts"
+			echo "  --with-private-test  Install private-directory workload tools"
+			echo "  --comm-plugin=PLUGIN Communication plugin: brpc (default) or hcom"
+			exit 0
+			;;
+		*)
+			echo "Unknown option for install: $1" >&2
+			exit 1
+			;;
+		esac
+		shift
+	done
+	install_falcon_meta
+	install_falcon_client
+	install_falcon_python_sdk
+	install_falcon_cm
+	install_falcon_cn
+	install_falcon_dn
+	install_falcon_store
+	install_falcon_regress
+	install_private_directory_test
+	install_deploy_scripts
 	;;
 *)
 	print_help "build"
