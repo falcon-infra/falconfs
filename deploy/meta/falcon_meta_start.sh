@@ -1,6 +1,7 @@
 #!/bin/bash
-DIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
-source $DIR/falcon_meta_config.sh
+DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+source "$DIR/../falcon_env.sh" || exit 1
+source "$DIR/falcon_meta_config.sh"
 
 META_LOG_DIR=${FALCON_META_LOG_DIR:-$DIR}
 mkdir -p "$META_LOG_DIR"
@@ -8,8 +9,8 @@ mkdir -p "$META_LOG_DIR"
 # 安装/卸载 PostgreSQL falcon 扩展文件到系统目录
 # PostgreSQL 在编译时确定扩展文件 (.control, .sql) 的查找位置，无法通过配置修改
 install_falcon_extension() {
-    local pg_ext_dir="$(pg_config --sharedir)/extension"
-    local pg_lib_dir="$(pg_config --pkglibdir)"
+    local pg_ext_dir="$PG_SHAREDIR/extension"
+    local pg_lib_dir="$PG_PKGLIBDIR"
 
     echo "Installing Falcon extension files to PostgreSQL system directories..."
     echo "  Extension files: $pg_ext_dir"

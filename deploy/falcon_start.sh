@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-DIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 
-source $DIR/falcon_env.sh
+source "$DIR/falcon_env.sh" || exit 1
 
 COMM_PLUGIN="brpc"
 for arg in "$@"; do
@@ -12,7 +12,7 @@ for arg in "$@"; do
     esac
 done
 
-if ! $DIR/meta/falcon_meta_start.sh "$@"; then
+if ! "$DIR/meta/falcon_meta_start.sh" "$@"; then
     echo "Error: falcon_meta_start failed, skip falcon_client_start" >&2
     exit 1
 fi
@@ -23,4 +23,4 @@ if [[ "$COMM_PLUGIN" == "hcom" ]]; then
 fi
 
 sleep 3
-$DIR/client/falcon_client_start.sh
+"$DIR/client/falcon_client_start.sh"

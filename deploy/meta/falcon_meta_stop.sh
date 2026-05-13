@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+source "$DIR/../falcon_env.sh"
 source "$DIR/falcon_meta_config.sh"
 
 META_LOG_DIR=${FALCON_META_LOG_DIR:-$DIR}
@@ -9,8 +10,8 @@ META_LOG_DIR=${FALCON_META_LOG_DIR:-$DIR}
 # 卸载 PostgreSQL falcon 扩展文件
 # PostgreSQL 在编译时确定扩展文件 (.control, .sql) 的查找位置
 uninstall_falcon_extension() {
-    local pg_ext_dir="$(pg_config --sharedir)/extension"
-    local pg_lib_dir="$(pg_config --pkglibdir)"
+    local pg_ext_dir="$PG_SHAREDIR/extension"
+    local pg_lib_dir="$PG_PKGLIBDIR"
     echo "Uninstalling Falcon extension files from PostgreSQL system directories..."
     sudo rm -f "$pg_ext_dir"/falcon* 2>/dev/null || true
     sudo rm -f "$pg_lib_dir"/falcon*.so 2>/dev/null || true
