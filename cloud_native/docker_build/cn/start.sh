@@ -9,8 +9,8 @@ if [[ "${COMM_PLUGIN}" != "brpc" && "${COMM_PLUGIN}" != "hcom" ]]; then
     exit 1
 fi
 
-PG_BIN_DIR=${FALCON_PG_BIN_DIR:-}
-PG_LIB_DIR=${FALCON_PG_LIB_DIR:-}
+PG_BIN_DIR=${PG_BINDIR:-}
+PG_LIB_DIR=${PG_LIBDIR:-}
 if [ -z "${PG_BIN_DIR}" ] || [ -z "${PG_LIB_DIR}" ]; then
     if command -v pg_config >/dev/null 2>&1; then
         [ -z "${PG_BIN_DIR}" ] && PG_BIN_DIR="$(pg_config --bindir)"
@@ -18,8 +18,17 @@ if [ -z "${PG_BIN_DIR}" ] || [ -z "${PG_LIB_DIR}" ]; then
     fi
 fi
 
-PG_BIN_DIR=${PG_BIN_DIR:-/usr/local/pgsql/bin}
-PG_LIB_DIR=${PG_LIB_DIR:-/usr/local/pgsql/lib}
+missing_pg_vars=()
+[ -z "${PG_BIN_DIR}" ] && missing_pg_vars+=("PG_BINDIR")
+[ -z "${PG_LIB_DIR}" ] && missing_pg_vars+=("PG_LIBDIR")
+if [ "${#missing_pg_vars[@]}" -gt 0 ]; then
+    echo "ERROR: PostgreSQL runtime paths are incomplete and pg_config is unavailable." >&2
+    echo "Missing: ${missing_pg_vars[*]}" >&2
+    echo "Install the PostgreSQL devel package that provides pg_config, or set:" >&2
+    echo "  export PG_BINDIR=/path/to/postgresql/bin" >&2
+    echo "  export PG_LIBDIR=/path/to/postgresql/lib" >&2
+    exit 1
+fi
 
 export PATH=${PG_BIN_DIR}:$PATH
 export LD_LIBRARY_PATH=${PG_LIB_DIR}:${FALCONFS_INSTALL_DIR}/falcon_meta/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
