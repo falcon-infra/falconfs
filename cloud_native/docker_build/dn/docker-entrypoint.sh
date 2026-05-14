@@ -52,7 +52,9 @@ if [ ! -d "${METADATA_DIR}" ]; then
     PG_LIB_DIR="${PG_PKG_LIB_DIR}"
     echo "Installing Falcon extension files to PostgreSQL system directories..."
     cp -f "${FALCONFS_INSTALL_DIR}"/falcon_meta/share/extension/falcon* "${PG_EXT_DIR}/" 2>/dev/null || true
+    chmod 644 "${PG_EXT_DIR}"/falcon* 2>/dev/null || true
     cp -f "${FALCONFS_INSTALL_DIR}"/falcon_meta/lib/postgresql/falcon*.so "${PG_LIB_DIR}/" 2>/dev/null || true
+    chmod 755 "${PG_LIB_DIR}"/falcon*.so 2>/dev/null || true
 fi
 
 exec su -s /bin/bash falconMeta -c "bash ${STARTUP_SCRIPT} >${START_LOG_FILE} 2>&1"
