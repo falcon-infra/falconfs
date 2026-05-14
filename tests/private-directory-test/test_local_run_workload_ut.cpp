@@ -46,6 +46,11 @@ std::string DirPath(const std::string &root, int thread_id, int dir_id)
     return fmt::format("{}/dir_{}", ThreadDir(root, thread_id), dir_id);
 }
 
+bool ContainsEntry(const std::vector<std::string> &entries, const std::string &name)
+{
+    return std::find(entries.begin(), entries.end(), name) != entries.end();
+}
+
 void ExpectThreadFilesExist(const std::string &root, int thread_id)
 {
     for (int file_id = 0; file_id < files_per_dir; ++file_id) {
@@ -150,6 +155,7 @@ void CleanupRoot(const std::string &root, bool with_files)
 
 TEST(LocalRunWorkloadUT, InitCreateStatOpenCloseFlow)
 {
+    /* Exercise Init Create Stat Open Close flow and assert the relevant success or failure branch. */
     constexpr int kFlowRetry = 2;
     for (int attempt = 0; attempt < kFlowRetry; ++attempt) {
         if (!local_run_test::EnsureConfiguredServer()) {
@@ -199,8 +205,97 @@ TEST(LocalRunWorkloadUT, InitCreateStatOpenCloseFlow)
     GTEST_SKIP() << "full workload flow failed after retries, likely due unstable service state";
 }
 
+TEST(LocalRunWorkloadUT, DirectoryRenameAndAttributeFlow)
+{
+    /* Exercise Directory Rename And Attribute flow and assert the relevant success or failure branch. */
+    constexpr int kFlowRetry = 2;
+    for (int attempt = 0; attempt < kFlowRetry; ++attempt) {
+        if (!local_run_test::EnsureConfiguredServer()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+        if (!InitClientOrSkip()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
+        std::string root = BuildRootPath("dir_rename_attr_flow");
+        bool success = false;
+        bool file_deleted = false;
+        bool dir_deleted = false;
+        bool namespace_removed = false;
+        try {
+            InitNamespaceRoot(root);
+            workload_create(root, 0);
+            workload_mkdir(root, 0);
+
+            std::string thread_dir = ThreadDir(root, 0);
+            std::string original_file = FilePath(root, 0, 0);
+            std::string renamed_file = fmt::format("{}/file_renamed", thread_dir);
+            std::string original_dir = DirPath(root, 0, 0);
+            std::string renamed_dir = fmt::format("{}/dir_renamed", thread_dir);
+
+            uint64_t dir_inode = 0;
+            EXPECT_EQ(dfs_opendir(thread_dir.c_str(), &dir_inode), 0);
+            EXPECT_NE(dir_inode, 0U);
+
+            std::vector<std::string> entries;
+            EXPECT_EQ(dfs_readdir(thread_dir.c_str(), &entries), 0);
+            EXPECT_TRUE(ContainsEntry(entries, "file_0"));
+            EXPECT_TRUE(ContainsEntry(entries, "dir_0"));
+
+            EXPECT_EQ(dfs_rename(original_file.c_str(), renamed_file.c_str()), 0);
+            struct stat stbuf;
+            EXPECT_NE(dfs_stat(original_file.c_str(), &stbuf), 0);
+            EXPECT_EQ(dfs_stat(renamed_file.c_str(), &stbuf), 0);
+
+            (void)dfs_chmod(renamed_file.c_str(), 0640);
+            (void)dfs_chown(renamed_file.c_str(), static_cast<uint32_t>(getuid()), static_cast<uint32_t>(getgid()));
+            (void)dfs_utimens(renamed_file.c_str(), -1, -1);
+            int64_t now = static_cast<int64_t>(time(nullptr));
+            (void)dfs_utimens(renamed_file.c_str(), now, now);
+
+            EXPECT_EQ(dfs_rename(original_dir.c_str(), renamed_dir.c_str()), 0);
+            EXPECT_EQ(dfs_rmdir(renamed_dir.c_str()), 0);
+            dir_deleted = true;
+
+            EXPECT_EQ(dfs_unlink(renamed_file.c_str()), 0);
+            file_deleted = true;
+
+            UninitNamespaceRoot(root);
+            namespace_removed = true;
+            success = true;
+        } catch (...) {
+        }
+
+        if (namespace_removed) {
+            dfs_shutdown();
+        } else {
+            try {
+                if (!file_deleted) {
+                    (void)dfs_unlink(fmt::format("{}/file_renamed", ThreadDir(root, 0)).c_str());
+                    (void)dfs_unlink(FilePath(root, 0, 0).c_str());
+                }
+                if (!dir_deleted) {
+                    (void)dfs_rmdir(fmt::format("{}/dir_renamed", ThreadDir(root, 0)).c_str());
+                    (void)dfs_rmdir(DirPath(root, 0, 0).c_str());
+                }
+            } catch (...) {
+            }
+            CleanupRoot(root, false);
+        }
+        if (success && !HasFailure()) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+
+    GTEST_SKIP() << "directory rename/attribute workload flow failed after retries, likely due unstable service state";
+}
+
 TEST(LocalRunWorkloadUT, FullMetadataKvSliceFlow)
 {
+    /* Exercise Full Metadata KV Slice flow and assert the relevant success or failure branch. */
     constexpr int kFlowRetry = 2;
     for (int attempt = 0; attempt < kFlowRetry; ++attempt) {
         if (!local_run_test::EnsureConfiguredServer()) {

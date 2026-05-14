@@ -91,6 +91,76 @@ target_include_directories(PGConnectionCoverageUT PUBLIC
 
 gtest_discover_tests(PGConnectionCoverageUT)
 
+# ==================== TransactionCoverageUT =================
+add_executable(TransactionCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_transaction_coverage.c
+)
+
+target_include_directories(TransactionCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME TransactionCoverageUT COMMAND TransactionCoverageUT)
+
+# ==================== ControlFuncCoverageUT =================
+add_executable(ControlFuncCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_control_func_coverage.c
+)
+
+target_include_directories(ControlFuncCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME ControlFuncCoverageUT COMMAND ControlFuncCoverageUT)
+
+# ==================== ControlHookFlagCoverageUT =================
+add_executable(ControlHookFlagCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_control_hook_flag_coverage.c
+)
+
+target_include_directories(ControlHookFlagCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME ControlHookFlagCoverageUT COMMAND ControlHookFlagCoverageUT)
+
+# ==================== DistributedBackendCoverageUT =================
+add_executable(DistributedBackendCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_distributed_backend_coverage.c
+)
+
+target_include_directories(DistributedBackendCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME DistributedBackendCoverageUT COMMAND DistributedBackendCoverageUT)
+
+# ==================== DirPathHashCoverageUT =================
+add_executable(DirPathHashCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_dir_path_hash_coverage.c
+)
+
+target_include_directories(DirPathHashCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME DirPathHashCoverageUT COMMAND DirPathHashCoverageUT)
+
 # ==================== FalconErrorCodeCoverageUT =================
 add_executable(FalconErrorCodeCoverageUT
     ${PROJECT_SOURCE_DIR}/tests/falcon/test_error_code_coverage.cpp
@@ -159,6 +229,7 @@ target_include_directories(test_comm_plugin_coverage PUBLIC
 add_executable(FalconConnectionPoolCCoverageUT
     ${PROJECT_SOURCE_DIR}/tests/falcon/test_falcon_connection_pool_c_coverage.cpp
     ${PROJECT_SOURCE_DIR}/falcon/connection_pool/falcon_connection_pool.c
+    ${PROJECT_SOURCE_DIR}/falcon/control/control_flag.c
     ${PROJECT_SOURCE_DIR}/falcon/utils/falcon_shmem_allocator.c
 )
 add_dependencies(FalconConnectionPoolCCoverageUT test_comm_plugin_coverage)

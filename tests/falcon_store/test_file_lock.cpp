@@ -7,6 +7,7 @@ uint64_t FileLockUT::id = 0;
 
 TEST_P(FileLockUT, TryLock)
 {
+    /* Exercise Try Lock and assert the relevant success or failure branch. */
     flk.TryGetFileLock(id, std::get<0>(GetParam()));
     bool succ = flk.TryGetFileLock(id, std::get<1>(GetParam()));
     EXPECT_EQ(succ, std::get<2>(GetParam()));
@@ -18,6 +19,7 @@ TEST_P(FileLockUT, TryLock)
 
 TEST_P(FileLockUT, WaitLock)
 {
+    /* Exercise Wait Lock and assert the relevant success or failure branch. */
     flk.WaitGetFileLock(id, std::get<0>(GetParam()));
     auto fut1 = std::async(std::launch::async, [&]() { flk.WaitGetFileLock(id, std::get<1>(GetParam())); });
     auto status = fut1.wait_for(std::chrono::milliseconds(100));
@@ -30,6 +32,7 @@ TEST_P(FileLockUT, WaitLock)
 
 TEST_F(FileLockUT, TestLocked)
 {
+    /* Exercise Test Locked and assert the relevant success or failure branch. */
     bool succ = flk.TestLocked(id, LockMode::S);
     EXPECT_EQ(succ, false);
     succ = flk.TestLocked(id, LockMode::X);
@@ -48,6 +51,29 @@ TEST_F(FileLockUT, TestLocked)
     succ = flk.TestLocked(id, LockMode::X);
     EXPECT_EQ(succ, true);
     flk.ReleaseFileLock(id, LockMode::X);
+}
+
+TEST_F(FileLockUT, ReleaseMissingAndFileLockerBranches)
+{
+    /* Exercise Release missing And File Locker branches and assert the relevant success or failure branch. */
+    uint64_t missingId = id + 1000;
+    flk.ReleaseFileLock(missingId, LockMode::S);
+    flk.ReleaseFileLock(missingId, LockMode::X);
+
+    {
+        FileLocker locker(&flk, missingId, LockMode::S, false);
+        EXPECT_TRUE(locker.isLocked());
+        EXPECT_FALSE(flk.TestLocked(missingId, LockMode::S));
+        EXPECT_TRUE(flk.TestLocked(missingId, LockMode::X));
+    }
+    EXPECT_FALSE(flk.TestLocked(missingId, LockMode::X));
+
+    ASSERT_TRUE(flk.TryGetFileLock(missingId, LockMode::X));
+    {
+        FileLocker locker(&flk, missingId, LockMode::S, false);
+        EXPECT_FALSE(locker.isLocked());
+    }
+    flk.ReleaseFileLock(missingId, LockMode::X);
 }
 
 INSTANTIATE_TEST_SUITE_P(FileLockSuite,

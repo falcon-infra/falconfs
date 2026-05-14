@@ -98,6 +98,7 @@ int pg_snprintf(char *str, size_t count, const char *fmt, ...)
 
 TEST(PerfCounterCoverageUT, ShmemInitInitializesDefaultsAndHonorsExistingBlock)
 {
+    /* Exercise Shared Memory Init initializes Defaults And Honors Existing Block and assert the relevant success or failure branch. */
     InitFreshPerfShmem();
 
     EXPECT_TRUE(g_FalconPerRequestStatShmem->enabled);
@@ -113,6 +114,7 @@ TEST(PerfCounterCoverageUT, ShmemInitInitializesDefaultsAndHonorsExistingBlock)
 
 TEST(PerfCounterCoverageUT, AllocationRejectsDisabledAndFullSlots)
 {
+    /* Exercise Allocation rejects Disabled And Full Slots and assert the relevant success or failure branch. */
     ResetPerfShmem();
     EXPECT_EQ(PerRequestStatAllocIndex(), -1);
 
@@ -136,6 +138,7 @@ TEST(PerfCounterCoverageUT, AllocationRejectsDisabledAndFullSlots)
 
 TEST(PerfCounterCoverageUT, CheckpointsCompleteAndAggregate)
 {
+    /* Exercise Checkpoints Complete And Aggregate and assert the relevant success or failure branch. */
     InitFreshPerfShmem();
     int32_t idx = PerRequestStatAllocIndex();
     ASSERT_GE(idx, 0);
@@ -180,6 +183,7 @@ TEST(PerfCounterCoverageUT, CheckpointsCompleteAndAggregate)
 
 TEST(PerfCounterCoverageUT, CompleteReleasesInvalidAndShortRequests)
 {
+    /* Exercise Complete Releases invalid And Short Requests and assert the relevant success or failure branch. */
     InitFreshPerfShmem();
     PerRequestStatComplete(-1, MKDIR);
 
@@ -204,6 +208,7 @@ TEST(PerfCounterCoverageUT, CompleteReleasesInvalidAndShortRequests)
 
 TEST(PerfCounterCoverageUT, BroadcastSkipsWhenDisabledOrOutOfRange)
 {
+    /* Exercise Broadcast Skips When Disabled Or Out Of Range and assert the relevant success or failure branch. */
     InitFreshPerfShmem();
     int32_t idx = PerRequestStatAllocIndex();
     ASSERT_GE(idx, 0);
@@ -217,4 +222,32 @@ TEST(PerfCounterCoverageUT, BroadcastSkipsWhenDisabledOrOutOfRange)
     StatCheckpointBroadcast(indices, 1, -1);
     StatCheckpointBroadcast(indices, 1, STAT_MAX_CHECKPOINTS);
     EXPECT_EQ(g_FalconPerRequestStatShmem->statArray[idx].checkpointCount, 1);
+}
+
+TEST(PerfCounterCoverageUT, AggregatePrintsEveryOpcodeNameAndFallbackCheckpointName)
+{
+    /* Exercise Aggregate Prints Every Opcode Name And Fallback Checkpoint Name and assert the relevant success or failure branch. */
+    InitFreshPerfShmem();
+
+    for (int op = MKDIR_SUB_MKDIR; op < NOT_SUPPORTED; ++op) {
+        g_FalconPerRequestStatShmem->accum[op].requestCount = 1;
+        g_FalconPerRequestStatShmem->accum[op].e2eSumNs = 1000;
+        g_FalconPerRequestStatShmem->accum[op].maxCheckpointCount = 1;
+    }
+
+    g_FalconPerRequestStatShmem->accum[MKDIR_SUB_MKDIR].maxCheckpointCount = STAT_MAX_CHECKPOINTS;
+    g_FalconPerRequestStatShmem->accum[MKDIR_SUB_MKDIR].gaps[STAT_MAX_CHECKPOINTS - 2].count = 1;
+    g_FalconPerRequestStatShmem->accum[MKDIR_SUB_MKDIR].gaps[STAT_MAX_CHECKPOINTS - 2].sum_ns = 10;
+    g_FalconPerRequestStatShmem->accum[MKDIR_SUB_MKDIR].gaps[STAT_MAX_CHECKPOINTS - 2].min_ns = 10;
+    g_FalconPerRequestStatShmem->accum[MKDIR_SUB_MKDIR].gaps[STAT_MAX_CHECKPOINTS - 2].max_ns = 10;
+
+    g_FalconPerRequestStatShmem->accum[CREATE].maxCheckpointCount = 2;
+    g_FalconPerRequestStatShmem->accum[CREATE].requestCount = 2;
+    g_FalconPerRequestStatShmem->accum[CREATE].gaps[0].count = 1;
+    g_FalconPerRequestStatShmem->accum[CREATE].gaps[0].sum_ns = 5;
+    g_FalconPerRequestStatShmem->accum[CREATE].gaps[0].min_ns = 5;
+    g_FalconPerRequestStatShmem->accum[CREATE].gaps[0].max_ns = 5;
+
+    PerRequestStatAggregateAndOutput();
+    EXPECT_FALSE(g_logMessages.empty());
 }
