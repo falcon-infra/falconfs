@@ -8,9 +8,9 @@ RUN_ID="${FALCONFS_BASELINE_RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 RESULT_DIR="${FALCONFS_BASELINE_RESULT_DIR:-$RESULT_ROOT/$RUN_ID}"
 LOCK_DIR="${FALCONFS_BASELINE_LOCK_DIR:-/tmp/falconfs_daily_baseline_$(id -un).lockdir}"
 
-BASELINE_BRANCH="${FALCONFS_BASELINE_BRANCH:-baseline/upstream-main}"
-BASELINE_REMOTE="${FALCONFS_BASELINE_REMOTE:-upstream}"
-BASELINE_REF="${FALCONFS_BASELINE_REF:-$BASELINE_REMOTE/main}"
+BASELINE_BRANCH="${FALCONFS_BASELINE_BRANCH:-baseline/main}"
+BASELINE_GIT_URL="${FALCONFS_BASELINE_GIT_URL:-https://github.com/falcon-infra/falconfs.git}"
+BASELINE_GIT_REF="${FALCONFS_BASELINE_GIT_REF:-main}"
 UPDATE_GIT="${FALCONFS_BASELINE_UPDATE_GIT:-1}"
 ALLOW_BRANCH_RESET="${FALCONFS_BASELINE_ALLOW_BRANCH_RESET:-0}"
 RUN_BUILD="${FALCONFS_BASELINE_BUILD:-1}"
@@ -218,10 +218,10 @@ EOF
         exit 1
     fi
 
-    log "Fetching $BASELINE_REMOTE"
-    git fetch "$BASELINE_REMOTE"
-    log "Resetting $current_branch to $BASELINE_REF"
-    git reset --hard "$BASELINE_REF"
+    log "Fetching $BASELINE_GIT_REF from $BASELINE_GIT_URL"
+    git fetch "$BASELINE_GIT_URL" "$BASELINE_GIT_REF"
+    log "Resetting $current_branch to FETCH_HEAD"
+    git reset --hard FETCH_HEAD
 fi
 
 commit_sha=$(git rev-parse HEAD)
@@ -240,7 +240,8 @@ commit_sha=$commit_sha
 commit_subject=$commit_subject
 git_dirty=$git_dirty
 git_status_file=$git_status_file
-baseline_ref=$BASELINE_REF
+baseline_git_url=$BASELINE_GIT_URL
+baseline_git_ref=$BASELINE_GIT_REF
 result_dir=$RESULT_DIR
 host_info_file=$RESULT_DIR/host_info.txt
 iterations=$ITERATIONS

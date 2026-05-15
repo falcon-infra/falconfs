@@ -42,7 +42,7 @@ round_idx,round_name,throughput,avg_latency,ops,time,raw_log
 
 ## Daily Baseline
 
-`run_daily_baseline.sh` is intended for a dedicated local runner account. It updates to `upstream/main`, builds FalconFS, installs FalconFS, restarts the local deployment, and then runs `local-run.sh` for rounds `0 1 2 3`.
+`run_daily_baseline.sh` is intended for a dedicated local runner account. It fetches the configured Git URL/ref, builds FalconFS, installs FalconFS, restarts the local deployment, and then runs `local-run.sh` for rounds `0 1 2 3`.
 
 Create a runner account and checkout. Replace `<runner-user>` with the account used on the target host:
 
@@ -51,12 +51,11 @@ sudo useradd -m -s /bin/bash <runner-user>
 sudo -iu <runner-user>
 git clone https://github.com/falcon-infra/falconfs.git ~/falconfs-baseline-runner
 cd ~/falconfs-baseline-runner
-git remote add upstream https://github.com/falcon-infra/falconfs.git 2>/dev/null || true
-git fetch upstream
-git switch -C baseline/upstream-main upstream/main
+git fetch https://github.com/falcon-infra/falconfs.git main
+git switch -C baseline/main FETCH_HEAD
 ```
 
-If the checkout was cloned from a fork, keep `upstream` pointed at `https://github.com/falcon-infra/falconfs.git` so nightly results always track upstream main.
+The default update source is `https://github.com/falcon-infra/falconfs.git` at ref `main`. Override `FALCONFS_BASELINE_GIT_URL` and `FALCONFS_BASELINE_GIT_REF` if the nightly baseline should track another repository or branch.
 
 Prepare the local mountpoint for the runner account:
 
@@ -87,7 +86,7 @@ local-run.sh
 
 Per-iteration results are written under `iter_1/`, `iter_2/`, and `iter_3/`. The parent `summary.csv` contains the average throughput, average latency, average operation count, and average elapsed time across all iterations.
 
-The wrapper refuses to reset any branch except `baseline/upstream-main` unless `FALCONFS_BASELINE_ALLOW_BRANCH_RESET=1` is set. This protects normal development branches from nightly automation.
+The wrapper refuses to reset any branch except `baseline/main` unless `FALCONFS_BASELINE_ALLOW_BRANCH_RESET=1` is set. This protects normal development branches from nightly automation.
 
 After each run, the wrapper compares the aggregated daily result against the median of recent successful baseline summaries under `FALCONFS_BASELINE_RESULT_ROOT`. The default history window is 7 runs. The default alert rules are a 10% throughput drop or a 10% average latency increase in any round. Latency is reported in `ns/op`.
 
@@ -105,8 +104,9 @@ Useful wrapper overrides:
 
 ```bash
 FALCONFS_BASELINE_RESULT_ROOT=$HOME/falconfs-baseline-results
-FALCONFS_BASELINE_BRANCH=baseline/upstream-main
-FALCONFS_BASELINE_REF=upstream/main
+FALCONFS_BASELINE_BRANCH=baseline/main
+FALCONFS_BASELINE_GIT_URL=https://github.com/falcon-infra/falconfs.git
+FALCONFS_BASELINE_GIT_REF=main
 FALCONFS_BASELINE_UPDATE_GIT=1
 FALCONFS_BASELINE_BUILD=1
 FALCONFS_BASELINE_DEPLOY=1
