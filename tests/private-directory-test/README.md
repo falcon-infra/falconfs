@@ -187,10 +187,14 @@ Type=oneshot
 User=<runner-user>
 Group=<runner-group>
 Environment=HOME=/home/<runner-user>
+Environment=FALCON_META_WORKSPACE=/path/to/fast/local/disk
 WorkingDirectory=/home/<runner-user>/falconfs-baseline-runner
+ExecStartPre=+/usr/bin/install -d -o <runner-user> -g <runner-group> -m 0755 /path/to/fast/local/disk
 ExecStart=/home/<runner-user>/falconfs-baseline-runner/tests/private-directory-test/run_daily_baseline.sh
 TimeoutStartSec=4h
 ```
+
+`FALCON_META_WORKSPACE` is optional. Set it when metadata should live outside `$HOME`, for example on a local NVMe disk. The deployment scripts store metadata under `$FALCON_META_WORKSPACE/metadata`.
 
 `/etc/systemd/system/falconfs-daily-baseline.timer`:
 
