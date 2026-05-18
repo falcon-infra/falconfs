@@ -277,6 +277,24 @@ static int TestDropFalconInvalidatesCachedState(void)
     return 0;
 }
 
+static int TestSavePreparedTransactionGid(void)
+{
+    DropStmt dropStmt = {.type = T_DropStmt};
+    TransactionStmt transactionStmt = {.type = T_TransactionStmt, .gid = "gid_control"};
+    PlannedStmt pstmt = {.type = T_PlannedStmt, .utilityStmt = (Node *)&dropStmt};
+
+    ResetHookFlagHarness();
+    strcpy(PreparedTransactionGid, "old_gid");
+    SavePreparedTransactionGid(&pstmt);
+    if (ExpectTrue(PreparedTransactionGid[0] == '\0', "non-transaction statement clears prepared gid"))
+        return 1;
+
+    pstmt.utilityStmt = (Node *)&transactionStmt;
+    SavePreparedTransactionGid(&pstmt);
+    return ExpectTrue(strcmp(PreparedTransactionGid, "gid_control") == 0,
+                      "transaction statement saves prepared gid");
+}
+
 int main(void)
 {
     if (TestControlFlagSharedStateLifecycle())
@@ -286,6 +304,8 @@ int main(void)
     if (TestHookRegistrationAndCleanup())
         return 1;
     if (TestDropFalconInvalidatesCachedState())
+        return 1;
+    if (TestSavePreparedTransactionGid())
         return 1;
     return 0;
 }

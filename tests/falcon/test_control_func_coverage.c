@@ -33,6 +33,9 @@ static int g_pooler_count;
 static int32_t g_local_server_id;
 static int g_plain_command_count;
 static int g_pq_get_result_count;
+static int g_search_range_point;
+static int g_search_server_id;
+static bool g_copy_data_once;
 static char g_last_command[4096];
 static char g_last_plain_command[4096];
 
@@ -53,6 +56,9 @@ static void ResetControlHarness(void)
     g_local_server_id = 7;
     g_plain_command_count = 0;
     g_pq_get_result_count = 0;
+    g_search_range_point = 0;
+    g_search_server_id = 1;
+    g_copy_data_once = false;
     g_last_command[0] = '\0';
     g_last_plain_command[0] = '\0';
     SPI_processed = 0;
@@ -200,8 +206,8 @@ void RunConnectionPoolServer(void)
 
 void SearchShardInfoByHashValue(int32_t hashValue, int32_t *rangePoint, int32_t *serverId)
 {
-    *rangePoint = hashValue;
-    *serverId = 1;
+    *rangePoint = hashValue + g_search_range_point;
+    *serverId = g_search_server_id;
 }
 
 List *GetAllForeignServerId(bool exceptSelf, bool exceptCn)
@@ -303,8 +309,12 @@ void PQclear(PGresult *res)
 int PQgetCopyData(PGconn *conn, char **buffer, int async)
 {
     (void)conn;
-    (void)buffer;
     (void)async;
+    if (g_copy_data_once) {
+        g_copy_data_once = false;
+        *buffer = strdup("row");
+        return 3;
+    }
     return -1;
 }
 
@@ -318,7 +328,7 @@ int PQputCopyData(PGconn *conn, const char *buffer, int nbytes)
 
 void PQfreemem(void *ptr)
 {
-    (void)ptr;
+    free(ptr);
 }
 
 int PQputCopyEnd(PGconn *conn, const char *errormsg)
@@ -483,6 +493,7 @@ static int TestMoveShardRunsCopyPipelineAndDropsSourceTable(void)
 {
     ResetControlHarness();
     g_local_server_id = FALCON_CN_SERVER_ID;
+    g_copy_data_once = true;
 
     /*
      * Build a minimal fmgr call frame because falcon_move_shard reads its range
@@ -509,6 +520,48 @@ static int TestMoveShardRunsCopyPipelineAndDropsSourceTable(void)
     return ExpectTrue(g_pq_get_result_count == 6, "copy pipeline consumes all expected libpq results");
 }
 
+static int TestControlErrorBranchesReturnThroughHarness(void)
+{
+    ResetControlHarness();
+    g_spi_connect_result = SPI_ERROR_CONNECT;
+    falcon_clear_user_data_func(NULL);
+    if (ExpectTrue(g_spi_finish_count == 2, "clear user data connect failure calls finish and returns"))
+        return 1;
+
+    ResetControlHarness();
+    g_last_spi_result = SPI_ERROR_OPUNKNOWN;
+    falcon_clear_user_data_func(NULL);
+    if (ExpectTrue(g_spi_finish_count == 2 && g_clear_dir_path_count == 1,
+                   "clear user data SPI failure path still reaches cleanup harness"))
+        return 1;
+
+    ResetControlHarness();
+    g_last_spi_result = SPI_ERROR_OPUNKNOWN;
+    falcon_clear_all_data_func(NULL);
+    if (ExpectTrue(g_spi_execute_count == 2 && g_spi_finish_count == 2,
+                   "clear all data utility failure branch is covered"))
+        return 1;
+
+    ResetControlHarness();
+    g_local_server_id = FALCON_CN_SERVER_ID;
+    g_search_range_point = 1;
+    LOCAL_FCINFO(fcinfo, 2);
+    InitFunctionCallInfoData(*fcinfo, NULL, 2, InvalidOid, NULL, NULL);
+    fcinfo->args[0].value = Int32GetDatum(11);
+    fcinfo->args[0].isnull = false;
+    fcinfo->args[1].value = Int32GetDatum(2);
+    fcinfo->args[1].isnull = false;
+    falcon_move_shard(fcinfo);
+    if (ExpectTrue(g_plain_command_count == 3, "range mismatch branch returns through error shim"))
+        return 1;
+
+    ResetControlHarness();
+    g_local_server_id = FALCON_CN_SERVER_ID;
+    g_search_server_id = 2;
+    falcon_move_shard(fcinfo);
+    return ExpectTrue(g_plain_command_count == 3, "same source and target branch returns through error shim");
+}
+
 int main(void)
 {
     if (TestClearUserDataBuildsLocalShardCommand())
@@ -518,6 +571,8 @@ int main(void)
     if (TestSmallControlFunctions())
         return 1;
     if (TestMoveShardRunsCopyPipelineAndDropsSourceTable())
+        return 1;
+    if (TestControlErrorBranchesReturnThroughHarness())
         return 1;
     return 0;
 }

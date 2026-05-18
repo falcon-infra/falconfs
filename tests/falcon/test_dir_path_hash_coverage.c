@@ -44,6 +44,8 @@ static int g_hash_count;
 static int g_insert_count;
 static int g_delete_count;
 static uint64_t g_directory_lookup_result;
+static bool g_force_hash_full;
+static FuncCallContext *g_funcctx;
 MemoryContext CurrentMemoryContext = NULL;
 
 static int ExpectTrue(bool condition, const char *message)
@@ -64,6 +66,8 @@ static void ResetHarness(void)
     g_insert_count = 0;
     g_delete_count = 0;
     g_directory_lookup_result = DIR_HASH_TABLE_PATH_NOT_EXIST;
+    g_force_hash_full = false;
+    g_funcctx = NULL;
 }
 
 static FakeHash *FindFakeHash(HTAB *hashp)
@@ -246,11 +250,25 @@ void pfree(void *pointer)
     free(pointer);
 }
 
+static List *AppendCell(List *list, NodeTag type, ListCell cell)
+{
+    if (list == NIL) {
+        list = calloc(1, sizeof(List));
+        list->type = type;
+        list->max_length = 4;
+        list->elements = calloc(list->max_length, sizeof(ListCell));
+    } else if (list->length == list->max_length) {
+        list->max_length *= 2;
+        list->elements = realloc(list->elements, list->max_length * sizeof(ListCell));
+    }
+    list->elements[list->length++] = cell;
+    return list;
+}
+
 List *lappend(List *list, void *datum)
 {
-    (void)list;
-    (void)datum;
-    return NIL;
+    ListCell cell = {.ptr_value = datum};
+    return AppendCell(list, T_List, cell);
 }
 
 TypeFuncClass get_call_result_type(FunctionCallInfo fcinfo, Oid *resultTypeId, TupleDesc *resultTupleDesc)
@@ -271,7 +289,9 @@ HeapTuple heap_form_tuple(TupleDesc tupleDescriptor, const Datum *values, const 
     (void)tupleDescriptor;
     (void)values;
     (void)isnull;
-    return NULL;
+    static HeapTupleData tuple;
+    tuple.t_data = (HeapTupleHeader)1;
+    return &tuple;
 }
 
 Datum HeapTupleHeaderGetDatum(const HeapTupleHeader tuple)
@@ -291,19 +311,21 @@ uint64 hash_bytes_extended(const unsigned char *k, int keylen, uint64 seed)
 
 FuncCallContext *init_MultiFuncCall(PG_FUNCTION_ARGS)
 {
-    (void)fcinfo;
-    return calloc(1, sizeof(FuncCallContext));
+    g_funcctx = calloc(1, sizeof(FuncCallContext));
+    g_funcctx->multi_call_memory_ctx = CurrentMemoryContext;
+    fcinfo->flinfo->fn_extra = g_funcctx;
+    return g_funcctx;
 }
 
 FuncCallContext *per_MultiFuncCall(PG_FUNCTION_ARGS)
 {
-    (void)fcinfo;
-    return calloc(1, sizeof(FuncCallContext));
+    return (FuncCallContext *)fcinfo->flinfo->fn_extra;
 }
 
 void end_MultiFuncCall(PG_FUNCTION_ARGS, FuncCallContext *funcctx)
 {
-    (void)fcinfo;
+    fcinfo->flinfo->fn_extra = NULL;
+    g_funcctx = NULL;
     free(funcctx);
 }
 
@@ -368,6 +390,9 @@ void *hash_search_with_hash_value(HTAB *hashp, const void *keyPtr, uint32 hashva
         return NULL;
     }
     if (action == HASH_ENTER_NULL) {
+        if (g_force_hash_full) {
+            return NULL;
+        }
         if (index >= 0) {
             return &hash->entries[index];
         }
@@ -480,11 +505,135 @@ static int TestLRUEliminatesDestroyableEntries(void)
     return ExpectTrue(!EliminateDirPathHashByLRU(0), "LRU skips partitions below threshold");
 }
 
+static int TestHashHelpersAndSqlLockWrappers(void)
+{
+    ResetHarness();
+    DirPathShmemInit();
+    g_directory_lookup_result = 3001;
+
+    uint64_t inode = SearchDirectoryByDirectoryHashTable(NULL, 20, "beta", DIR_LOCK_EXCLUSIVE);
+    if (ExpectTrue(inode == 3001 && DirectoryHashTableLastAcquiredLock != NULL,
+                   "exclusive search acquires a cached lock"))
+        return 1;
+
+    LOCAL_FCINFO(release_fcinfo, 2);
+    InitFunctionCallInfoData(*release_fcinfo, NULL, 2, InvalidOid, NULL, NULL);
+    release_fcinfo->args[0].value = CStringGetDatum("beta");
+    release_fcinfo->args[0].isnull = false;
+    release_fcinfo->args[1].value = Int64GetDatum(20);
+    release_fcinfo->args[1].isnull = false;
+    if (ExpectTrue(falcon_release_hash_lock(release_fcinfo) == Int16GetDatum(SUCCESS),
+                   "SQL release wrapper delegates to lock release"))
+        return 1;
+    DirectoryHashTableLastAcquiredLock = NULL;
+
+    LOCAL_FCINFO(acquire_fcinfo, 3);
+    InitFunctionCallInfoData(*acquire_fcinfo, NULL, 3, InvalidOid, NULL, NULL);
+    acquire_fcinfo->args[0].value = CStringGetDatum("beta");
+    acquire_fcinfo->args[0].isnull = false;
+    acquire_fcinfo->args[1].value = Int64GetDatum(20);
+    acquire_fcinfo->args[1].isnull = false;
+    acquire_fcinfo->args[2].value = Int64GetDatum(1);
+    acquire_fcinfo->args[2].isnull = false;
+    if (ExpectTrue(falcon_acquire_hash_lock(acquire_fcinfo) == Int16GetDatum(SUCCESS),
+                   "SQL acquire wrapper maps shared lock mode"))
+        return 1;
+    RWLockRelease(DirectoryHashTableLastAcquiredLock);
+    DirectoryHashTableLastAcquiredLock = NULL;
+
+    acquire_fcinfo->args[2].value = Int64GetDatum(0);
+    if (ExpectTrue(falcon_acquire_hash_lock(acquire_fcinfo) == Int16GetDatum(SUCCESS),
+                   "SQL acquire wrapper maps no-lock mode"))
+        return 1;
+
+    acquire_fcinfo->args[2].value = Int64GetDatum(2);
+    if (ExpectTrue(falcon_acquire_hash_lock(acquire_fcinfo) == Int16GetDatum(SUCCESS),
+                   "SQL acquire wrapper maps exclusive lock mode"))
+        return 1;
+    RWLockRelease(DirectoryHashTableLastAcquiredLock);
+    DirectoryHashTableLastAcquiredLock = NULL;
+
+    DirPathHashKey low = {.parentId = 1};
+    DirPathHashKey high = {.parentId = 2};
+    DirPathHashKey copied;
+    strcpy(low.fileName, "alpha");
+    strcpy(high.fileName, "alpha");
+    if (ExpectTrue(dir_path_compare(&high, &low) > 0 && dir_path_compare(&low, &high) < 0,
+                   "hash key compare orders parent ids"))
+        return 1;
+    high.parentId = 1;
+    strcpy(high.fileName, "omega");
+    if (ExpectTrue(dir_path_match(&low, &high, sizeof(low)) < 0, "hash key match delegates to compare"))
+        return 1;
+    if (ExpectTrue(dir_path_keycopy(&copied, &high, sizeof(high)) == NULL &&
+                       copied.parentId == high.parentId && strcmp(copied.fileName, high.fileName) == 0,
+                   "hash key copy duplicates key fields"))
+        return 1;
+
+    return ExpectTrue(dir_path_hash(&copied, sizeof(copied)) != 0, "hash helper returns a value");
+}
+
+static int TestDeleteMissWithNoLockBypassesHashEntry(void)
+{
+    ResetHarness();
+    DirPathShmemInit();
+    g_force_hash_full = true;
+
+    DeleteDirectoryByDirectoryHashTable(NULL, 30, "missing", DIR_LOCK_NONE);
+    if (ExpectTrue(g_delete_count == 1, "delete miss with no lock delegates directly to table"))
+        return 1;
+
+    g_directory_lookup_result = 4001;
+    uint64_t inode = SearchDirectoryByDirectoryHashTable(NULL, 31, "lookup", DIR_LOCK_NONE);
+    if (ExpectTrue(inode == 4001, "search miss with full cache returns table lookup"))
+        return 1;
+
+    InsertDirectoryByDirectoryHashTable(NULL, NULL, 32, "insert", 5001, 0, DIR_LOCK_NONE);
+    if (ExpectTrue(g_insert_count == 1, "insert miss with full cache writes through to table"))
+        return 1;
+
+    return ExpectTrue(pg_atomic_read_u32(PathDirHashEntryCount) == 0,
+                      "full-cache no-lock paths do not allocate entries");
+}
+
+static int TestPrintDirPathHashElemSrf(void)
+{
+    ResetHarness();
+    DirPathShmemInit();
+
+    InsertDirectoryByDirectoryHashTable(NULL, NULL, 40, "print_a", 6001, 0, DIR_LOCK_NONE);
+    InsertDirectoryByDirectoryHashTable(NULL, NULL, 41, "print_b", 6002, 0, DIR_LOCK_NONE);
+    CommitForDirPathHash();
+    SearchDirectoryByDirectoryHashTable(NULL, 40, "print_a", DIR_LOCK_SHARED);
+
+    FmgrInfo flinfo;
+    ReturnSetInfo resultInfo;
+    LOCAL_FCINFO(fcinfo, 0);
+    memset(&flinfo, 0, sizeof(flinfo));
+    memset(&resultInfo, 0, sizeof(resultInfo));
+    InitFunctionCallInfoData(*fcinfo, &flinfo, 0, InvalidOid, NULL, (fmNodePtr)&resultInfo);
+
+    falcon_print_dir_path_hash_elem(fcinfo);
+    if (ExpectTrue(resultInfo.isDone == ExprMultipleResult, "first SRF call returns a hash row"))
+        return 1;
+    falcon_print_dir_path_hash_elem(fcinfo);
+    if (ExpectTrue(resultInfo.isDone == ExprMultipleResult, "second SRF call returns a hash row"))
+        return 1;
+    falcon_print_dir_path_hash_elem(fcinfo);
+    return ExpectTrue(resultInfo.isDone == ExprEndResult, "third SRF call completes iteration");
+}
+
 int main(void)
 {
     if (TestInitInsertSearchDeleteAndCommitFlow())
         return 1;
     if (TestLRUEliminatesDestroyableEntries())
+        return 1;
+    if (TestHashHelpersAndSqlLockWrappers())
+        return 1;
+    if (TestDeleteMissWithNoLockBypassesHashEntry())
+        return 1;
+    if (TestPrintDirPathHashElemSrf())
         return 1;
     return 0;
 }

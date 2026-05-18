@@ -147,6 +147,22 @@ target_include_directories(DistributedBackendCoverageUT PUBLIC
 
 add_test(NAME DistributedBackendCoverageUT COMMAND DistributedBackendCoverageUT)
 
+# ==================== RemoteCommCoverageUT =================
+add_executable(RemoteCommCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_remote_comm_coverage.c
+)
+
+target_include_directories(RemoteCommCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PROJECT_SOURCE_DIR}/remote_connection_def
+    ${PROJECT_SOURCE_DIR}/third_party/postgres/src/interfaces/libpq
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME RemoteCommCoverageUT COMMAND RemoteCommCoverageUT)
+
 # ==================== DirPathHashCoverageUT =================
 add_executable(DirPathHashCoverageUT
     ${PROJECT_SOURCE_DIR}/tests/falcon/test_dir_path_hash_coverage.c
