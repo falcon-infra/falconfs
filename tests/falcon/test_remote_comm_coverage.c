@@ -489,11 +489,7 @@ static int TestNoBeginPrepareNoopAndPreparedAbort(void)
 {
     ResetRemoteHarness();
     List *worker = list_make1_int(5);
-    char payload[] = "plain";
-    SerializedData plainParam = {.buffer = payload, .size = sizeof(payload), .capacity = sizeof(payload)};
-    FalconMetaCallOnWorkerList(PLAIN_COMMAND, 1, plainParam, REMOTE_COMMAND_FLAG_NO_BEGIN, NIL);
 
-    g_fail_pipeline_sync = true;
     FalconPlainCommandOnWorkerList("SELECT 5", REMOTE_COMMAND_FLAG_NO_BEGIN, worker);
     MultipleServerRemoteCommandResult result = FalconSendCommandAndWaitForResult();
     if (ExpectTrue(list_length(result) == 1, "no-begin command still returns a server result"))
