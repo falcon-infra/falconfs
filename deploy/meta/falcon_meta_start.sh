@@ -17,7 +17,9 @@ install_falcon_extension() {
     echo "  Library files: $pg_lib_dir"
     sudo mkdir -p "$pg_ext_dir"
     sudo cp -f "$FALCONFS_INSTALL_DIR/falcon_meta/share/extension"/falcon* "$pg_ext_dir/" 2>/dev/null || true
+    sudo chmod 644 "$pg_ext_dir"/falcon* 2>/dev/null || true
     sudo cp -f "$FALCONFS_INSTALL_DIR/falcon_meta/lib/postgresql"/falcon*.so "$pg_lib_dir/" 2>/dev/null || true
+    sudo chmod 755 "$pg_lib_dir"/falcon*.so 2>/dev/null || true
 
     echo "Falcon extension files installed."
 }
