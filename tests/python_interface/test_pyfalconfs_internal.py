@@ -1,7 +1,9 @@
 import errno
 import importlib
 import json
+import ctypes
 import os
+import pathlib
 import socket
 import tempfile
 import time
@@ -21,7 +23,24 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.mod.Init(workspace_file.name, config_file.name)
 
+    def test_throw_hook_can_be_loaded(self):
+        module_dir = pathlib.Path(self.mod.__file__).resolve().parent
+        throw_hook = module_dir / "throw_hook.so"
+        if not throw_hook.exists():
+            self.skipTest("throw_hook.so is not built")
+
+        handle = ctypes.CDLL(str(throw_hook), mode=os.RTLD_NOW | os.RTLD_LOCAL)
+        self.assertIsNotNone(handle)
+
+        # Call the exported coverage helper directly; loading the hook locally does not interpose real C++ throws.
+        handle.coverage_print_stacktrace.argtypes = [ctypes.c_int]
+        handle.coverage_print_stacktrace.restype = None
+        handle.coverage_print_stacktrace(0)
+        handle.coverage_print_stacktrace(1)
+
     def test_argument_validation_errors(self):
+        with self.assertRaises(TypeError):
+            self.mod.Init("/workspace")
         with self.assertRaises(TypeError):
             self.mod.Mkdir()
         with self.assertRaises(TypeError):
@@ -75,9 +94,22 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         self.assertEqual(self.mod.Read("/missing", 123456789, bytearray(2), 2, 0), -errno.EBADF)
         self.assertEqual(self.mod.Write("/missing", 123456789, bytearray(b"ab"), 2, 0), -errno.EBADF)
 
-        ret, stbuf = self.mod.Stat("/\x011middle")
+        ret, stbuf = self.mod.Stat("/" + chr(1) + "1middle")
         self.assertEqual(ret, 0)
         self.assertTrue(stbuf["st_mode"] & 0o40000)
+
+    def test_coverage_only_async_internals(self):
+        if not hasattr(self.mod, "CoverageExerciseInternals"):
+            self.skipTest("coverage-only internals are not built")
+
+        # The coverage-only entry drives async worker growth and exception-result conversion without service failures.
+        self.assertEqual(self.mod.CoverageExerciseInternals(), (7, 1, 1))
+
+    def test_async_exists_middle_component_fast_path(self):
+        async_state = self.mod.AsyncExists("/" + chr(1) + "1middle")
+        self.assertIs(iter(async_state), async_state)
+        self.assertIs(async_state.__await__(), async_state)
+        self.assertEqual(self.wait_async_result(async_state), 0)
 
     def wait_async_result(self, async_state):
         for _ in range(100):
@@ -192,16 +224,40 @@ class PyFalconFSInternalServiceCoverageTest(unittest.TestCase):
         async_state = self.mod.AsyncExists(path)
         self.assertEqual(self.wait_async_result(async_state), 0)
 
+        async_read_buffer = bytearray(len(payload))
+        async_get_state = self.mod.AsyncGet(path, async_read_buffer, len(async_read_buffer), 0)
+        self.assertEqual(self.wait_async_result(async_get_state), 0)
+        self.assertEqual(async_read_buffer, payload)
+
         self.assertEqual(self.mod.Unlink(path), 0)
         self.assertEqual(self.mod.Rmdir(directory), 0)
 
+    def test_async_exists_iterator_await_and_missing_path(self):
+        path = self.unique_path("async_missing")
+
+        async_state = self.mod.AsyncExists(path)
+        self.assertIs(iter(async_state), async_state)
+        self.assertIs(async_state.__await__(), async_state)
+        self.assertNotEqual(self.wait_async_result(async_state), 0)
+
+        read_buffer = bytearray(8)
+        async_get_state = self.mod.AsyncGet(path, read_buffer, len(read_buffer), 0)
+        self.assertNotEqual(self.wait_async_result(async_get_state), 0)
+
+        missing_parent = f"{path}/child"
+        async_put_state = self.mod.AsyncPut(missing_parent, bytearray(b"missing"), 7, 0)
+        self.assertNotEqual(self.wait_async_result(async_put_state), 0)
+
     def test_async_put_get_and_cleanup(self):
-        path = self.unique_path("async_file")
+        directory = self.unique_path("async_dir")
+        path = f"{directory}/async_file"
         payload = bytearray(b"pyfalconfs-async-coverage")
 
+        self.assertEqual(self.mod.Mkdir(directory), 0)
         put_state = self.mod.AsyncPut(path, payload, len(payload), 0)
         put_ret = self.wait_async_result(put_state)
         if put_ret == -errno.ENOENT:
+            self.mod.Rmdir(directory)
             self.skipTest("AsyncPut cannot create files in this service coverage environment")
         self.assertEqual(put_ret, 0)
 
@@ -211,6 +267,7 @@ class PyFalconFSInternalServiceCoverageTest(unittest.TestCase):
         self.assertEqual(read_buffer, payload)
 
         self.assertEqual(self.mod.Unlink(path), 0)
+        self.assertEqual(self.mod.Rmdir(directory), 0)
 
     def test_directory_listing(self):
         directory = self.unique_path("listdir")

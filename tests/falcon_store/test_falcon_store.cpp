@@ -1,7 +1,15 @@
 #include "test_falcon_store.h"
 
+#include "buffer/dir_open_instance.h"
 #include "connection/node.h"
 #include "disk_cache/disk_cache.h"
+
+#include <arpa/inet.h>
+#include <brpc/server.h>
+#include <netinet/in.h>
+#include <chrono>
+#include <thread>
+#include <sys/socket.h>
 
 unsigned long myHash(std::string &str);
 
@@ -14,6 +22,230 @@ void ResetFalconStatsForCoverage()
         FalconStats::GetInstance().storedStats[i] = 0;
     }
 }
+
+int GetUnusedLoopbackPortForStoreCoverage()
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+    socklen_t len = sizeof(addr);
+    if (getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+        close(fd);
+        return -1;
+    }
+    int port = ntohs(addr.sin_port);
+    close(fd);
+    return port;
+}
+
+class MockRemoteIOService : public falcon::brpc_io::RemoteIOService {
+  public:
+    enum class Mode { Success, Error, BadSize, ConnectionError };
+
+    explicit MockRemoteIOService(Mode mode)
+        : mode_(mode)
+    {
+    }
+
+    void OpenFile(google::protobuf::RpcController *,
+                  const falcon::brpc_io::OpenRequest *,
+                  falcon::brpc_io::OpenReply *response,
+                  google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        response->set_physical_fd(4242);
+    }
+
+    void CloseFile(google::protobuf::RpcController *,
+                   const falcon::brpc_io::CloseRequest *,
+                   falcon::brpc_io::ErrorCodeOnlyReply *response,
+                   google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+    }
+
+    void ReadFile(google::protobuf::RpcController *cntlBase,
+                  const falcon::brpc_io::ReadRequest *request,
+                  falcon::brpc_io::ErrorCodeOnlyReply *response,
+                  google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        if (mode_ != Mode::Error && mode_ != Mode::ConnectionError) {
+            auto *cntl = static_cast<brpc::Controller *>(cntlBase);
+            std::string payload(mode_ == Mode::BadSize ? request->read_size() + 1 : request->read_size(), 'r');
+            cntl->response_attachment().append(payload);
+        }
+    }
+
+    void ReadSmallFile(google::protobuf::RpcController *cntlBase,
+                       const falcon::brpc_io::ReadSmallFileRequest *request,
+                       falcon::brpc_io::ErrorCodeOnlyReply *response,
+                       google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        if (mode_ != Mode::Error && mode_ != Mode::ConnectionError) {
+            auto *cntl = static_cast<brpc::Controller *>(cntlBase);
+            size_t payloadSize = mode_ == Mode::BadSize ? request->read_size() + 1 : request->read_size();
+            cntl->response_attachment().append(std::string(payloadSize, 's'));
+        }
+    }
+
+    void WriteFile(google::protobuf::RpcController *cntlBase,
+                   const falcon::brpc_io::WriteRequest *,
+                   falcon::brpc_io::WriteReply *response,
+                   google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        auto *cntl = static_cast<brpc::Controller *>(cntlBase);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        response->set_write_size(mode_ == Mode::BadSize ? cntl->request_attachment().size() + 1
+                                                        : cntl->request_attachment().size());
+    }
+
+    void DeleteFile(google::protobuf::RpcController *,
+                    const falcon::brpc_io::DeleteRequest *,
+                    falcon::brpc_io::ErrorCodeOnlyReply *response,
+                    google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+    }
+
+    void StatFS(google::protobuf::RpcController *,
+                const falcon::brpc_io::StatFSRequest *,
+                falcon::brpc_io::StatFSReply *response,
+                google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        response->set_fblocks(11);
+        response->set_fbfree(12);
+        response->set_fbavail(13);
+        response->set_ffiles(14);
+        response->set_fffree(15);
+    }
+
+    void TruncateOpenInstance(google::protobuf::RpcController *,
+                              const falcon::brpc_io::TruncateOpenInstanceRequest *,
+                              falcon::brpc_io::ErrorCodeOnlyReply *response,
+                              google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+    }
+
+    void TruncateFile(google::protobuf::RpcController *,
+                      const falcon::brpc_io::TruncateFileRequest *,
+                      falcon::brpc_io::ErrorCodeOnlyReply *response,
+                      google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+    }
+
+    void CheckConnection(google::protobuf::RpcController *,
+                         const falcon::brpc_io::CheckConnectionRequest *,
+                         falcon::brpc_io::ErrorCodeOnlyReply *response,
+                         google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+    }
+
+    void StatCluster(google::protobuf::RpcController *,
+                     const falcon::brpc_io::StatClusterRequest *,
+                     falcon::brpc_io::StatClusterReply *response,
+                     google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(mode_ == Mode::Error ? -EIO : mode_ == Mode::ConnectionError ? EHOSTUNREACH : 0);
+        for (int i = 0; i < STATS_END; ++i) {
+            response->add_stats(i + 1);
+        }
+    }
+
+  private:
+    Mode mode_;
+};
+
+
+// Mock storage keeps OBS-backed branches deterministic in coverage builds without requiring OBS libraries or service state.
+#ifdef FALCON_STORE_COVERAGE_TEST
+class MockStorage : public Storage {
+  public:
+    enum class Mode { Success, Error, SlowSuccess };
+
+    explicit MockStorage(Mode mode) : mode_(mode) {}
+
+    void DeleteInstance() override {}
+    int Init() override { return mode_ == Mode::Error ? -EIO : 0; }
+
+    ssize_t ReadObject(const std::string &, uint64_t offset, uint64_t size, int fd, char *destBuffer) override
+    {
+        if (mode_ == Mode::Error) {
+            return -EIO;
+        }
+        if (mode_ == Mode::SlowSuccess) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        std::string data = "storage-coverage-payload";
+        if (offset < data.size()) {
+            data = data.substr(offset);
+        } else {
+            data.clear();
+        }
+        if (size > 0 && data.size() > size) {
+            data.resize(size);
+        }
+        if (destBuffer != nullptr) {
+            memcpy(destBuffer, data.data(), data.size());
+        }
+        if (fd >= 0 && !data.empty()) {
+            ssize_t written = pwrite(fd, data.data(), data.size(), 0);
+            if (written < 0) {
+                return -errno;
+            }
+        }
+        return static_cast<ssize_t>(data.size());
+    }
+
+    int PutFile(const std::string &, const std::string &) override { return mode_ == Mode::Error ? -EIO : 0; }
+    ssize_t PutBuffer(const std::string &, const char *, const uint64_t size, const uint64_t) override
+    {
+        return mode_ == Mode::Error ? -EIO : static_cast<ssize_t>(size);
+    }
+    int DeleteObject(const std::string &) override { return mode_ == Mode::Error ? -EIO : 0; }
+    int CopyObject(const std::string &, const std::string &) override { return mode_ == Mode::Error ? -EIO : 0; }
+    int StatFs(struct statvfs *vfsbuf) override
+    {
+        if (mode_ == Mode::Error) {
+            return -EIO;
+        }
+        vfsbuf->f_blocks = 101;
+        vfsbuf->f_bfree = 102;
+        vfsbuf->f_bavail = 103;
+        vfsbuf->f_files = 104;
+        vfsbuf->f_ffree = 105;
+        return 0;
+    }
+
+  private:
+    Mode mode_;
+};
+#endif
 
 } // namespace
 
@@ -29,6 +261,7 @@ char *FalconStoreUT::readBuf2 = nullptr;
 
 TEST_F(FalconStoreUT, CreateLocalWRonly)
 {
+    /* Exercise Create local Write Only and assert the relevant success or failure branch. */
     NewOpenInstance(100, StoreNode::GetInstance()->GetNodeId(), "/OpenLocal", O_WRONLY | O_CREAT);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -37,6 +270,7 @@ TEST_F(FalconStoreUT, CreateLocalWRonly)
 
 TEST_F(FalconStoreUT, OpenLocalWRonlyExist)
 {
+    /* Exercise Open local Write Only Exist and assert the relevant success or failure branch. */
     NewOpenInstance(100, StoreNode::GetInstance()->GetNodeId(), "/OpenLocal", O_WRONLY);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -45,6 +279,7 @@ TEST_F(FalconStoreUT, OpenLocalWRonlyExist)
 
 TEST_F(FalconStoreUT, OpenLocalWRonlyNoneExist)
 {
+    /* Exercise Open local Write Only missing and assert the relevant success or failure branch. */
     NewOpenInstance(101, StoreNode::GetInstance()->GetNodeId(), "/OpenLocalNoneExist", O_WRONLY);
     openInstance->originalSize = 1;
 
@@ -58,6 +293,7 @@ TEST_F(FalconStoreUT, OpenLocalWRonlyNoneExist)
 
 TEST_F(FalconStoreUT, OpenLocalRDonlyExist)
 {
+    /* Exercise Open local Read Only Exist and assert the relevant success or failure branch. */
     NewOpenInstance(100, StoreNode::GetInstance()->GetNodeId(), "/OpenLocal", O_RDONLY);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -66,6 +302,7 @@ TEST_F(FalconStoreUT, OpenLocalRDonlyExist)
 
 TEST_F(FalconStoreUT, OpenLocalRDonlyNoneExist)
 {
+    /* Exercise Open local Read Only missing and assert the relevant success or failure branch. */
     NewOpenInstance(101, StoreNode::GetInstance()->GetNodeId(), "/OpenLocalNoneExist", O_RDONLY);
     openInstance->originalSize = 1;
 
@@ -79,6 +316,7 @@ TEST_F(FalconStoreUT, OpenLocalRDonlyNoneExist)
 
 TEST_F(FalconStoreUT, OpenLocalRDWRExist)
 {
+    /* Exercise Open local Read Write Exist and assert the relevant success or failure branch. */
     NewOpenInstance(100, StoreNode::GetInstance()->GetNodeId(), "/OpenLocal", O_RDWR);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -87,6 +325,7 @@ TEST_F(FalconStoreUT, OpenLocalRDWRExist)
 
 TEST_F(FalconStoreUT, OpenLocalRDWRNoneExist)
 {
+    /* Exercise Open local Read Write missing and assert the relevant success or failure branch. */
     NewOpenInstance(101, StoreNode::GetInstance()->GetNodeId(), "/OpenLocalNoneExist", O_RDWR);
 
     openInstance->originalSize = 1;
@@ -103,6 +342,7 @@ TEST_F(FalconStoreUT, OpenLocalRDWRNoneExist)
 
 TEST_F(FalconStoreUT, CreateRemoteWRonly)
 {
+    /* Exercise Create remote Write Only and assert the relevant success or failure branch. */
     NewOpenInstance(200, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemote", O_WRONLY | O_CREAT);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -111,6 +351,7 @@ TEST_F(FalconStoreUT, CreateRemoteWRonly)
 
 TEST_F(FalconStoreUT, OpenRemoteWRonlyExist)
 {
+    /* Exercise Open remote Write Only Exist and assert the relevant success or failure branch. */
     NewOpenInstance(200, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemote", O_WRONLY);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -119,6 +360,7 @@ TEST_F(FalconStoreUT, OpenRemoteWRonlyExist)
 
 TEST_F(FalconStoreUT, OpenRemoteWRonlyNoneExist)
 {
+    /* Exercise Open remote Write Only missing and assert the relevant success or failure branch. */
     NewOpenInstance(201, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemoteNoneExist", O_WRONLY);
     openInstance->originalSize = 1;
 
@@ -132,6 +374,7 @@ TEST_F(FalconStoreUT, OpenRemoteWRonlyNoneExist)
 
 TEST_F(FalconStoreUT, OpenRemoteRDonlyExist)
 {
+    /* Exercise Open remote Read Only Exist and assert the relevant success or failure branch. */
     NewOpenInstance(200, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemote", O_RDONLY);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -140,6 +383,7 @@ TEST_F(FalconStoreUT, OpenRemoteRDonlyExist)
 
 TEST_F(FalconStoreUT, OpenRemoteRDonlyNoneExist)
 {
+    /* Exercise Open remote Read Only missing and assert the relevant success or failure branch. */
     NewOpenInstance(201, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemoteNoneExist", O_RDONLY);
     openInstance->originalSize = 1;
 
@@ -153,6 +397,7 @@ TEST_F(FalconStoreUT, OpenRemoteRDonlyNoneExist)
 
 TEST_F(FalconStoreUT, OpenRemoteRDWRExist)
 {
+    /* Exercise Open remote Read Write Exist and assert the relevant success or failure branch. */
     NewOpenInstance(200, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemote", O_RDWR);
 
     int ret = FalconStore::GetInstance()->OpenFile(openInstance.get());
@@ -161,6 +406,7 @@ TEST_F(FalconStoreUT, OpenRemoteRDWRExist)
 
 TEST_F(FalconStoreUT, OpenRemoteRDWRNoneExist)
 {
+    /* Exercise Open remote Read Write missing and assert the relevant success or failure branch. */
     NewOpenInstance(201, StoreNode::GetInstance()->GetNodeId() + 1, "/OpenRemoteNoneExist", O_RDWR);
     openInstance->originalSize = 1;
 
@@ -174,6 +420,7 @@ TEST_F(FalconStoreUT, OpenRemoteRDWRNoneExist)
 
 TEST_F(FalconStoreUT, OpenStats)
 {
+    /* Exercise Open Stats and assert the relevant success or failure branch. */
     std::vector<size_t> stats(STATS_END);
     int ret = client->StatCluster(-1, stats, true);
     EXPECT_EQ(ret, 0);
@@ -189,6 +436,7 @@ TEST_F(FalconStoreUT, OpenStats)
 
 TEST_F(FalconStoreUT, ParentPathHelper)
 {
+    /* Exercise Parent Path Helper and assert the relevant success or failure branch. */
     EXPECT_EQ(GetParentPath("/a/b/c", -1), "/a/b");
     EXPECT_EQ(GetParentPath("/a/b/c", 1), "/");
     EXPECT_EQ(GetParentPath("/a/b/c", 2), "/a/");
@@ -197,6 +445,7 @@ TEST_F(FalconStoreUT, ParentPathHelper)
 
 TEST_F(FalconStoreUT, PublicHelpersDoNotRequirePrivateAccess)
 {
+    /* Exercise public Helpers Do Not Require Private Access and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
     std::string nodeConfig = "coverage-node-config";
     store->SetFalconStoreParam(nodeConfig);
@@ -206,8 +455,15 @@ TEST_F(FalconStoreUT, PublicHelpersDoNotRequirePrivateAccess)
 
 TEST_F(FalconStoreUT, BrpcWritePublicBranches)
 {
+    /* Exercise BRPC Write public branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
     const std::string payload = "brpc-nondirect-payload";
+
+    NewOpenInstance(912799, StoreNode::GetInstance()->GetNodeId(), "/brpc/write-prealloc-fail", O_WRONLY | O_CREAT);
+    openInstance->physicalFd = static_cast<uint64_t>(-1);
+    butil::IOBuf preallocFailBuf;
+    preallocFailBuf.append(payload);
+    EXPECT_LT(store->WriteLocalFileForBrpc(openInstance.get(), preallocFailBuf, static_cast<off_t>(1ULL << 50)), 0);
 
     NewOpenInstance(912800, StoreNode::GetInstance()->GetNodeId(), "/brpc/write-ok", O_WRONLY | O_CREAT);
     std::string writeFile = GetFilePath(openInstance->inodeId);
@@ -248,10 +504,27 @@ TEST_F(FalconStoreUT, BrpcWritePublicBranches)
     close(fd);
     DiskCache::GetInstance().Unpin(openInstance->inodeId);
     FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
+
+    NewOpenInstance(912803, StoreNode::GetInstance()->GetNodeId(), "/brpc/direct-write-bad-fd", O_WRONLY | O_CREAT | __O_DIRECT);
+    openInstance->physicalFd = static_cast<uint64_t>(-1);
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+    butil::IOBuf directBadFdBuf;
+    directBadFdBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), directBadFdBuf, 0), -EBADF);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+
+    NewOpenInstance(912804, StoreNode::GetInstance()->GetNodeId(), "/brpc/non-direct-write-bad-fd", O_WRONLY | O_CREAT);
+    openInstance->physicalFd = static_cast<uint64_t>(-2);
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 0, true);
+    butil::IOBuf nondirectBadFdBuf;
+    nondirectBadFdBuf.append(payload);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), nondirectBadFdBuf, 0), -EINVAL);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
 }
 
 TEST_F(FalconStoreUT, CloseTmpFilesPublicBranches)
 {
+    /* Exercise Close Tmp Files public branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
 
     NewOpenInstance(912900, StoreNode::GetInstance()->GetNodeId(), "/close/no-fd", O_WRONLY | O_CREAT);
@@ -282,6 +555,7 @@ TEST_F(FalconStoreUT, CloseTmpFilesPublicBranches)
 
 TEST_F(FalconStoreUT, SmallFilePublicMissBranches)
 {
+    /* Exercise Small File public Miss branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
     const std::string payload = "small-miss-payload";
 
@@ -296,14 +570,72 @@ TEST_F(FalconStoreUT, SmallFilePublicMissBranches)
     DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, payload.size(), false);
     EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
 
+    NewOpenInstance(913005, StoreNode::GetInstance()->GetNodeId(), "/small/node-fail-stale-cache", O_RDONLY);
+    openInstance->nodeFail = true;
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
+
     char buffer[64] = {};
     DiskCache::GetInstance().InsertAndUpdate(913100, payload.size(), false);
     EXPECT_EQ(store->ReadSmallFilesForBrpc(913100, "/brpc/stale-cache", buffer, payload.size(), O_RDONLY, false),
               -ENOENT);
 
+    DiskCache::GetInstance().InsertAndUpdate(913104, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(913104, "/brpc/node-fail-stale-cache", buffer, payload.size(), O_RDONLY,
+                                           true),
+              -ENOENT);
+
     memset(buffer, 0, sizeof(buffer));
     EXPECT_EQ(store->ReadSmallFilesForBrpc(913101, "/brpc/no-storage", buffer, payload.size(), O_RDONLY, false),
               -ENOENT);
+
+    NewOpenInstance(913002, StoreNode::GetInstance()->GetNodeId(), "/small/short-cache", O_RDONLY);
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
+    std::string shortFile = GetFilePath(openInstance->inodeId);
+    int fd = open(shortFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size() - 1, 0), static_cast<ssize_t>(payload.size() - 1));
+    close(fd);
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
+
+    uint64_t brpcShortInode = 913102;
+    std::string brpcShortFile = GetFilePath(brpcShortInode);
+    fd = open(brpcShortFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size() - 1, 0), static_cast<ssize_t>(payload.size() - 1));
+    close(fd);
+    DiskCache::GetInstance().InsertAndUpdate(brpcShortInode, payload.size(), false);
+    memset(buffer, 0, sizeof(buffer));
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(brpcShortInode, "/brpc/short-cache", buffer, payload.size(), O_RDONLY, false),
+              -ENOENT);
+
+    uint64_t brpcOkInode = 913103;
+    std::string brpcOkFile = GetFilePath(brpcOkInode);
+    fd = open(brpcOkFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size(), 0), static_cast<ssize_t>(payload.size()));
+    close(fd);
+    DiskCache::GetInstance().InsertAndUpdate(brpcOkInode, payload.size(), false);
+    memset(buffer, 0, sizeof(buffer));
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(brpcOkInode, "/brpc/cache-hit", buffer, payload.size(), O_RDONLY, false), 0);
+    EXPECT_EQ(std::string(buffer, payload.size()), payload);
+
+    NewOpenInstance(913004, StoreNode::GetInstance()->GetNodeId(), "/small/cache-hit", O_RDONLY);
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[openInstance->readBufferSize], std::default_delete<char[]>());
+    std::string cacheHitFile = GetFilePath(openInstance->inodeId);
+    fd = open(cacheHitFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size(), 0), static_cast<ssize_t>(payload.size()));
+    close(fd);
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, payload.size(), false);
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), 0);
+    EXPECT_EQ(std::string(openInstance->readBuffer.get(), payload.size()), payload);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
 
     FalconStats::GetInstance().stats[BLOCKCACHE_READ] = 0;
     FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] = 0;
@@ -311,7 +643,12 @@ TEST_F(FalconStoreUT, SmallFilePublicMissBranches)
 
 TEST_F(FalconStoreUT, OpenStatAndTruncatePublicBranches)
 {
+    /* Exercise Open Stat And Truncate public branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
+
+    NewOpenInstance(913149, StoreNode::GetInstance()->GetNodeId(), "/open/stale-cache", O_RDONLY);
+    DiskCache::GetInstance().InsertAndUpdate(openInstance->inodeId, 1, false);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), -ENOENT);
 
     NewOpenInstance(913150, StoreNode::GetInstance()->GetNodeId(), "/open/missing-cache-write-exists", O_WRONLY);
     openInstance->originalSize = 1;
@@ -368,10 +705,18 @@ TEST_F(FalconStoreUT, OpenStatAndTruncatePublicBranches)
     EXPECT_EQ(store->TruncateOpenInstance(openInstance.get(), 2), 0);
     EXPECT_EQ(openInstance->currentSize.load(), 2U);
     EXPECT_EQ(openInstance->originalSize, 2U);
+
+    NewOpenInstance(913203, StoreNode::GetInstance()->GetNodeId() + 20, "/truncate/remote-open-instance-no-client",
+                    O_RDWR);
+    openInstance->isOpened = true;
+    EXPECT_EQ(store->TruncateOpenInstance(openInstance.get(), 3), 0);
+    EXPECT_EQ(openInstance->currentSize.load(), 3U);
+    EXPECT_EQ(openInstance->originalSize, 3U);
 }
 
 TEST_F(FalconStoreUT, ReadPublicBranches)
 {
+    /* Exercise Read public branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
 
     NewOpenInstance(913300, StoreNode::GetInstance()->GetNodeId(), "/read/small-buffer", O_RDONLY);
@@ -411,14 +756,87 @@ TEST_F(FalconStoreUT, ReadPublicBranches)
     EXPECT_EQ(std::string(readFileBuf, 2), "cd");
     close(fd);
 
+    NewOpenInstance(913302, StoreNode::GetInstance()->GetNodeId(), "/read/direct-local-file", O_RDONLY | __O_DIRECT);
+    fileName = GetFilePath(openInstance->inodeId);
+    fd = open(fileName.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, payload.data(), payload.size(), 0), static_cast<ssize_t>(payload.size()));
+    openInstance->physicalFd = fd;
+    openInstance->currentSize = payload.size();
+    openInstance->originalSize = config->GetUint32(FalconPropertyKey::FALCON_BIG_FILE_READ_SIZE);
+    openInstance->isOpened = true;
+    openInstance->preReadStarted = true;
+    openInstance->directReadFile = true;
+    memset(readFileBuf, 0, sizeof(readFileBuf));
+    EXPECT_EQ(store->ReadFile(openInstance.get(), readFileBuf, 3, 1), 3);
+    EXPECT_EQ(std::string(readFileBuf, 3), "bcd");
+    close(fd);
+
+    NewOpenInstance(913303, StoreNode::GetInstance()->GetNodeId(), "/read/local-bad-fd", O_RDONLY);
+    openInstance->physicalFd = static_cast<uint64_t>(-2);
+    openInstance->currentSize = payload.size();
+    EXPECT_EQ(store->ReadFileLR(readFileBuf, 0, openInstance.get(), 3), -EBADF);
+
+    NewOpenInstance(913304, StoreNode::GetInstance()->GetNodeId(), "/read/direct-bad-fd", O_RDONLY | __O_DIRECT);
+    openInstance->physicalFd = static_cast<uint64_t>(-2);
+    openInstance->currentSize = payload.size();
+    openInstance->originalSize = config->GetUint32(FalconPropertyKey::FALCON_BIG_FILE_READ_SIZE);
+    openInstance->isOpened = true;
+    openInstance->preReadStarted = true;
+    openInstance->directReadFile = true;
+    memset(readFileBuf, 0, sizeof(readFileBuf));
+    EXPECT_EQ(store->ReadFile(openInstance.get(), readFileBuf, 3, 0), -EBADF);
+
+    ResetFalconStatsForCoverage();
+}
+
+TEST_F(FalconStoreUT, PublicBoundaryBranches)
+{
+    /* Exercise public Boundary branches and assert the relevant success or failure branch. */
+    auto *store = FalconStore::GetInstance();
+    const std::string payload = "boundary-payload";
+
+    NewOpenInstance(913350, StoreNode::GetInstance()->GetNodeId(), "/open/already-has-fd", O_RDWR | O_CREAT);
+    std::string fileName = GetFilePath(openInstance->inodeId);
+    int fd = open(fileName.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    openInstance->physicalFd = fd;
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    close(fd);
+
+    NewOpenInstance(913351, StoreNode::GetInstance()->GetNodeId() + 20, "/read/remote-unreachable", O_RDONLY);
+    openInstance->currentSize = payload.size();
+    char readFileBuf[32] = {};
+    EXPECT_EQ(store->ReadFileLR(readFileBuf, 0, openInstance.get(), payload.size()), -EHOSTUNREACH);
+    EXPECT_TRUE(openInstance->remoteFailed.load());
+    EXPECT_EQ(store->ReadFileLR(readFileBuf, 0, openInstance.get(), payload.size()), -1);
+
+    NewOpenInstance(913354, -1, "/open/auto-alloc-node/path", O_WRONLY | O_CREAT);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    if (StoreNode::GetInstance()->IsLocal(openInstance->nodeId) && openInstance->physicalFd != UINT64_MAX) {
+        close(openInstance->physicalFd);
+        DiskCache::GetInstance().Unpin(openInstance->inodeId);
+    }
+
+    NewOpenInstance(913352, StoreNode::GetInstance()->GetNodeId(), "/close/auto-flush", O_WRONLY | O_CREAT);
+    ASSERT_EQ(store->OpenFile(openInstance.get()), 0);
+    openInstance->isOpened = true;
+    openInstance->currentSize = payload.size();
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), false, false), 0);
+    EXPECT_TRUE(openInstance->isFlushed);
+
     ResetFalconStatsForCoverage();
 }
 
 TEST_F(FalconStoreUT, DeleteAndStatPublicBranches)
 {
+    /* Exercise Delete And Stat public branches and assert the relevant success or failure branch. */
     auto *store = FalconStore::GetInstance();
 
     EXPECT_EQ(store->DeleteFiles(913400, StoreNode::GetInstance()->GetNodeId(), "/delete/missing"), -ENOENT);
+
+    DiskCache::GetInstance().InsertAndUpdate(913399, 4, false);
+    EXPECT_EQ(store->DeleteFiles(913399, StoreNode::GetInstance()->GetNodeId(), "/delete/stale-cache"), -ENOENT);
 
     uint64_t inodeId = 913401;
     std::string fileName = GetFilePath(inodeId);
@@ -441,9 +859,763 @@ TEST_F(FalconStoreUT, DeleteAndStatPublicBranches)
     EXPECT_EQ(store->StatCluster(StoreNode::GetInstance()->GetNodeId() + 20, stats, true), 0);
     EXPECT_EQ(store->StatCluster(StoreNode::GetInstance()->GetNodeId(), stats, false), 0);
     EXPECT_EQ(stats.size(), static_cast<size_t>(STATS_END));
+    EXPECT_EQ(store->StatCluster(-1, stats, true), 0);
+    EXPECT_EQ(stats.size(), static_cast<size_t>(STATS_END));
 
     ResetFalconStatsForCoverage();
 }
+
+TEST_F(FalconStoreUT, AsyncWriteRemoteSmallAndSyncFlushPublicBranches)
+{
+    /* Exercise Async Write remote Small And Sync Flush public branches and assert the relevant success or failure branch. */
+    auto *store = FalconStore::GetInstance();
+    const std::string payload = "async-cache-payload";
+
+    NewOpenInstance(913500, StoreNode::GetInstance()->GetNodeId() + 20, "/small/remote-unreachable", O_RDONLY);
+    openInstance->originalSize = payload.size();
+    openInstance->readBufferSize = payload.size();
+    openInstance->readBuffer.reset(new char[payload.size()], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -EHOSTUNREACH);
+
+    NewOpenInstance(913503, StoreNode::GetInstance()->GetNodeId(), "/close/sync-flush", O_WRONLY | O_CREAT);
+    ASSERT_EQ(store->OpenFile(openInstance.get()), 0);
+    openInstance->isOpened = true;
+    openInstance->writeCnt = 1;
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), true, true), 0);
+    EXPECT_TRUE(openInstance->isFlushed);
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), false, false), 0);
+
+    ResetFalconStatsForCoverage();
+}
+
+TEST_F(FalconStoreUT, FalconIOClientNetworkFailureBranches)
+{
+    /* Exercise Falcon IO Client Network Failure branches and assert the relevant success or failure branch. */
+    auto badChannel = std::make_shared<brpc::Channel>();
+    brpc::ChannelOptions options;
+    ASSERT_EQ(badChannel->Init("127.0.0.1:1", &options), 0);
+    FalconIOClient badClient(badChannel);
+
+    uint64_t physicalFd = 0;
+    std::string path = "/io-client/network-failure";
+    char buffer[16] = {};
+    std::vector<size_t> stats;
+    struct StatFSBuf statFsBuf {};
+
+    EXPECT_GT(badClient.OpenFile(914000, O_RDONLY, physicalFd, 0, path, false), 0);
+    EXPECT_LT(badClient.CloseFile(physicalFd, true, false, buffer, sizeof(buffer), 0), 0);
+    EXPECT_LT(badClient.ReadFile(914000, O_RDONLY, buffer, physicalFd, sizeof(buffer), 0, path), 0);
+    EXPECT_GT(badClient.ReadSmallFile(914000, sizeof(buffer), path, buffer, O_RDONLY, false), 0);
+    EXPECT_LT(badClient.WriteFile(physicalFd, buffer, sizeof(buffer), 0), 0);
+    EXPECT_LT(badClient.DeleteFile(914000, StoreNode::GetInstance()->GetNodeId() + 99, path), 0);
+    EXPECT_LT(badClient.StatFS(path, &statFsBuf), 0);
+    EXPECT_LT(badClient.TruncateOpenInstance(physicalFd, 4), 0);
+    EXPECT_LT(badClient.TruncateFile(physicalFd, 4), 0);
+    EXPECT_LT(badClient.CheckConnection(), 0);
+    EXPECT_LT(badClient.StatCluster(StoreNode::GetInstance()->GetNodeId(), stats, true), 0);
+}
+
+TEST_F(FalconStoreUT, RemoteIOServiceImplPublicErrorBranches)
+{
+    /* Exercise remote IO Service Impl public Error branches and assert the relevant success or failure branch. */
+    falcon::brpc_io::RemoteIOServiceImpl service;
+    brpc::Controller cntl;
+
+    falcon::brpc_io::ReadRequest readRequest;
+    falcon::brpc_io::ErrorCodeOnlyReply errorReply;
+    readRequest.set_physical_fd(UINT64_MAX - 100);
+    readRequest.set_read_size(-1);
+    service.ReadFile(&cntl, &readRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EAGAIN);
+
+    errorReply.Clear();
+    readRequest.set_read_size(4);
+    service.ReadFile(&cntl, &readRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EBADF);
+
+    falcon::brpc_io::WriteRequest writeRequest;
+    falcon::brpc_io::WriteReply writeReply;
+    writeRequest.set_physical_fd(UINT64_MAX - 101);
+    service.WriteFile(&cntl, &writeRequest, &writeReply, nullptr);
+    EXPECT_EQ(writeReply.error_code(), -EBADF);
+
+    falcon::brpc_io::CloseRequest closeRequest;
+    closeRequest.set_physical_fd(UINT64_MAX - 102);
+    closeRequest.set_flush(false);
+    closeRequest.set_sync(false);
+    closeRequest.set_offset(0);
+    errorReply.Clear();
+    service.CloseFile(&cntl, &closeRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EBADF);
+
+    falcon::brpc_io::TruncateOpenInstanceRequest truncateOpenRequest;
+    truncateOpenRequest.set_physical_fd(UINT64_MAX - 103);
+    truncateOpenRequest.set_size(1);
+    errorReply.Clear();
+    service.TruncateOpenInstance(&cntl, &truncateOpenRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EBADF);
+
+    falcon::brpc_io::TruncateFileRequest truncateFileRequest;
+    truncateFileRequest.set_physical_fd(UINT64_MAX - 104);
+    truncateFileRequest.set_size(1);
+    errorReply.Clear();
+    service.TruncateFile(&cntl, &truncateFileRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EBADF);
+
+    falcon::brpc_io::ReadSmallFileRequest smallReadRequest;
+    smallReadRequest.set_inode_id(913600);
+    smallReadRequest.set_read_size(-1);
+    smallReadRequest.set_path("/remote-io/small-negative");
+    smallReadRequest.set_oflags(O_RDONLY);
+    smallReadRequest.set_node_fail(false);
+    errorReply.Clear();
+    service.ReadSmallFile(&cntl, &smallReadRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -EAGAIN);
+
+    smallReadRequest.set_read_size(9 * 1024);
+    smallReadRequest.set_path("/remote-io/small-missing-large-buffer");
+    smallReadRequest.set_oflags(O_RDONLY);
+    errorReply.Clear();
+    service.ReadSmallFile(&cntl, &smallReadRequest, &errorReply, nullptr);
+    EXPECT_LT(errorReply.error_code(), 0);
+
+    smallReadRequest.set_read_size(1);
+    smallReadRequest.set_path("/remote-io/small-missing-direct");
+    smallReadRequest.set_oflags(O_RDONLY | __O_DIRECT);
+    errorReply.Clear();
+    service.ReadSmallFile(&cntl, &smallReadRequest, &errorReply, nullptr);
+    EXPECT_LT(errorReply.error_code(), 0);
+
+    falcon::brpc_io::DeleteRequest deleteRequest;
+    deleteRequest.set_inode_id(913601);
+    deleteRequest.set_node_id(StoreNode::GetInstance()->GetNodeId());
+    deleteRequest.set_path("/remote-io/delete-missing");
+    errorReply.Clear();
+    service.DeleteFile(&cntl, &deleteRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -ENOENT);
+
+    falcon::brpc_io::StatFSRequest statFsRequest;
+    falcon::brpc_io::StatFSReply statFsReply;
+    statFsRequest.set_path(StoreNode::GetInstance()->GetRpcEndPoint(StoreNode::GetInstance()->GetNodeId()));
+    service.StatFS(&cntl, &statFsRequest, &statFsReply, nullptr);
+    EXPECT_EQ(statFsReply.error_code(), 0);
+    EXPECT_GT(statFsReply.fblocks(), 0U);
+
+    falcon::brpc_io::CheckConnectionRequest checkRequest;
+    errorReply.Clear();
+    service.CheckConnection(&cntl, &checkRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), 0);
+
+    falcon::brpc_io::StatClusterRequest statClusterRequest;
+    falcon::brpc_io::StatClusterReply statClusterReply;
+    statClusterRequest.set_node_id(StoreNode::GetInstance()->GetNodeId());
+    statClusterRequest.set_scatter(false);
+    service.StatCluster(&cntl, &statClusterRequest, &statClusterReply, nullptr);
+    EXPECT_EQ(statClusterReply.error_code(), 0);
+    EXPECT_EQ(statClusterReply.stats_size(), STATS_END);
+
+    auto instance = std::make_shared<OpenInstance>();
+    instance->inodeId = 913602;
+    instance->nodeId = StoreNode::GetInstance()->GetNodeId();
+    instance->path = "/remote-io/closed";
+    instance->oflags = O_RDWR | O_CREAT;
+    instance->isClosed = true;
+    uint64_t fd = FalconFd::GetInstance()->AttachFd(instance->path, instance);
+    ASSERT_NE(fd, UINT64_MAX);
+
+    readRequest.set_physical_fd(fd);
+    readRequest.set_read_size(4);
+    errorReply.Clear();
+    service.ReadFile(&cntl, &readRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -ETIMEDOUT);
+
+    writeRequest.set_physical_fd(fd);
+    writeReply.Clear();
+    service.WriteFile(&cntl, &writeRequest, &writeReply, nullptr);
+    EXPECT_EQ(writeReply.error_code(), -ETIMEDOUT);
+
+    closeRequest.set_physical_fd(fd);
+    errorReply.Clear();
+    service.CloseFile(&cntl, &closeRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -ETIMEDOUT);
+
+    truncateOpenRequest.set_physical_fd(fd);
+    errorReply.Clear();
+    service.TruncateOpenInstance(&cntl, &truncateOpenRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -ETIMEDOUT);
+
+    truncateFileRequest.set_physical_fd(fd);
+    errorReply.Clear();
+    service.TruncateFile(&cntl, &truncateFileRequest, &errorReply, nullptr);
+    EXPECT_EQ(errorReply.error_code(), -ETIMEDOUT);
+
+    FalconFd::GetInstance()->DeleteOpenInstance(fd, false);
+}
+
+TEST_F(FalconStoreUT, FalconIOClientResponseBranches)
+{
+    /* Exercise Falcon IO Client Response branches and assert the relevant success or failure branch. */
+    for (auto mode : {MockRemoteIOService::Mode::Success, MockRemoteIOService::Mode::Error,
+                      MockRemoteIOService::Mode::BadSize}) {
+        int port = GetUnusedLoopbackPortForStoreCoverage();
+        ASSERT_GT(port, 0);
+
+        MockRemoteIOService service(mode);
+        brpc::Server server;
+        ASSERT_EQ(server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+        ASSERT_EQ(server.Start(port, nullptr), 0);
+
+        auto channel = std::make_shared<brpc::Channel>();
+        brpc::ChannelOptions options;
+        ASSERT_EQ(channel->Init(("127.0.0.1:" + std::to_string(port)).c_str(), &options), 0);
+        FalconIOClient ioClient(channel);
+
+        uint64_t physicalFd = 0;
+        std::string path = "/io-client/response";
+        char buffer[16] = {};
+        std::vector<size_t> stats;
+        struct StatFSBuf statFsBuf {};
+        const bool success = mode == MockRemoteIOService::Mode::Success;
+        const bool badSize = mode == MockRemoteIOService::Mode::BadSize;
+
+        int openRet = ioClient.OpenFile(914100, O_RDONLY, physicalFd, 0, path, false);
+        EXPECT_EQ(openRet, success || badSize ? 0 : -EIO);
+        if (success || badSize) {
+            EXPECT_EQ(physicalFd, 4242U);
+        }
+        EXPECT_EQ(ioClient.CloseFile(physicalFd, true, false, buffer, sizeof(buffer), 0), success || badSize ? 0 : -EIO);
+
+        int readRet = ioClient.ReadFile(914100, O_RDONLY, buffer, physicalFd, 4, 0, path);
+        EXPECT_EQ(readRet, success ? 4 : -EIO);
+        int smallReadRet = ioClient.ReadSmallFile(914100, 4, path, buffer, O_RDONLY, false);
+        EXPECT_EQ(smallReadRet, success ? 0 : -EIO);
+        EXPECT_EQ(ioClient.WriteFile(physicalFd, buffer, 4, 0), success ? 0 : -EIO);
+
+        EXPECT_EQ(ioClient.DeleteFile(914100, StoreNode::GetInstance()->GetNodeId(), path), success || badSize ? 0 : -EIO);
+        EXPECT_EQ(ioClient.StatFS(path, &statFsBuf), success || badSize ? 0 : -EIO);
+        if (success || badSize) {
+            EXPECT_EQ(statFsBuf.f_blocks, 11U);
+        }
+        EXPECT_EQ(ioClient.TruncateOpenInstance(physicalFd, 4), success || badSize ? 0 : -EIO);
+        EXPECT_EQ(ioClient.TruncateFile(physicalFd, 4), success || badSize ? 0 : -EIO);
+        EXPECT_EQ(ioClient.CheckConnection(), success || badSize ? 0 : -EIO);
+        EXPECT_EQ(ioClient.StatCluster(StoreNode::GetInstance()->GetNodeId(), stats, true), success || badSize ? 0 : -EIO);
+        if (success || badSize) {
+            EXPECT_EQ(stats.size(), static_cast<size_t>(STATS_END));
+        }
+
+        server.Stop(0);
+        server.Join();
+    }
+}
+
+TEST_F(FalconStoreUT, RemoteStorePublicOpenAndSmallReadBranches)
+{
+    /* Exercise remote Store public Open And Small Read branches and assert the relevant success or failure branch. */
+    auto *store = FalconStore::GetInstance();
+    auto *storeNode = StoreNode::GetInstance();
+
+    std::unordered_map<int, std::string> originalNodes;
+    for (int id : storeNode->GetAllNodeId()) {
+        originalNodes.emplace(id, storeNode->GetRpcEndPoint(id));
+    }
+
+    for (auto mode : {MockRemoteIOService::Mode::Success, MockRemoteIOService::Mode::Error}) {
+        int port = GetUnusedLoopbackPortForStoreCoverage();
+        ASSERT_GT(port, 0);
+
+        MockRemoteIOService service(mode);
+        brpc::Server server;
+        ASSERT_EQ(server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+        ASSERT_EQ(server.Start(port, nullptr), 0);
+
+        std::unordered_map<int, std::string> nodes = originalNodes;
+        int remoteNodeId = storeNode->GetNodeId() + 77 + static_cast<int>(mode);
+        nodes[remoteNodeId] = "127.0.0.1:" + std::to_string(port);
+        storeNode->UpdateNodeConfigByValue(nodes);
+
+        NewOpenInstance(914200 + static_cast<int>(mode), remoteNodeId, "/remote-store/open", O_RDWR);
+        int openRet = store->OpenFile(openInstance.get());
+        EXPECT_EQ(openRet, mode == MockRemoteIOService::Mode::Success ? 0 : -EIO);
+        if (mode == MockRemoteIOService::Mode::Success) {
+            EXPECT_EQ(openInstance->physicalFd, 4242U);
+        }
+
+        NewOpenInstance(914210 + static_cast<int>(mode), remoteNodeId, "/remote-store/small", O_RDONLY);
+        openInstance->originalSize = 4;
+        openInstance->readBufferSize = 4;
+        openInstance->readBuffer.reset(new char[4], std::default_delete<char[]>());
+        int smallRet = store->ReadSmallFiles(openInstance.get());
+        EXPECT_EQ(smallRet, mode == MockRemoteIOService::Mode::Success ? 0 : -EIO);
+        if (mode == MockRemoteIOService::Mode::Success) {
+            EXPECT_EQ(std::string(openInstance->readBuffer.get(), 4), "ssss");
+        }
+
+        server.Stop(0);
+        server.Join();
+    }
+
+    storeNode->UpdateNodeConfigByValue(originalNodes);
+}
+
+#ifdef FALCON_STORE_COVERAGE_TEST
+TEST_F(FalconStoreUT, CoverageStorageSuccessBranches)
+{
+    auto *store = FalconStore::GetInstance();
+    MockStorage storage(MockStorage::Mode::Success);
+    store->CoverageOverrideStorage(&storage, true);
+
+    // Route storage-backed public helpers through the injected mock.
+    struct statvfs vfsBuf {};
+    EXPECT_EQ(store->StatFS(&vfsBuf), 0);
+    EXPECT_EQ(vfsBuf.f_blocks, 101U);
+    EXPECT_EQ(store->CoverageStatFsStorage(&vfsBuf), 0);
+    EXPECT_EQ(store->CopyData("/storage/copy-src", "/storage/copy-dst"), 0);
+    EXPECT_EQ(store->DeleteDataAfterRename("/storage/copy-src"), 0);
+
+    // Sync download paths pin disk-cache entries; unpin them to keep later cases isolated.
+    NewOpenInstance(914500, StoreNode::GetInstance()->GetNodeId(), "/storage/download-sync", O_RDWR);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), true, true), 0);
+    EXPECT_EQ(std::string(openInstance->readBuffer.get(), 8), "storage-");
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+
+    NewOpenInstance(914501, StoreNode::GetInstance()->GetNodeId(), "/storage/small-rw", O_RDWR);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), 0);
+    DiskCache::GetInstance().Unpin(openInstance->inodeId);
+
+    char brpcBuf[16] = {};
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(914502, "/storage/brpc-rw", brpcBuf, 8, O_RDWR, false), 0);
+    EXPECT_EQ(std::string(brpcBuf, 8), "storage-");
+    DiskCache::GetInstance().Unpin(914502);
+
+    // RPC small-file miss starts an async load but returns -ENOENT so the caller can read storage directly.
+    NewOpenInstance(914503, StoreNode::GetInstance()->GetNodeId(), "/storage/small-rpc", O_RDONLY);
+    openInstance->isRemoteCall = true;
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -ENOENT);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Fuse-side small-file miss reads into memory, then schedules the cache write asynchronously.
+    NewOpenInstance(914504, StoreNode::GetInstance()->GetNodeId(), "/storage/small-fuse", O_RDONLY);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), 0);
+    EXPECT_EQ(std::string(openInstance->readBuffer.get(), 8), "storage-");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Direct async-write and flush helpers cover private storage paths after public small-file flows.
+    uint64_t asyncInode = 914505;
+    std::string asyncFile = GetFilePath(asyncInode);
+    auto asyncBuffer = std::shared_ptr<char>(new char[8], std::default_delete<char[]>());
+    memcpy(asyncBuffer.get(), "asyncbuf", 8);
+    EXPECT_EQ(store->CoverageWriteToFileAsync(asyncInode, asyncFile, asyncBuffer, 8), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    uint64_t flushInode = 914506;
+    std::string flushFile = GetFilePath(flushInode);
+    int fd = open(flushFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, "flush", 5, 0), 5);
+    close(fd);
+    EXPECT_EQ(store->CoverageFlushToStorage("/storage/flush", flushInode), 0);
+
+    // Exercise the BRPC storage helper directly so sync loads and cache-hit exits are deterministic.
+    char brpcSyncBuf[16] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914507, "/storage/brpc-sync", brpcSyncBuf, 8, true, true), 0);
+    EXPECT_EQ(std::string(brpcSyncBuf, 8), "storage-");
+    DiskCache::GetInstance().Unpin(914507);
+
+    char brpcFileBuf[16] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914508, "/storage/brpc-file", brpcFileBuf, 8, true, false), 0);
+    DiskCache::GetInstance().Unpin(914508);
+
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914508, "/storage/brpc-file", brpcFileBuf, 8, true, false), 0);
+    DiskCache::GetInstance().Unpin(914508);
+
+    // BRPC local writes cover direct-buffer persistence and local file write paths.
+    uint64_t directBrpcInode = 914529;
+    std::string directBrpcFile = GetFilePath(directBrpcInode);
+    int directBrpcFd = open(directBrpcFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(directBrpcFd, 0);
+    DiskCache::GetInstance().InsertAndUpdate(directBrpcInode, 0, true);
+    NewOpenInstance(directBrpcInode, StoreNode::GetInstance()->GetNodeId(), "/storage/brpc-direct", O_RDWR | __O_DIRECT);
+    openInstance->physicalFd = directBrpcFd;
+    butil::IOBuf directBrpcBuf;
+    directBrpcBuf.append(std::string(512, 'd'));
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), directBrpcBuf, 0), 0);
+    close(directBrpcFd);
+    DiskCache::GetInstance().Unpin(directBrpcInode);
+
+
+    // Extreme offsets and bad direct FDs cover local BRPC write error exits without exhausting real disk.
+    uint64_t noSpaceBrpcInode = 914532;
+    NewOpenInstance(noSpaceBrpcInode, StoreNode::GetInstance()->GetNodeId(), "/storage/brpc-nospace", O_RDWR);
+    openInstance->physicalFd = static_cast<uint64_t>(-1);
+    butil::IOBuf noSpaceBrpcBuf;
+    noSpaceBrpcBuf.append("x", 1);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), noSpaceBrpcBuf, static_cast<off_t>(1ULL << 60)), -EINVAL);
+
+    uint64_t badDirectInode = 914534;
+    DiskCache::GetInstance().InsertAndUpdate(badDirectInode, 0, true);
+    NewOpenInstance(badDirectInode, StoreNode::GetInstance()->GetNodeId(), "/storage/brpc-direct-bad-fd", O_RDWR | __O_DIRECT);
+    openInstance->physicalFd = static_cast<uint64_t>(-1);
+    butil::IOBuf badDirectBuf;
+    badDirectBuf.append(std::string(512, 'b'));
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), badDirectBuf, 0), -EBADF);
+    DiskCache::GetInstance().Unpin(badDirectInode);
+
+
+    // Non-direct BRPC writes still update the local cache metadata on success.
+    uint64_t updateFailInode = 914530;
+    std::string updateFailFile = GetFilePath(updateFailInode);
+    int updateFailFd = open(updateFailFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(updateFailFd, 0);
+    NewOpenInstance(updateFailInode, StoreNode::GetInstance()->GetNodeId(), "/storage/brpc-update-fail", O_RDWR);
+    openInstance->physicalFd = updateFailFd;
+    butil::IOBuf updateFailBuf;
+    updateFailBuf.append("update-fail", 11);
+    EXPECT_EQ(store->WriteLocalFileForBrpc(openInstance.get(), updateFailBuf, 0), 0);
+    close(updateFailFd);
+
+    // Temporarily redirect the cache root to cover local create/download open failures.
+    std::string cacheRootForPathErrors = config->GetString(FalconPropertyKey::FALCON_CACHE_ROOT);
+    SetRootPath("/tmp/falconfs_missing_cache_root_for_open");
+    NewOpenInstance(914540, StoreNode::GetInstance()->GetNodeId(), "/storage/open-create-root-missing", O_RDWR | O_CREAT);
+    EXPECT_EQ(store->OpenFile(openInstance.get()), -ENOENT);
+
+    NewOpenInstance(914541, StoreNode::GetInstance()->GetNodeId(), "/storage/download-root-missing", O_RDWR);
+    openInstance->originalSize = 8;
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), true, false), -ENOENT);
+    SetRootPath(cacheRootForPathErrors);
+
+
+    // Cache-hit cases cover storage helper early exits without depending on real OBS or external nodes.
+    uint64_t cachedSmallInode = 914511;
+    std::string cachedSmallFile = GetFilePath(cachedSmallInode);
+    int cachedSmallFd = open(cachedSmallFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(cachedSmallFd, 0);
+    ASSERT_EQ(pwrite(cachedSmallFd, "cachehit", 8, 0), 8);
+    close(cachedSmallFd);
+    DiskCache::GetInstance().InsertAndUpdate(cachedSmallInode, 8, false);
+
+    NewOpenInstance(cachedSmallInode, StoreNode::GetInstance()->GetNodeId(), "/storage/cache-hit", O_RDONLY);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), 0);
+    EXPECT_EQ(std::string(openInstance->readBuffer.get(), 8), "cachehit");
+
+    uint64_t cachedBrpcInode = 914512;
+    std::string cachedBrpcFile = GetFilePath(cachedBrpcInode);
+    int cachedBrpcFd = open(cachedBrpcFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(cachedBrpcFd, 0);
+    ASSERT_EQ(pwrite(cachedBrpcFd, "brpccach", 8, 0), 8);
+    close(cachedBrpcFd);
+    DiskCache::GetInstance().InsertAndUpdate(cachedBrpcInode, 8, false);
+    char cachedBrpcBuf[8] = {};
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(cachedBrpcInode, "/storage/brpc-cache-hit", cachedBrpcBuf, 8, O_RDONLY, false), 0);
+    EXPECT_EQ(std::string(cachedBrpcBuf, 8), "brpccach");
+
+    uint64_t cachedDownloadInode = 914513;
+    DiskCache::GetInstance().InsertAndUpdate(cachedDownloadInode, 8, false);
+    NewOpenInstance(cachedDownloadInode, StoreNode::GetInstance()->GetNodeId(), "/storage/download-cache-hit", O_RDWR);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), true, true), 0);
+    DiskCache::GetInstance().Unpin(cachedDownloadInode);
+
+    uint64_t cachedAsyncInode = 914514;
+    DiskCache::GetInstance().InsertAndUpdate(cachedAsyncInode, 8, false);
+    std::string cachedAsyncFile = GetFilePath(cachedAsyncInode);
+    EXPECT_EQ(store->CoverageWriteToFileAsync(cachedAsyncInode, cachedAsyncFile, asyncBuffer, 8), 0);
+
+    std::string missingAsyncFile = "/tmp/falconfs_missing_async_dir/async-file";
+    EXPECT_EQ(store->CoverageWriteToFileAsync(914515, missingAsyncFile, asyncBuffer, 8), -ENOENT);
+
+    uint64_t missingOpenInode = 914516;
+    std::string missingOpenFile = GetFilePath(missingOpenInode);
+    std::remove(missingOpenFile.c_str());
+    DiskCache::GetInstance().InsertAndUpdate(missingOpenInode, 8, false);
+    NewOpenInstance(missingOpenInode, StoreNode::GetInstance()->GetNodeId(), "/storage/open-missing-cache", O_RDWR);
+    openInstance->originalSize = READ_BIGFILE_SIZE;
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    close(openInstance->physicalFd);
+    DiskCache::GetInstance().Unpin(missingOpenInode);
+
+    std::unordered_map<int, std::string> originalNodes;
+    auto *storeNode = StoreNode::GetInstance();
+    for (int id : storeNode->GetAllNodeId()) {
+        originalNodes.emplace(id, storeNode->GetRpcEndPoint(id));
+    }
+    int port = GetUnusedLoopbackPortForStoreCoverage();
+    ASSERT_GT(port, 0);
+    MockRemoteIOService remoteError(MockRemoteIOService::Mode::Error);
+    brpc::Server server;
+    ASSERT_EQ(server.AddService(&remoteError, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+    ASSERT_EQ(server.Start(port, nullptr), 0);
+    int remoteNodeId = storeNode->GetNodeId() + 171;
+    auto nodes = originalNodes;
+    nodes[remoteNodeId] = "127.0.0.1:" + std::to_string(port);
+    storeNode->UpdateNodeConfigByValue(nodes);
+    NewOpenInstance(914517, remoteNodeId, "/storage/remote-fallback", O_RDONLY);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->CoverageOpenFileFromRemote(openInstance.get(), false), 0);
+    EXPECT_EQ(std::string(openInstance->readBuffer.get(), 8), "storage-");
+    server.Stop(0);
+    server.Join();
+    storeNode->UpdateNodeConfigByValue(originalNodes);
+
+    {
+        // Remote write buffers must be flushed before ReadFile serves a following read.
+        std::unordered_map<int, std::string> bufferedOriginalNodes;
+        auto *bufferedStoreNode = StoreNode::GetInstance();
+        for (int id : bufferedStoreNode->GetAllNodeId()) {
+            bufferedOriginalNodes.emplace(id, bufferedStoreNode->GetRpcEndPoint(id));
+        }
+        int bufferedPort = GetUnusedLoopbackPortForStoreCoverage();
+        ASSERT_GT(bufferedPort, 0);
+        MockRemoteIOService remoteSuccess(MockRemoteIOService::Mode::Success);
+        brpc::Server bufferedServer;
+        ASSERT_EQ(bufferedServer.AddService(&remoteSuccess, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+        ASSERT_EQ(bufferedServer.Start(bufferedPort, nullptr), 0);
+        int bufferedRemoteNodeId = bufferedStoreNode->GetNodeId() + 181;
+        auto bufferedNodes = bufferedOriginalNodes;
+        bufferedNodes[bufferedRemoteNodeId] = "127.0.0.1:" + std::to_string(bufferedPort);
+        bufferedStoreNode->UpdateNodeConfigByValue(bufferedNodes);
+        NewOpenInstance(914531, bufferedRemoteNodeId, "/storage/remote-read-after-write", O_RDWR | O_CREAT);
+        EXPECT_EQ(store->WriteFile(openInstance.get(), "abc", 3, 0), 0);
+        char remoteReadAfterWriteBuf[3] = {};
+        EXPECT_EQ(store->ReadFile(openInstance.get(), remoteReadAfterWriteBuf, 3, 0), 3);
+        EXPECT_EQ(std::string(remoteReadAfterWriteBuf, 3), "rrr");
+        bufferedServer.Stop(0);
+        bufferedServer.Join();
+        bufferedStoreNode->UpdateNodeConfigByValue(bufferedOriginalNodes);
+    }
+
+    char lrStorageBuf[8] = {};
+    NewOpenInstance(914518, StoreNode::GetInstance()->GetNodeId(), "/storage/read-lr", O_RDONLY);
+    openInstance->currentSize = 8;
+    EXPECT_EQ(store->ReadFileLR(lrStorageBuf, 0, openInstance.get(), 8), 8);
+    EXPECT_EQ(std::string(lrStorageBuf, 8), "storage-");
+
+    NewOpenInstance(914519, StoreNode::GetInstance()->GetNodeId(), "/storage/open-read-miss", O_RDONLY);
+    openInstance->originalSize = 8;
+    EXPECT_EQ(store->OpenFile(openInstance.get()), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    char brpcReadOnlyBuf[8] = {};
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(914520, "/storage/brpc-readonly", brpcReadOnlyBuf, 8, O_RDONLY, false), -ENOENT);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Slow mock storage makes async duplicate-download lock exits observable without races.
+    MockStorage slowStorage(MockStorage::Mode::SlowSuccess);
+    store->CoverageOverrideStorage(&slowStorage, true);
+    char slowBuf[8] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914521, "/storage/brpc-slow", slowBuf, 8, false, false), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914521, "/storage/brpc-slow", slowBuf, 8, false, false), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    store->CoverageOverrideStorage(&storage, true);
+
+    // Repeat the same contention pattern for fuse-side downloads.
+    MockStorage slowDownloadStorage(MockStorage::Mode::SlowSuccess);
+    store->CoverageOverrideStorage(&slowDownloadStorage, true);
+    NewOpenInstance(914526, StoreNode::GetInstance()->GetNodeId(), "/storage/download-slow", O_RDWR);
+    openInstance->originalSize = 8;
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), false, false), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), false, false), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    store->CoverageOverrideStorage(&storage, true);
+
+    uint64_t cachedDownloadFileInode = 914527;
+    std::string cachedDownloadFile = GetFilePath(cachedDownloadFileInode);
+    int cachedDownloadFd = open(cachedDownloadFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(cachedDownloadFd, 0);
+    ASSERT_EQ(pwrite(cachedDownloadFd, "cachehit", 8, 0), 8);
+    close(cachedDownloadFd);
+    DiskCache::GetInstance().InsertAndUpdate(cachedDownloadFileInode, 8, false);
+    NewOpenInstance(cachedDownloadFileInode, StoreNode::GetInstance()->GetNodeId(), "/storage/download-existing-cache", O_RDWR);
+    openInstance->originalSize = 8;
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), true, false), 0);
+    DiskCache::GetInstance().Unpin(cachedDownloadFileInode);
+
+    uint64_t cachedAsyncFileInode = 914528;
+    std::string cachedAsyncRealFile = GetFilePath(cachedAsyncFileInode);
+    int cachedAsyncFd = open(cachedAsyncRealFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(cachedAsyncFd, 0);
+    ASSERT_EQ(pwrite(cachedAsyncFd, "asyncbuf", 8, 0), 8);
+    close(cachedAsyncFd);
+    DiskCache::GetInstance().InsertAndUpdate(cachedAsyncFileInode, 8, false);
+    EXPECT_EQ(store->CoverageWriteToFileAsync(cachedAsyncFileInode, cachedAsyncRealFile, asyncBuffer, 8), 0);
+
+    // Holding the private file lock makes async lock-contention exits deterministic.
+    auto heldDownloadLock = store->CoverageHoldFileLock(914535);
+    ASSERT_TRUE(heldDownloadLock->isLocked());
+    NewOpenInstance(914535, StoreNode::GetInstance()->GetNodeId(), "/storage/download-lock-held", O_RDWR);
+    openInstance->originalSize = 8;
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), false, false), 0);
+    char heldBrpcBuf[8] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914535, "/storage/brpc-lock-held", heldBrpcBuf, 8, false, false), 0);
+    std::string heldAsyncFile = GetFilePath(914535);
+    EXPECT_EQ(store->CoverageWriteToFileAsync(914535, heldAsyncFile, asyncBuffer, 8), 0);
+    heldDownloadLock.reset();
+
+    // ReadFile must persist buffered writes before serving local reads.
+    NewOpenInstance(914536, StoreNode::GetInstance()->GetNodeId(), "/storage/read-after-buffered-write", O_RDWR | O_CREAT);
+    ASSERT_EQ(store->OpenFile(openInstance.get()), 0);
+    EXPECT_EQ(store->WriteFile(openInstance.get(), "abc", 3, 0), 0);
+    char readAfterWriteBuf[3] = {};
+    EXPECT_EQ(store->ReadFile(openInstance.get(), readAfterWriteBuf, 3, 0), 3);
+    EXPECT_EQ(std::string(readAfterWriteBuf, 3), "abc");
+    close(openInstance->physicalFd);
+
+    // Missing local cache with storage disabled covers the read-open failure path.
+    store->CoverageOverrideStorage(nullptr, false);
+    NewOpenInstance(914537, StoreNode::GetInstance()->GetNodeId(), "/storage/read-open-fail", O_RDONLY);
+    openInstance->originalSize = READ_BIGFILE_SIZE;
+    openInstance->currentSize = READ_BIGFILE_SIZE;
+    char readOpenFailBuf[8] = {};
+    EXPECT_EQ(store->ReadFile(openInstance.get(), readOpenFailBuf, sizeof(readOpenFailBuf), 0), -ENOENT);
+    store->CoverageOverrideStorage(&storage, true);
+
+    std::string cacheRoot = config->GetString(FalconPropertyKey::FALCON_CACHE_ROOT);
+    store->CoverageOverrideStorage(nullptr, false);
+    store->CoverageSetDataPath("/tmp/falconfs_missing_statfs_root");
+    struct statvfs badVfsBuf {};
+    EXPECT_EQ(store->StatFS(&badVfsBuf), -ENOENT);
+    uint64_t badBlocks = 0;
+    uint64_t badFree = 0;
+    uint64_t badAvail = 0;
+    uint64_t badFiles = 0;
+    uint64_t badFfree = 0;
+    std::string localEndpointForStat = StoreNode::GetInstance()->GetRpcEndPoint(StoreNode::GetInstance()->GetNodeId());
+    EXPECT_EQ(store->StatFSForBrpc(localEndpointForStat, badBlocks, badFree, badAvail, badFiles, badFfree), -ENOENT);
+    store->CoverageSetDataPath(cacheRoot);
+    store->CoverageOverrideStorage(&storage, true);
+
+    uint64_t closeFlushInode = 914522;
+    NewOpenInstance(closeFlushInode, StoreNode::GetInstance()->GetNodeId(), "/storage/close-flush", O_RDWR | O_CREAT);
+    ASSERT_EQ(store->OpenFile(openInstance.get()), 0);
+    ASSERT_EQ(pwrite(openInstance->physicalFd, "close", 5, 0), 5);
+    openInstance->isOpened = true;
+    openInstance->currentSize = 5;
+    openInstance->writeCnt = 1;
+    EXPECT_EQ(store->CloseTmpFiles(openInstance.get(), true, false), 0);
+    close(openInstance->physicalFd);
+
+    EXPECT_GE(store->CoveragePathToNodeId("/"), 0);
+
+    NewOpenInstance(914509, -1, "/storage/alloc/local", O_RDONLY);
+    store->CoverageSetAllocPolicy(true, false, -1);
+    store->CoverageAllocNodeId(openInstance.get());
+    EXPECT_EQ(openInstance->nodeId, StoreNode::GetInstance()->GetNodeId());
+
+    NewOpenInstance(914510, -1, "/storage/alloc/infer/file", O_RDONLY);
+    store->CoverageSetAllocPolicy(false, true, 2);
+    store->CoverageAllocNodeId(openInstance.get());
+    EXPECT_GE(openInstance->nodeId, 0);
+    EXPECT_EQ(store->CoveragePathToNodeId("/storage/alloc/infer/again"), store->CoveragePathToNodeId("/storage/alloc/infer/other"));
+    store->CoverageSetAllocPolicy(false, true, -1);
+
+    ResetFalconStatsForCoverage();
+    store->CoverageOverrideStorage(nullptr, false);
+}
+
+TEST_F(FalconStoreUT, CoverageStorageErrorBranches)
+{
+    auto *store = FalconStore::GetInstance();
+    MockStorage storage(MockStorage::Mode::Error);
+    store->CoverageOverrideStorage(&storage, true);
+
+    // Drive the same storage-backed entry points through failing backend responses.
+    struct statvfs vfsBuf {};
+    EXPECT_EQ(store->StatFS(&vfsBuf), -EIO);
+    EXPECT_EQ(store->CopyData("/storage/copy-src", "/storage/copy-dst"), -EIO);
+    EXPECT_EQ(store->DeleteDataAfterRename("/storage/copy-src"), -EIO);
+    EXPECT_EQ(store->DeleteFiles(914600, StoreNode::GetInstance()->GetNodeId(), "/storage/delete-error"), -EIO);
+
+    uint64_t flushInode = 914601;
+    std::string flushFile = GetFilePath(flushInode);
+    int fd = open(flushFile.c_str(), O_CREAT | O_RDWR, 0755);
+    ASSERT_GE(fd, 0);
+    ASSERT_EQ(pwrite(fd, "flush", 5, 0), 5);
+    close(fd);
+    EXPECT_EQ(store->CoverageFlushToStorage("/storage/flush-error", flushInode), -EIO);
+
+    NewOpenInstance(914602, StoreNode::GetInstance()->GetNodeId(), "/storage/download-error", O_RDWR);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->CoverageDownLoadFromStorage(openInstance.get(), true, true), -EIO);
+
+    NewOpenInstance(914603, StoreNode::GetInstance()->GetNodeId(), "/storage/small-error", O_RDONLY);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->ReadSmallFiles(openInstance.get()), -EIO);
+
+    char brpcBuf[16] = {};
+    EXPECT_EQ(store->ReadSmallFilesForBrpc(914604, "/storage/brpc-error", brpcBuf, 8, O_RDWR, false), -EIO);
+
+    char brpcSyncBuf[16] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914605, "/storage/brpc-sync-error", brpcSyncBuf, 8, true, true), -EIO);
+
+    char brpcAsyncBuf[16] = {};
+    EXPECT_EQ(store->CoverageDownLoadFromStorageForBrpc(914606, "/storage/brpc-async-error", brpcAsyncBuf, 8, false, false), 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    char lrErrorBuf[8] = {};
+    NewOpenInstance(914607, StoreNode::GetInstance()->GetNodeId(), "/storage/read-lr-error", O_RDONLY);
+    openInstance->currentSize = 8;
+    EXPECT_EQ(store->ReadFileLR(lrErrorBuf, 0, openInstance.get(), 8), -EIO);
+
+    std::unordered_map<int, std::string> originalNodes;
+    auto *storeNode = StoreNode::GetInstance();
+    for (int id : storeNode->GetAllNodeId()) {
+        originalNodes.emplace(id, storeNode->GetRpcEndPoint(id));
+    }
+    int port = GetUnusedLoopbackPortForStoreCoverage();
+    ASSERT_GT(port, 0);
+    MockRemoteIOService remoteError(MockRemoteIOService::Mode::Error);
+    brpc::Server server;
+    ASSERT_EQ(server.AddService(&remoteError, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+    ASSERT_EQ(server.Start(port, nullptr), 0);
+    int remoteNodeId = storeNode->GetNodeId() + 191;
+    auto nodes = originalNodes;
+    nodes[remoteNodeId] = "127.0.0.1:" + std::to_string(port);
+    storeNode->UpdateNodeConfigByValue(nodes);
+    NewOpenInstance(914610, remoteNodeId, "/storage/remote-fallback-error", O_RDONLY);
+    openInstance->originalSize = 8;
+    openInstance->readBufferSize = 8;
+    openInstance->readBuffer.reset(new char[8], std::default_delete<char[]>());
+    EXPECT_EQ(store->CoverageOpenFileFromRemote(openInstance.get(), false), -EIO);
+
+    NewOpenInstance(914611, remoteNodeId, "/storage/remote-truncate-error", O_RDWR);
+    openInstance->isOpened = true;
+    openInstance->physicalFd = 4242;
+    EXPECT_EQ(store->TruncateFile(openInstance.get(), 3), -EIO);
+    EXPECT_EQ(store->TruncateOpenInstance(openInstance.get(), 3), -EIO);
+    server.Stop(0);
+    server.Join();
+    storeNode->UpdateNodeConfigByValue(originalNodes);
+
+    ResetFalconStatsForCoverage();
+    store->CoverageOverrideStorage(nullptr, false);
+}
+#endif
 
 /* ------------------------------------------- write local -------------------------------------------*/
 
@@ -451,6 +1623,7 @@ size_t writeLocalSize = 0;
 
 TEST_F(FalconStoreUT, WriteLocalLarge)
 {
+    /* Exercise Write local Large and assert the relevant success or failure branch. */
     NewOpenInstance(1000, StoreNode::GetInstance()->GetNodeId(), "/WriteLocal", O_WRONLY | O_CREAT);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE + 1;
@@ -468,6 +1641,7 @@ TEST_F(FalconStoreUT, WriteLocalLarge)
 
 TEST_F(FalconStoreUT, WriteLocalZero)
 {
+    /* Exercise Write local Zero and assert the relevant success or failure branch. */
     NewOpenInstance(1000, StoreNode::GetInstance()->GetNodeId(), "/WriteLocal", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE + 1;
@@ -484,6 +1658,7 @@ TEST_F(FalconStoreUT, WriteLocalZero)
 
 TEST_F(FalconStoreUT, WriteLocalSeq)
 {
+    /* Exercise Write local Seq and assert the relevant success or failure branch. */
     NewOpenInstance(1000, StoreNode::GetInstance()->GetNodeId(), "/WriteLocal", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 2;
@@ -511,6 +1686,7 @@ TEST_F(FalconStoreUT, WriteLocalSeq)
 
 TEST_F(FalconStoreUT, WriteLocalRandom)
 {
+    /* Exercise Write local Random and assert the relevant success or failure branch. */
     NewOpenInstance(1000, StoreNode::GetInstance()->GetNodeId(), "/WriteLocal", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 2;
@@ -533,6 +1709,7 @@ TEST_F(FalconStoreUT, WriteLocalRandom)
 
 TEST_F(FalconStoreUT, WriteLocalSeqToRandom)
 {
+    /* Exercise Write local Sequential To Random and assert the relevant success or failure branch. */
     NewOpenInstance(1000, StoreNode::GetInstance()->GetNodeId(), "/WriteLocal", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 4;
@@ -558,6 +1735,7 @@ TEST_F(FalconStoreUT, WriteLocalSeqToRandom)
 
 TEST_F(FalconStoreUT, WriteLocalStats)
 {
+    /* Exercise Write local Stats and assert the relevant success or failure branch. */
     // wait until stats are updated
     sleep(1);
     std::vector<size_t> stats(STATS_END);
@@ -579,6 +1757,7 @@ size_t writeRemoteSize = 0;
 
 TEST_F(FalconStoreUT, WriteRemoteLarge)
 {
+    /* Exercise Write remote Large and assert the relevant success or failure branch. */
     NewOpenInstance(2000, StoreNode::GetInstance()->GetNodeId() + 1, "/WriteRemote", O_WRONLY | O_CREAT);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE + 1;
@@ -596,6 +1775,7 @@ TEST_F(FalconStoreUT, WriteRemoteLarge)
 
 TEST_F(FalconStoreUT, WriteRemoteZero)
 {
+    /* Exercise Write remote Zero and assert the relevant success or failure branch. */
     NewOpenInstance(2000, StoreNode::GetInstance()->GetNodeId() + 1, "/WriteRemote", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE + 1;
@@ -612,6 +1792,7 @@ TEST_F(FalconStoreUT, WriteRemoteZero)
 
 TEST_F(FalconStoreUT, WriteRemoteSeq)
 {
+    /* Exercise Write remote Seq and assert the relevant success or failure branch. */
     NewOpenInstance(2000, StoreNode::GetInstance()->GetNodeId() + 1, "/WriteRemote", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 2;
@@ -638,6 +1819,7 @@ TEST_F(FalconStoreUT, WriteRemoteSeq)
 
 TEST_F(FalconStoreUT, WriteRemoteRandom)
 {
+    /* Exercise Write remote Random and assert the relevant success or failure branch. */
     NewOpenInstance(2000, StoreNode::GetInstance()->GetNodeId() + 1, "/WriteRemote", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 2;
@@ -660,6 +1842,7 @@ TEST_F(FalconStoreUT, WriteRemoteRandom)
 
 TEST_F(FalconStoreUT, WriteRemoteSeqToRandom)
 {
+    /* Exercise Write remote Sequential To Random and assert the relevant success or failure branch. */
     NewOpenInstance(2000, StoreNode::GetInstance()->GetNodeId() + 1, "/WriteRemote", O_WRONLY);
 
     size_t size = FALCON_STORE_STREAM_MAX_SIZE / 4;
@@ -685,6 +1868,7 @@ TEST_F(FalconStoreUT, WriteRemoteSeqToRandom)
 
 TEST_F(FalconStoreUT, WriteRemoteStats)
 {
+    /* Exercise Write remote Stats and assert the relevant success or failure branch. */
     // wait until stats are updated
     sleep(1);
     std::vector<size_t> stats(STATS_END);
@@ -706,6 +1890,7 @@ size_t readLocalSize = 0;
 
 TEST_F(FalconStoreUT, ReadLocalSeqSmall)
 {
+    /* Exercise Read local Seq Small and assert the relevant success or failure branch. */
     writeLocalSize = 0;
     NewOpenInstance(10000, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalSmall", O_WRONLY | O_CREAT);
     ResetBuf(false);
@@ -733,6 +1918,7 @@ TEST_F(FalconStoreUT, ReadLocalSeqSmall)
 
 TEST_F(FalconStoreUT, ReadLocalRandomSmall)
 {
+    /* Exercise Read local Random Small and assert the relevant success or failure branch. */
     NewOpenInstance(10000, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalSmall", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -755,6 +1941,7 @@ TEST_F(FalconStoreUT, ReadLocalRandomSmall)
 
 TEST_F(FalconStoreUT, ReadLocalSeqLarge)
 {
+    /* Exercise Read local Seq Large and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_WRONLY | O_CREAT);
     ResetBuf(true);
 
@@ -778,6 +1965,7 @@ TEST_F(FalconStoreUT, ReadLocalSeqLarge)
 
 TEST_F(FalconStoreUT, ReadLocalRandomLarge)
 {
+    /* Exercise Read local Random Large and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -796,6 +1984,7 @@ TEST_F(FalconStoreUT, ReadLocalRandomLarge)
 
 TEST_F(FalconStoreUT, ReadLocalSeqToRandomLarge)
 {
+    /* Exercise Read local Sequential To Random Large and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -819,6 +2008,7 @@ TEST_F(FalconStoreUT, ReadLocalSeqToRandomLarge)
 
 TEST_F(FalconStoreUT, ReadLocalExceed)
 {
+    /* Exercise Read local Exceed and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -834,6 +2024,7 @@ TEST_F(FalconStoreUT, ReadLocalExceed)
 
 TEST_F(FalconStoreUT, ReadLocalHole)
 {
+    /* Exercise Read local Hole and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_WRONLY);
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, size * 2);
     EXPECT_EQ(ret, 0);
@@ -855,6 +2046,7 @@ TEST_F(FalconStoreUT, ReadLocalHole)
 
 TEST_F(FalconStoreUT, ReadLocalStats)
 {
+    /* Exercise Read local Stats and assert the relevant success or failure branch. */
     // wait until stats are updated
     sleep(1);
     std::vector<size_t> stats(STATS_END);
@@ -876,6 +2068,7 @@ size_t readRemoteSize = 0;
 
 TEST_F(FalconStoreUT, ReadRemoteSeqSmall)
 {
+    /* Exercise Read remote Seq Small and assert the relevant success or failure branch. */
     writeRemoteSize = 0;
     NewOpenInstance(20000, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteSmall", O_WRONLY | O_CREAT);
     ResetBuf(false);
@@ -905,6 +2098,7 @@ TEST_F(FalconStoreUT, ReadRemoteSeqSmall)
 
 TEST_F(FalconStoreUT, ReadRemoteRandomSmall)
 {
+    /* Exercise Read remote Random Small and assert the relevant success or failure branch. */
     NewOpenInstance(20000, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteSmall", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -928,6 +2122,7 @@ TEST_F(FalconStoreUT, ReadRemoteRandomSmall)
 
 TEST_F(FalconStoreUT, ReadRemoteStats)
 {
+    /* Exercise Read remote Stats and assert the relevant success or failure branch. */
     // large remote file has preread, unable to determine actual read value
     // wait until stats are updated
     sleep(1);
@@ -946,6 +2141,7 @@ TEST_F(FalconStoreUT, ReadRemoteStats)
 
 TEST_F(FalconStoreUT, ReadRemoteSeqLarge)
 {
+    /* Exercise Read remote Seq Large and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_WRONLY | O_CREAT);
     ResetBuf(true);
 
@@ -966,6 +2162,7 @@ TEST_F(FalconStoreUT, ReadRemoteSeqLarge)
 
 TEST_F(FalconStoreUT, ReadRemoteRandomLarge)
 {
+    /* Exercise Read remote Random Large and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -982,6 +2179,7 @@ TEST_F(FalconStoreUT, ReadRemoteRandomLarge)
 
 TEST_F(FalconStoreUT, ReadRemoteSeqToRandomLarge)
 {
+    /* Exercise Read remote Sequential To Random Large and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1002,6 +2200,7 @@ TEST_F(FalconStoreUT, ReadRemoteSeqToRandomLarge)
 
 TEST_F(FalconStoreUT, ReadRemoteExceed)
 {
+    /* Exercise Read remote Exceed and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDONLY);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1015,6 +2214,7 @@ TEST_F(FalconStoreUT, ReadRemoteExceed)
 
 TEST_F(FalconStoreUT, ReadRemoteHole)
 {
+    /* Exercise Read remote Hole and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_WRONLY);
     int ret = FalconStore::GetInstance()->WriteFile(openInstance.get(), writeBuf, size, size * 2);
     EXPECT_EQ(ret, 0);
@@ -1036,6 +2236,7 @@ TEST_F(FalconStoreUT, ReadRemoteHole)
 // all large file
 TEST_F(FalconStoreUT, PrereadWriteLocal)
 {
+    /* Exercise Preread Write local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1051,6 +2252,7 @@ TEST_F(FalconStoreUT, PrereadWriteLocal)
 
 TEST_F(FalconStoreUT, ReadWriteLocal)
 {
+    /* Exercise Read Write local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1070,6 +2272,7 @@ TEST_F(FalconStoreUT, ReadWriteLocal)
 
 TEST_F(FalconStoreUT, PrereadWriteReadLocal)
 {
+    /* Exercise Preread Write Read local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1090,6 +2293,7 @@ TEST_F(FalconStoreUT, PrereadWriteReadLocal)
 
 TEST_F(FalconStoreUT, ReadWriteReadLocal)
 {
+    /* Exercise Read Write Read local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1113,6 +2317,7 @@ TEST_F(FalconStoreUT, ReadWriteReadLocal)
 
 TEST_F(FalconStoreUT, WritePreReadWriteLocal)
 {
+    /* Exercise Write Pre Read Write local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1135,6 +2340,7 @@ TEST_F(FalconStoreUT, WritePreReadWriteLocal)
 
 TEST_F(FalconStoreUT, WriteReadWriteLocal)
 {
+    /* Exercise Write Read Write local and assert the relevant success or failure branch. */
     NewOpenInstance(10001, StoreNode::GetInstance()->GetNodeId(), "/ReadLocalLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1159,6 +2365,7 @@ TEST_F(FalconStoreUT, WriteReadWriteLocal)
 // all large file
 TEST_F(FalconStoreUT, PrereadWriteRemote)
 {
+    /* Exercise Preread Write remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1175,6 +2382,7 @@ TEST_F(FalconStoreUT, PrereadWriteRemote)
 
 TEST_F(FalconStoreUT, ReadWriteRemote)
 {
+    /* Exercise Read Write remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1194,6 +2402,7 @@ TEST_F(FalconStoreUT, ReadWriteRemote)
 
 TEST_F(FalconStoreUT, PrereadWriteReadRemote)
 {
+    /* Exercise Preread Write Read remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1214,6 +2423,7 @@ TEST_F(FalconStoreUT, PrereadWriteReadRemote)
 
 TEST_F(FalconStoreUT, ReadWriteReadRemote)
 {
+    /* Exercise Read Write Read remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1237,6 +2447,7 @@ TEST_F(FalconStoreUT, ReadWriteReadRemote)
 
 TEST_F(FalconStoreUT, WritePreReadWriteRemote)
 {
+    /* Exercise Write Pre Read Write remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1259,6 +2470,7 @@ TEST_F(FalconStoreUT, WritePreReadWriteRemote)
 
 TEST_F(FalconStoreUT, WriteReadWriteRemote)
 {
+    /* Exercise Write Read Write remote and assert the relevant success or failure branch. */
     NewOpenInstance(20001, StoreNode::GetInstance()->GetNodeId() + 1, "/ReadRemoteLarge", O_RDWR);
     openInstance->originalSize = size;
     openInstance->currentSize = size;
@@ -1283,6 +2495,7 @@ TEST_F(FalconStoreUT, WriteReadWriteRemote)
 
 TEST_F(FalconStoreUT, FlushLocal)
 {
+    /* Exercise Flush local and assert the relevant success or failure branch. */
     NewOpenInstance(100000, StoreNode::GetInstance()->GetNodeId(), "/CloseLocal", O_RDWR | O_CREAT);
 
     ResetBuf(true);
@@ -1296,6 +2509,7 @@ TEST_F(FalconStoreUT, FlushLocal)
 
 TEST_F(FalconStoreUT, ReleaseLocal)
 {
+    /* Exercise Release local and assert the relevant success or failure branch. */
     NewOpenInstance(100000, StoreNode::GetInstance()->GetNodeId(), "/CloseLocal", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1311,6 +2525,7 @@ TEST_F(FalconStoreUT, ReleaseLocal)
 
 TEST_F(FalconStoreUT, ReleaseWithoutFlushLocal)
 {
+    /* Exercise Release Without Flush local and assert the relevant success or failure branch. */
     NewOpenInstance(100000, StoreNode::GetInstance()->GetNodeId(), "/CloseLocal", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1324,6 +2539,7 @@ TEST_F(FalconStoreUT, ReleaseWithoutFlushLocal)
 
 TEST_F(FalconStoreUT, FlushTwiceLocal)
 {
+    /* Exercise Flush Twice local and assert the relevant success or failure branch. */
     NewOpenInstance(100000, StoreNode::GetInstance()->GetNodeId(), "/CloseLocal", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1343,6 +2559,7 @@ TEST_F(FalconStoreUT, FlushTwiceLocal)
 
 TEST_F(FalconStoreUT, FlushRemote)
 {
+    /* Exercise Flush remote and assert the relevant success or failure branch. */
     NewOpenInstance(200000, StoreNode::GetInstance()->GetNodeId() + 1, "/CloseRemote", O_RDWR | O_CREAT);
 
     memset(readBuf, 0, readSize);
@@ -1356,6 +2573,7 @@ TEST_F(FalconStoreUT, FlushRemote)
 
 TEST_F(FalconStoreUT, ReleaseRemote)
 {
+    /* Exercise Release remote and assert the relevant success or failure branch. */
     NewOpenInstance(200000, StoreNode::GetInstance()->GetNodeId() + 1, "/CloseRemote", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1371,6 +2589,7 @@ TEST_F(FalconStoreUT, ReleaseRemote)
 
 TEST_F(FalconStoreUT, ReleaseWithoutFlushRemote)
 {
+    /* Exercise Release Without Flush remote and assert the relevant success or failure branch. */
     NewOpenInstance(200000, StoreNode::GetInstance()->GetNodeId() + 1, "/CloseRemote", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1384,6 +2603,7 @@ TEST_F(FalconStoreUT, ReleaseWithoutFlushRemote)
 
 TEST_F(FalconStoreUT, FlushTwiceRemote)
 {
+    /* Exercise Flush Twice remote and assert the relevant success or failure branch. */
     NewOpenInstance(200000, StoreNode::GetInstance()->GetNodeId() + 1, "/CloseRemote", O_RDWR);
 
     memset(readBuf, 0, readSize);
@@ -1403,6 +2623,7 @@ TEST_F(FalconStoreUT, FlushTwiceRemote)
 
 TEST_F(FalconStoreUT, DeleteLocal)
 {
+    /* Exercise Delete local and assert the relevant success or failure branch. */
     uint64_t inodeId = 100;
     int nodeId = StoreNode::GetInstance()->GetNodeId();
     std::string path = "/OpenLocal";
@@ -1432,6 +2653,7 @@ TEST_F(FalconStoreUT, DeleteLocal)
 
 TEST_F(FalconStoreUT, DeleteLocalNoneExist)
 {
+    /* Exercise Delete local missing and assert the relevant success or failure branch. */
     uint64_t inodeId = 1000000;
     int nodeId = StoreNode::GetInstance()->GetNodeId();
     std::string path = "/DeleteLocalNoneExist";
@@ -1447,6 +2669,7 @@ TEST_F(FalconStoreUT, DeleteLocalNoneExist)
 
 TEST_F(FalconStoreUT, DeleteRemote)
 {
+    /* Exercise Delete remote and assert the relevant success or failure branch. */
     uint64_t inodeId = 200;
     int nodeId = StoreNode::GetInstance()->GetNodeId();
     std::string path = "/OpenRemote";
@@ -1476,6 +2699,7 @@ TEST_F(FalconStoreUT, DeleteRemote)
 
 TEST_F(FalconStoreUT, DeleteRemoteNoneExist)
 {
+    /* Exercise Delete remote missing and assert the relevant success or failure branch. */
     uint64_t inodeId = 2000000;
     int nodeId = StoreNode::GetInstance()->GetNodeId() + 1;
     std::string path = "/DeleteRemoteNoneExist";
@@ -1491,6 +2715,7 @@ TEST_F(FalconStoreUT, DeleteRemoteNoneExist)
 
 TEST_F(FalconStoreUT, StatFs)
 {
+    /* Exercise Stat FS and assert the relevant success or failure branch. */
     struct statvfs vfsbuf;
     int ret = FalconStore::GetInstance()->StatFS(&vfsbuf);
     EXPECT_EQ(ret, 0);
@@ -1500,6 +2725,7 @@ TEST_F(FalconStoreUT, StatFs)
 
 TEST_F(FalconStoreUT, TruncateFileLocal)
 {
+    /* Exercise Truncate File local and assert the relevant success or failure branch. */
     NewOpenInstance(10000000, StoreNode::GetInstance()->GetNodeId(), "/TruncateFileLocal", O_WRONLY | O_CREAT);
 
     int ret = FalconStore::GetInstance()->TruncateFile(openInstance.get(), 1000);
@@ -1510,6 +2736,7 @@ TEST_F(FalconStoreUT, TruncateFileLocal)
 
 TEST_F(FalconStoreUT, TruncateFileLocalNoneExist)
 {
+    /* Exercise Truncate File local missing and assert the relevant success or failure branch. */
     NewOpenInstance(10000001, StoreNode::GetInstance()->GetNodeId(), "/TruncateFileLocalNoneExist", O_WRONLY);
     openInstance->originalSize = 1;
 
@@ -1525,6 +2752,7 @@ TEST_F(FalconStoreUT, TruncateFileLocalNoneExist)
 
 TEST_F(FalconStoreUT, TruncateFileRemote)
 {
+    /* Exercise Truncate File remote and assert the relevant success or failure branch. */
     NewOpenInstance(20000000, StoreNode::GetInstance()->GetNodeId() + 1, "/TruncateFileRemote", O_WRONLY | O_CREAT);
 
     int ret = FalconStore::GetInstance()->TruncateFile(openInstance.get(), 1000);
@@ -1535,6 +2763,7 @@ TEST_F(FalconStoreUT, TruncateFileRemote)
 
 TEST_F(FalconStoreUT, TruncateFileRemoteNoneExist)
 {
+    /* Exercise Truncate File remote missing and assert the relevant success or failure branch. */
     NewOpenInstance(20000001, StoreNode::GetInstance()->GetNodeId() + 1, "/TruncateFileRemoteNoneExist", O_WRONLY);
     openInstance->originalSize = 1;
 
@@ -1550,6 +2779,7 @@ TEST_F(FalconStoreUT, TruncateFileRemoteNoneExist)
 
 TEST_F(FalconStoreUT, TruncateOpenInstanceLocal)
 {
+    /* Exercise Truncate Open Instance local and assert the relevant success or failure branch. */
     NewOpenInstance(10000010, StoreNode::GetInstance()->GetNodeId(), "/TruncateOpenInstanceLocal", O_WRONLY);
 
     int ret = FalconStore::GetInstance()->TruncateOpenInstance(openInstance.get(), 1000);
@@ -1560,6 +2790,7 @@ TEST_F(FalconStoreUT, TruncateOpenInstanceLocal)
 
 TEST_F(FalconStoreUT, WriteTruncateOpenInstanceLocal)
 {
+    /* Exercise Write Truncate Open Instance local and assert the relevant success or failure branch. */
     NewOpenInstance(10000010, StoreNode::GetInstance()->GetNodeId(), "/TruncateOpenInstanceLocal", O_WRONLY | O_CREAT);
 
     ResetBuf(true);
@@ -1580,6 +2811,7 @@ TEST_F(FalconStoreUT, WriteTruncateOpenInstanceLocal)
 
 TEST_F(FalconStoreUT, TruncateOpenInstanceRemote)
 {
+    /* Exercise Truncate Open Instance remote and assert the relevant success or failure branch. */
     NewOpenInstance(20000010, StoreNode::GetInstance()->GetNodeId() + 1, "/TruncateOpenInstanceRemote", O_WRONLY);
 
     int ret = FalconStore::GetInstance()->TruncateOpenInstance(openInstance.get(), 1000);
@@ -1590,6 +2822,7 @@ TEST_F(FalconStoreUT, TruncateOpenInstanceRemote)
 
 TEST_F(FalconStoreUT, WriteTruncateOpenInstanceRemote)
 {
+    /* Exercise Write Truncate Open Instance remote and assert the relevant success or failure branch. */
     NewOpenInstance(20000010,
                     StoreNode::GetInstance()->GetNodeId() + 1,
                     "/TruncateOpenInstanceRemote",

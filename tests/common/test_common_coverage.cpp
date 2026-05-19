@@ -5,6 +5,7 @@
 #include "conf/falcon_config.h"
 #include "conf/falcon_property_key.h"
 #include "falcon_code.h"
+#include "init/falcon_init.h"
 #include "log/logging.h"
 #include "stats/falcon_stats.h"
 #include "thread_pool/thread_pool.h"
@@ -124,6 +125,14 @@ std::string FullFalconConfigJson()
       },
       "runtime": {}
     })json";
+}
+
+std::string FalconConfigJsonWithoutLogDir()
+{
+    std::string config = FullFalconConfigJson();
+    const std::string logDir = "\"falcon_log_dir\": \"/tmp/falcon_common_cov_log\"";
+    config.replace(config.find(logDir), logDir.size(), "\"falcon_log_dir\": \"\"");
+    return config;
 }
 
 void ResetStats()
@@ -248,6 +257,7 @@ int deallocate_String_vector(String_vector *v)
 
 TEST(CommonBase64UT, EncodeDecodePaddingAndBinaryData)
 {
+    /* Exercise Encode Decode Padding And Binary Data and assert the relevant success or failure branch. */
     const std::vector<unsigned char> input = {'f', 'a', 'l', 'c', 'o', 'n', '\0', 'f', 's'};
     std::vector<char> encoded(BASE64_ENCODE_OUT_SIZE(input.size()));
     unsigned int encoded_size = base64_encode(input.data(), input.size(), encoded.data());
@@ -269,6 +279,7 @@ TEST(CommonBase64UT, EncodeDecodePaddingAndBinaryData)
 
 TEST(CommonBase64UT, DecodeRejectsMalformedInput)
 {
+    /* Exercise Decode rejects Malformed Input and assert the relevant success or failure branch. */
     unsigned char out[8] = {};
     EXPECT_EQ(base64_decode("abc", 3, out), UINT32_MAX);
     EXPECT_EQ(base64_decode("@@@@", 4, out), 0U);
@@ -277,10 +288,12 @@ TEST(CommonBase64UT, DecodeRejectsMalformedInput)
 
 TEST(CommonFalconConfigUT, LoadsTypedPropertiesAndArrays)
 {
+    /* Load a full config file and verify typed scalar and array getters. */
     auto config_path = MakeTempFile("falcon_common_config_full.json", FullFalconConfigJson());
     FalconConfig config;
     ASSERT_EQ(config.InitConf(config_path.string()), 0);
 
+    /* Each getter checks a different JSON conversion branch used by runtime config parsing. */
     EXPECT_EQ(config.GetString(FalconPropertyKey::FALCON_LOG_DIR), "/tmp/falcon_common_cov_log");
     EXPECT_EQ(config.GetString(FalconPropertyKey::FALCON_SERVER_IP), "127.0.0.1");
     EXPECT_EQ(config.GetUint32(FalconPropertyKey::FALCON_THREAD_NUM), 4U);
@@ -295,14 +308,18 @@ TEST(CommonFalconConfigUT, LoadsTypedPropertiesAndArrays)
 
 TEST(CommonFalconConfigUT, ReportsInvalidFilesAndTypes)
 {
+    /* Feed empty, missing, malformed, and wrong-type config files to verify failure handling. */
     FalconConfig config;
+    /* Empty and missing paths should fail before JSON parsing starts. */
     EXPECT_NE(config.InitConf(""), 0);
     EXPECT_NE(config.InitConf("/tmp/falcon_config_file_not_exist.json"), 0);
 
+    /* Malformed JSON reaches the parser error branch. */
     auto invalid_json = MakeTempFile("falcon_common_config_invalid.json", "{ invalid json");
     EXPECT_NE(config.InitConf(invalid_json.string()), 0);
     std::filesystem::remove(invalid_json);
 
+    /* A syntactically valid file with the wrong value type exercises typed-property validation. */
     std::string wrong_type = FullFalconConfigJson();
     const std::string from = "\"falcon_thread_num\": 4";
     const std::string to = "\"falcon_thread_num\": \"bad\"";
@@ -312,8 +329,36 @@ TEST(CommonFalconConfigUT, ReportsInvalidFilesAndTypes)
     std::filesystem::remove(wrong_type_path);
 }
 
+TEST(CommonFalconInitUT, DirectModuleCoversInitBoundaries)
+{
+    /* Exercise module init with missing, invalid, and valid config inputs. */
+    FalconModuleInit missingConfig;
+    /* InnerInit is independent of config, while InitConf/Init must report the absent config path. */
+    EXPECT_EQ(missingConfig.InnerInit(), FALCON_SUCCESS);
+    EXPECT_EQ(missingConfig.InitConf(), FALCON_IEC_INIT_CONF_FAILED);
+    EXPECT_EQ(missingConfig.Init(), FALCON_ERR_INNER_FAILED);
+
+    /* Create runtime directories so a real config can complete the full module init path. */
+    auto config_path = MakeTempFile("falcon_common_module_init.json", FalconConfigJsonWithoutLogDir());
+    std::filesystem::create_directories("/tmp/falcon_common_cov_log");
+    std::filesystem::create_directories("/tmp/falcon_common_cov_cache");
+    FalconModuleInit module(config_path.string());
+    /* An empty falcon_log_dir verifies InitLog's default directory fallback; re-running covers the inited guard. */
+    EXPECT_EQ(module.Init(), FALCON_SUCCESS);
+    EXPECT_EQ(module.Init(), FALCON_SUCCESS);
+    ASSERT_NE(module.GetFalconConfig(), nullptr);
+    EXPECT_EQ(module.GetFalconConfig()->GetString(FalconPropertyKey::FALCON_SERVER_IP), "127.0.0.1");
+
+    /* Cover the process singleton path when CONFIG_FILE is absent. */
+    unsetenv("CONFIG_FILE");
+    EXPECT_EQ(GetInit().GetFalconConfig(), nullptr);
+    std::filesystem::remove(config_path);
+    std::filesystem::remove_all("/tmp/falcon_common_cov_cache");
+}
+
 TEST(CommonFalconConfigUT, FormatUtilConvertsSupportedTypes)
 {
+    /* Exercise Format Util converts Supported Types and assert the relevant success or failure branch. */
     Json::Value string_value("falcon");
     EXPECT_EQ(std::any_cast<std::string>(FormatUtil::JsonToAny(string_value, FALCON_STRING)), "falcon");
 
@@ -332,6 +377,7 @@ TEST(CommonFalconConfigUT, FormatUtilConvertsSupportedTypes)
 
 TEST(CommonFalconConfigUT, InvalidGettersAndFormatUtilVariants)
 {
+    /* Exercise invalid Getters And Format Util Variants and assert the relevant success or failure branch. */
     auto config_path = MakeTempFile("falcon_common_config_getter_errors.json", FullFalconConfigJson());
     FalconConfig config;
     ASSERT_EQ(config.InitConf(config_path.string()), 0);
@@ -379,6 +425,7 @@ TEST(CommonFalconConfigUT, InvalidGettersAndFormatUtilVariants)
 
 TEST(CommonFalconConfigUT, PropertyKeyAccessorsAndUpdater)
 {
+    /* Exercise Property Key Accessors And Updater and assert the relevant success or failure branch. */
     PropertyKey runtimeKey("runtime", "falcon_dynamic_key", FALCON, FALCON_BOOL);
     EXPECT_EQ(runtimeKey.GetCategory(), "runtime");
     EXPECT_EQ(runtimeKey.GetName(), "falcon_dynamic_key");
@@ -399,12 +446,14 @@ TEST(CommonFalconConfigUT, PropertyKeyAccessorsAndUpdater)
 
 TEST(CommonFalconCMUT, FetchesClusterMetadataThroughZooKeeperFacade)
 {
+    /* Exercise fetches Cluster Metadata Through Zoo Keeper Facade and assert the relevant success or failure branch. */
     ResetFakeZoo();
     FalconCM::DeleteInstance();
 
     FalconCM *cm = FalconCM::GetInstance("fake-zk:2181", 100, "/falcon");
     ASSERT_EQ(cm->GetInitStatus(), RETURN_OK);
     EXPECT_EQ(cm->GetConnState(), ZOO_CONNECTED);
+    EXPECT_EQ(FalconCM::GetInstance(), cm);
 
     std::string cnLeader;
     EXPECT_EQ(cm->FetchCNLeader(cnLeader), RETURN_OK);
@@ -432,6 +481,7 @@ TEST(CommonFalconCMUT, FetchesClusterMetadataThroughZooKeeperFacade)
 
 TEST(CommonFalconCMUT, UploadsReuploadsAndUpdatesStatus)
 {
+    /* Exercise uploads Reuploads And updates Status and assert the relevant success or failure branch. */
     ResetFakeZoo();
     FalconCM::DeleteInstance();
     FalconCM *cm = FalconCM::GetInstance("fake-zk:2181", 100, "/falcon");
@@ -451,6 +501,8 @@ TEST(CommonFalconCMUT, UploadsReuploadsAndUpdatesStatus)
 
     cm->CheckMetaDataStatus();
     EXPECT_TRUE(cm->GetMetaDataStatus());
+    (void)cm->GetStoreNodeCompleteCv();
+    (void)cm->GetMetaDataReadyCv();
     EXPECT_EQ(cm->unsetNodeStatus(), 0);
     EXPECT_FALSE(cm->GetNodeStatus());
     cm->UpdateNodeStatus();
@@ -471,12 +523,16 @@ TEST(CommonFalconCMUT, UploadsReuploadsAndUpdatesStatus)
 
 TEST(CommonFalconCMUT, HandlesFailureAndControlFileBranches)
 {
+    /* Exercise handles Failure And Control File branches and assert the relevant success or failure branch. */
     ResetFakeZoo();
     FalconCM::DeleteInstance();
     EXPECT_THROW(FalconCM::GetInstance(), std::runtime_error);
     FalconCM *cm = FalconCM::GetInstance("fake-zk:2181", 100, "/falcon");
     ASSERT_EQ(cm->GetInitStatus(), RETURN_OK);
     EXPECT_THROW(FalconCM::GetInstance("again", 100, "/falcon"), std::runtime_error);
+    cm->ResetState();
+    EXPECT_EQ(cm->GetConnState(), ZOO_NOTCONNECTED);
+    cm->TestTriggerWatcher(ZOO_SESSION_EVENT, ZOO_CONNECTED_STATE);
 
     cm->TestTriggerWatcher(ZOO_SESSION_EVENT + 1, ZOO_CONNECTED_STATE);
     cm->TestTriggerWatcher(ZOO_SESSION_EVENT, ZOO_CONNECTING_STATE);
@@ -508,6 +564,7 @@ TEST(CommonFalconCMUT, HandlesFailureAndControlFileBranches)
     int nodeId = -1;
     std::string rootPath = root.string();
     ASSERT_EQ(cm->Upload("", nodeInfo, nodeId, rootPath), RETURN_OK);
+    EXPECT_EQ(FalconCM::GetExitControlFilePath(), (root / "exit").string());
 
     std::ofstream(root / "exit") << 0;
     FalconCM::ExitByControlFile(1);
@@ -520,6 +577,7 @@ TEST(CommonFalconCMUT, HandlesFailureAndControlFileBranches)
 
 TEST(CommonFalconCMUT, CoversAdditionalZooKeeperFailureBranches)
 {
+    /* Exercise covers Additional Zoo Keeper Failure branches and assert the relevant success or failure branch. */
     ResetFakeZoo();
     FalconCM::DeleteInstance();
     FalconCM *cm = FalconCM::GetInstance("fake-zk:2181", 100, "/falcon");
@@ -580,6 +638,7 @@ TEST(CommonFalconCMUT, CoversAdditionalZooKeeperFailureBranches)
 
 TEST(CommonFalconStatsUT, FormatHelpersCoverUnitsAndRounding)
 {
+    /* Exercise Format Helpers Cover Units And Rounding and assert the relevant success or failure branch. */
     EXPECT_EQ(formatU64(0), "0");
     EXPECT_EQ(formatU64(9999), "9999B");
     EXPECT_EQ(formatU64(10000), "9K");
@@ -597,6 +656,7 @@ TEST(CommonFalconStatsUT, FormatHelpersCoverUnitsAndRounding)
 
 TEST(CommonFalconStatsUT, ConvertsStatsVectorToDisplayStrings)
 {
+    /* Exercise converts Stats Vector To Display Strings and assert the relevant success or failure branch. */
     std::vector<size_t> stats(STATS_END, 0);
     stats[FUSE_OPS] = 2;
     stats[FUSE_LAT] = 4000;
@@ -651,6 +711,7 @@ TEST(CommonFalconStatsUT, ConvertsStatsVectorToDisplayStrings)
 
 TEST(CommonFalconStatsUT, TimerUpdatesLatencyAndMaxCounters)
 {
+    /* Exercise Timer updates Latency And Max Counters and assert the relevant success or failure branch. */
     ResetStats();
     setStatMax(false);
     {
@@ -672,6 +733,7 @@ TEST(CommonFalconStatsUT, TimerUpdatesLatencyAndMaxCounters)
 
 TEST(CommonFalconStatsUT, StoreAndPrintStatsFlow)
 {
+    /* Exercise Store And Print Stats flow and assert the relevant success or failure branch. */
     ResetStats();
     auto &stats = FalconStats::GetInstance();
     stats.stats[FUSE_READ_OPS].store(2);
@@ -723,6 +785,7 @@ TEST(CommonFalconStatsUT, StoreAndPrintStatsFlow)
 
 TEST(CommonThreadPoolUT, RunsTasksAndStopsCleanly)
 {
+    /* Exercise runs Tasks And Stops Cleanly and assert the relevant success or failure branch. */
     auto pool = ThreadPool::CreateThreadPool(2, 4, "coverage_pool");
     ASSERT_NE(pool, nullptr);
     ASSERT_EQ(pool->Start(), 0);
@@ -756,6 +819,7 @@ TEST(CommonThreadPoolUT, RunsTasksAndStopsCleanly)
 
 TEST(CommonLoggingUT, PublicLogInitializationAndCleanupBranches)
 {
+    /* Exercise public Log Initialization And Cleanup branches and assert the relevant success or failure branch. */
     auto temp_root = std::filesystem::temp_directory_path() / ("falcon_log_cov_" + std::to_string(getpid()));
     std::filesystem::remove_all(temp_root);
     std::filesystem::create_directories(temp_root);
@@ -815,6 +879,7 @@ TEST(CommonLoggingUT, PublicLogInitializationAndCleanupBranches)
 
 TEST(CommonBufferUT, OpenAndDirOpenInstancePublicHelpers)
 {
+    /* Exercise Open And Dir Open Instance public Helpers and assert the relevant success or failure branch. */
     OpenInstance openInstance;
     openInstance.LockOpenInstance();
     openInstance.UnlockOpenInstance();
@@ -844,6 +909,7 @@ TEST(CommonBufferUT, OpenAndDirOpenInstancePublicHelpers)
 
 TEST(CommonBufferUT, FalconFdPublicLifecycleBranches)
 {
+    /* Exercise Falcon Fd public Lifecycle branches and assert the relevant success or failure branch. */
     auto *fdManager = FalconFd::GetInstance();
     SetMaxOpenInstanceNum(2);
 

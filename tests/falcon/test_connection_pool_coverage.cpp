@@ -344,8 +344,21 @@ class FakeMetaServiceJob : public BaseMetaServiceJob {
     std::vector<char> requestData_;
 };
 
+class DefaultMarkFailedMetaServiceJob : public BaseMetaServiceJob {
+  public:
+    void Done() override {}
+    bool IsAllowBatchProcess() override { return false; }
+    bool IsEmptyRequest() override { return true; }
+    int GetReqServiceCnt() override { return 0; }
+    size_t GetReqDatasize() override { return 0; }
+    size_t CopyOutData(void *, size_t) override { return 0; }
+    FalconMetaServiceType GetFalconMetaServiceType(int) override { return NOT_SUPPORTED; }
+    void ProcessResponse(void *, size_t, FalDataDeleter) override {}
+};
+
 TEST(ConnectionPoolCoverageUT, WorkerTaskDestructorsFailAndCompleteOwnedJobs)
 {
+    /* Exercise task destructors that mark unfinished jobs failed before calling Done(). */
     FakeMetaServiceJob::ResetCounters();
     auto *singleJob = new FakeMetaServiceJob(FalconMetaServiceType::CREATE);
     {
@@ -370,8 +383,52 @@ TEST(ConnectionPoolCoverageUT, WorkerTaskDestructorsFailAndCompleteOwnedJobs)
     EXPECT_EQ(FakeMetaServiceJob::failedCount, 3);
 }
 
+TEST(ConnectionPoolCoverageUT, SerializedDataBoundaryBranches)
+{
+    /* Validate serialized-buffer rejection paths before appending and clearing owned buffers. */
+    EXPECT_TRUE(SystemIsLittleEndian());
+    EXPECT_EQ(ConvertBetweenBigAndLittleEndian(0x01020304U), 0x04030201U);
+
+    char raw[16] = {};
+    SerializedData external;
+    EXPECT_FALSE(SerializedDataInit(&external, raw, 3, 0, nullptr));
+    EXPECT_FALSE(SerializedDataInit(&external, raw, sizeof(raw), 2, nullptr));
+    ASSERT_TRUE(SerializedDataInit(&external, raw, sizeof(raw), 0, nullptr));
+    EXPECT_EQ(SerializedDataApplyForSegment(&external, sizeof(raw)), nullptr);
+
+    SerializedData first;
+    ASSERT_TRUE(SerializedDataInit(&first, nullptr, 0, 0, nullptr));
+    char *firstSegment = SerializedDataApplyForSegment(&first, 3);
+    ASSERT_NE(firstSegment, nullptr);
+    std::memcpy(firstSegment, "abc", 3);
+    EXPECT_EQ(first.size, 8U);
+    EXPECT_EQ(SerializedDataNextSeveralItemSize(&first, 1, 1), static_cast<sd_size_t>(-1));
+
+    SerializedData second;
+    ASSERT_TRUE(SerializedDataInit(&second, nullptr, 0, 0, nullptr));
+    char *secondSegment = SerializedDataApplyForSegment(&second, 4);
+    ASSERT_NE(secondSegment, nullptr);
+    std::memcpy(secondSegment, "defg", 4);
+    ASSERT_TRUE(SerializedDataAppend(&first, &second));
+    EXPECT_EQ(SerializedDataNextSeveralItemSize(&first, 0, 2), first.size);
+    EXPECT_EQ(SerializedDataNextSeveralItemSize(&first, 0, 3), static_cast<sd_size_t>(-1));
+    SerializedDataClear(&first);
+    EXPECT_EQ(first.size, 0U);
+    SerializedDataDestroy(&first);
+    SerializedDataDestroy(&second);
+}
+
+TEST(ConnectionPoolCoverageUT, DefaultJobMarkFailedIsNoop)
+{
+    /* Call the base default MarkFailed hook used by adapters that do not need failure state. */
+    DefaultMarkFailedMetaServiceJob job;
+    BaseMetaServiceJob *base = &job;
+    EXPECT_NO_THROW(base->MarkFailed());
+}
+
 TEST(ConnectionPoolCoverageUT, MapsMetaServiceTypesToBatchServiceTypes)
 {
+    /* Verify every public meta opcode maps to the batch worker opcode expected by PG replies. */
     EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::MKDIR), FalconBatchServiceType::MKDIR);
     EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::CREATE), FalconBatchServiceType::CREATE);
     EXPECT_EQ(FalconMetaServiceTypeToBatchServiceType(FalconMetaServiceType::STAT), FalconBatchServiceType::STAT);
@@ -388,23 +445,109 @@ TEST(ConnectionPoolCoverageUT, MapsMetaServiceTypesToBatchServiceTypes)
               FalconBatchServiceType::NOT_SUPPORT);
 }
 
+TEST(ConnectionPoolCoverageUT, ShmemAllocatorCoversBoundariesAndFreePaths)
+{
+    /* Exercise Shared Memory Allocator covers Boundaries And Free Paths and assert the relevant success or failure branch. */
+    std::vector<char> tooSmall(sizeof(PaddedAtomic64) * (1 + FALCON_SHMEM_ALLOCATOR_FREE_LIST_COUNT));
+    FalconShmemAllocator smallAllocator {};
+    EXPECT_NE(FalconShmemAllocatorInit(&smallAllocator, tooSmall.data(), tooSmall.size()), 0);
+
+    TestAllocator allocator(2 * 1024 * 1024);
+    FalconShmemAllocator *raw = allocator.get();
+    EXPECT_EQ(FalconShmemAllocatorGetUniqueSignature(raw), 1);
+    EXPECT_EQ(FalconShmemAllocatorGetUniqueSignature(raw), 2);
+
+    EXPECT_EQ(FalconShmemAllocatorMalloc(raw, FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE), 0U);
+
+    uint64_t fullPage = FalconShmemAllocatorMalloc(
+        raw, FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr));
+    ASSERT_NE(fullPage, 0U);
+    FalconShmemAllocatorFree(raw, fullPage);
+
+    uint64_t first = FalconShmemAllocatorMalloc(raw, 1);
+    ASSERT_NE(first, 0U);
+    auto *firstHdr = reinterpret_cast<MemoryHdr *>(FALCON_SHMEM_ALLOCATOR_GET_POINTER(raw,
+        first - sizeof(MemoryHdr)));
+    EXPECT_EQ(firstHdr->size, 1U);
+    FalconShmemAllocatorFree(raw, first);
+
+    uint64_t reused = FalconShmemAllocatorMalloc(raw, 1);
+    ASSERT_NE(reused, 0U);
+    auto *reusedHdr = reinterpret_cast<MemoryHdr *>(FALCON_SHMEM_ALLOCATOR_GET_POINTER(raw,
+        reused - sizeof(MemoryHdr)));
+    reusedHdr->capacity = 123;
+    FalconShmemAllocatorFree(raw, reused);
+
+    uint64_t invalidHigh = FalconShmemAllocatorMalloc(raw, 1);
+    ASSERT_NE(invalidHigh, 0U);
+    auto *invalidHighHdr = reinterpret_cast<MemoryHdr *>(FALCON_SHMEM_ALLOCATOR_GET_POINTER(raw,
+        invalidHigh - sizeof(MemoryHdr)));
+    invalidHighHdr->capacity = FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE + 1;
+    FalconShmemAllocatorFree(raw, invalidHigh);
+
+    FalconShmemAllocator *globalAllocator = GetFalconConnectionPoolShmemAllocator();
+    EXPECT_NE(globalAllocator, nullptr);
+}
+
+TEST(ConnectionPoolCoverageUT, ShmemAllocatorCoversFullPageAndHintBranches)
+{
+    /* Exercise Shared Memory Allocator covers Full Page And Hint branches and assert the relevant success or failure branch. */
+    TestAllocator twoPageAllocator(3 * 1024 * 1024);
+    FalconShmemAllocator *twoPage = twoPageAllocator.get();
+
+    uint64_t tiny = FalconShmemAllocatorMalloc(twoPage, 1);
+    ASSERT_NE(tiny, 0U);
+    uint64_t fullPageAfterUsedPage = FalconShmemAllocatorMalloc(
+        twoPage, FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr));
+    ASSERT_NE(fullPageAfterUsedPage, 0U);
+    FalconShmemAllocatorFree(twoPage, fullPageAfterUsedPage);
+
+    constexpr int minBlockLevel = FALCON_SHMEM_ALLOCATOR_FREE_LIST_COUNT - 1;
+    twoPage->freeListHint[minBlockLevel].data.store(twoPage->pageCount, std::memory_order_relaxed);
+    uint64_t secondScanAlloc = FalconShmemAllocatorMalloc(twoPage, 1);
+    ASSERT_NE(secondScanAlloc, 0U);
+    FalconShmemAllocatorFree(twoPage, secondScanAlloc);
+
+    std::vector<uint64_t> blocks;
+    blocks.reserve(FALCON_SHMEM_ALLOCATOR_STATE_BIT_COUNT);
+    for (int i = 0; i < FALCON_SHMEM_ALLOCATOR_STATE_BIT_COUNT; ++i) {
+        uint64_t block = FalconShmemAllocatorMalloc(twoPage, 1);
+        ASSERT_NE(block, 0U);
+        blocks.push_back(block);
+    }
+    for (uint64_t block : blocks) {
+        FalconShmemAllocatorFree(twoPage, block);
+    }
+
+    TestAllocator onePageAllocator(2 * 1024 * 1024);
+    FalconShmemAllocator *onePage = onePageAllocator.get();
+    uint64_t onlyPage = FalconShmemAllocatorMalloc(
+        onePage, FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr));
+    ASSERT_NE(onlyPage, 0U);
+    EXPECT_EQ(FalconShmemAllocatorMalloc(
+        onePage, FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr)), 0U);
+    FalconShmemAllocatorFree(onePage, onlyPage);
+}
+
 TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
 {
+    /* Exercise pool startup, wrapper dispatch, and shutdown with stubbed PG connections. */
     PGConnection::Reset();
     FakeMetaServiceJob::ResetCounters();
-    PGConnectionPool &pool = PGConnectionPool::GetInstance();
+    FalconPGPort = 55510;
+    FalconConnectionPoolSize = 1;
 
-    ASSERT_TRUE(pool.Init(55510, "tester", 1, 20, 40));
+    ASSERT_TRUE(StartPGConnectionPool());
     EXPECT_EQ(PGConnection::constructed, 1);
 
     auto *emptyJob = new FakeMetaServiceJob(FalconMetaServiceType::CREATE, true, true);
-    pool.DispatchMetaServiceJob(emptyJob);
+    FalconDispatchMetaJob2PGConnectionPool(emptyJob);
     delete emptyJob;
 
     auto *batchJob = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true);
     auto *singleJob = new FakeMetaServiceJob(FalconMetaServiceType::STAT, false);
-    pool.DispatchMetaServiceJob(batchJob);
-    pool.DispatchMetaServiceJob(singleJob);
+    FalconDispatchMetaJob2PGConnectionPool(batchJob);
+    FalconDispatchMetaJob2PGConnectionPool(singleJob);
 
     for (int i = 0; i < 200 && PGConnection::execCount < 2; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -413,13 +556,14 @@ TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
     EXPECT_NE(PGConnection::lastTask, nullptr);
 
     PGConnection::lastTask.reset();
-    pool.Destroy();
+    DestroyPGConnectionPool();
     EXPECT_EQ(PGConnection::stopCount, 1);
     EXPECT_EQ(PGConnection::destructed, 1);
 }
 
 TEST(ConnectionPoolCoverageUT, WorkerTasksRejectInvalidInputs)
 {
+    /* Exercise Worker Tasks Reject invalid Inputs and assert the relevant success or failure branch. */
     TestAllocator allocator(4 * 1024 * 1024);
     flatbuffers::FlatBufferBuilder flatBufferBuilder;
     SerializedData replyBuilder;
@@ -446,8 +590,165 @@ TEST(ConnectionPoolCoverageUT, WorkerTasksRejectInvalidInputs)
     SerializedDataDestroy(&replyBuilder);
 }
 
+TEST(ConnectionPoolCoverageUT, WorkerTasksCoverAllocatorFailureBranches)
+{
+    /* Exercise Worker Tasks Cover Allocator Failure branches and assert the relevant success or failure branch. */
+    TestAllocator allocator(2 * 1024 * 1024);
+    uint64_t fullPage = FalconShmemAllocatorMalloc(
+        allocator.get(), FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr));
+    ASSERT_NE(fullPage, 0U);
+
+    flatbuffers::FlatBufferBuilder flatBufferBuilder;
+    SerializedData replyBuilder;
+    SerializedDataInit(&replyBuilder, nullptr, 0, 0, nullptr);
+
+    {
+        auto *job = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR);
+        SingleWorkerTask task(allocator.get(), job);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+    }
+
+    {
+        std::vector<BaseMetaServiceJob *> jobs{
+            new FakeMetaServiceJob(FalconMetaServiceType::MKDIR),
+        };
+        BatchWorkerTask task(allocator.get(), jobs);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+    }
+
+    FalconShmemAllocatorFree(allocator.get(), fullPage);
+    SerializedDataDestroy(&replyBuilder);
+}
+
+TEST(ConnectionPoolCoverageUT, BatchWorkerTaskCoversStatIndicesAllocationDrop)
+{
+    /* Exercise Batch Worker Task covers Stat Indices Allocation Drop and assert the relevant success or failure branch. */
+    ResetFakePg();
+    FakeMetaServiceJob::ResetCounters();
+    TestAllocator allocator(2 * 1024 * 1024);
+    flatbuffers::FlatBufferBuilder flatBufferBuilder;
+    SerializedData replyBuilder;
+    SerializedDataInit(&replyBuilder, nullptr, 0, 0, nullptr);
+
+    size_t almostFullPage = FALCON_SHMEM_ALLOCATOR_MAX_SUPPORT_ALLOC_SIZE - sizeof(MemoryHdr);
+    std::vector<char> largeRequest(almostFullPage, 'x');
+
+    auto *result = new FakePgResult();
+    result->status = PGRES_TUPLES_OK;
+    result->rows = 1;
+    result->cols = 1;
+    result->values = {"0"};
+    QueueFakePgResult(result);
+
+    std::vector<BaseMetaServiceJob *> jobs{
+        new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true, false, 1, std::move(largeRequest)),
+    };
+    BatchWorkerTask task(allocator.get(), jobs);
+    EXPECT_NO_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder));
+    EXPECT_EQ(FakeMetaServiceJob::doneCount, 1);
+
+    SerializedDataDestroy(&replyBuilder);
+    ResetFakePg();
+}
+
+TEST(ConnectionPoolCoverageUT, WorkerTasksRejectCorruptPgReplyShapes)
+{
+    /* Exercise Worker Tasks Reject Corrupt Pg Reply Shapes and assert the relevant success or failure branch. */
+    ResetFakePg();
+    TestAllocator allocator(4 * 1024 * 1024);
+    flatbuffers::FlatBufferBuilder flatBufferBuilder;
+    SerializedData replyBuilder;
+    SerializedDataInit(&replyBuilder, nullptr, 0, 0, nullptr);
+
+    {
+        auto *result = new FakePgResult();
+        result->status = PGRES_TUPLES_OK;
+        result->rows = 0;
+        result->cols = 1;
+        QueueFakePgResult(result);
+
+        auto *job = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR);
+        SingleWorkerTask task(allocator.get(), job);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+        ResetFakePg();
+    }
+
+    {
+        uint64_t replyShift = FalconShmemAllocatorMalloc(allocator.get(), 8);
+        ASSERT_NE(replyShift, 0U);
+        auto *result = new FakePgResult();
+        result->status = PGRES_TUPLES_OK;
+        result->rows = 1;
+        result->cols = 1;
+        result->values = {std::to_string(replyShift)};
+        QueueFakePgResult(result);
+
+        auto *job = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR);
+        SingleWorkerTask task(allocator.get(), job);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+        ResetFakePg();
+    }
+
+    {
+        std::vector<BaseMetaServiceJob *> jobs{
+            new FakeMetaServiceJob(FalconMetaServiceType::MKDIR),
+        };
+        BatchWorkerTask task(allocator.get(), jobs);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+    }
+
+    {
+        auto *result = new FakePgResult();
+        result->status = PGRES_TUPLES_OK;
+        result->rows = 0;
+        result->cols = 1;
+        QueueFakePgResult(result);
+
+        std::vector<BaseMetaServiceJob *> jobs{
+            new FakeMetaServiceJob(FalconMetaServiceType::MKDIR),
+        };
+        BatchWorkerTask task(allocator.get(), jobs);
+        EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+        ResetFakePg();
+    }
+
+    SerializedDataDestroy(&replyBuilder);
+}
+
+TEST(ConnectionPoolCoverageUT, BatchWorkerTaskRejectsCorruptSplitReply)
+{
+    /* Exercise Batch Worker Task rejects Corrupt Split Reply and assert the relevant success or failure branch. */
+    ResetFakePg();
+    TestAllocator allocator(4 * 1024 * 1024);
+    flatbuffers::FlatBufferBuilder flatBufferBuilder;
+    SerializedData replyBuilder;
+    SerializedDataInit(&replyBuilder, nullptr, 0, 0, nullptr);
+
+    auto replyData = MakeSerializedBytes("abcd", 4);
+    uint64_t replyShift = FalconShmemAllocatorMalloc(allocator.get(), replyData.size());
+    ASSERT_NE(replyShift, 0U);
+    std::memcpy(FALCON_SHMEM_ALLOCATOR_GET_POINTER(allocator.get(), replyShift), replyData.data(), replyData.size());
+
+    auto *result = new FakePgResult();
+    result->status = PGRES_TUPLES_OK;
+    result->rows = 1;
+    result->cols = 1;
+    result->values = {std::to_string(replyShift)};
+    QueueFakePgResult(result);
+
+    std::vector<BaseMetaServiceJob *> jobs{
+        new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true, false, 2),
+    };
+    BatchWorkerTask task(allocator.get(), jobs);
+    EXPECT_THROW(task.DoWork(nullptr, flatBufferBuilder, replyBuilder), std::runtime_error);
+
+    SerializedDataDestroy(&replyBuilder);
+    ResetFakePg();
+}
+
 TEST(ConnectionPoolCoverageUT, SingleWorkerTaskProcessesPlainCommandResult)
 {
+    /* Exercise Single Worker Task Processes Plain Command Result and assert the relevant success or failure branch. */
     ResetFakePg();
     FakeMetaServiceJob::ResetCounters();
     TestAllocator allocator(4 * 1024 * 1024);
@@ -479,6 +780,7 @@ TEST(ConnectionPoolCoverageUT, SingleWorkerTaskProcessesPlainCommandResult)
 
 TEST(ConnectionPoolCoverageUT, BatchWorkerTaskHandlesZeroReplyShift)
 {
+    /* Exercise Batch Worker Task handles Zero Reply Shift and assert the relevant success or failure branch. */
     ResetFakePg();
     FakeMetaServiceJob::ResetCounters();
     TestAllocator allocator(4 * 1024 * 1024);
@@ -508,6 +810,7 @@ TEST(ConnectionPoolCoverageUT, BatchWorkerTaskHandlesZeroReplyShift)
 
 TEST(ConnectionPoolCoverageUT, WorkerTasksConvertPgErrorsToResponses)
 {
+    /* Exercise Worker Tasks Convert Pg Errors To Responses and assert the relevant success or failure branch. */
     ResetFakePg();
     FakeMetaServiceJob::ResetCounters();
     TestAllocator allocator(4 * 1024 * 1024);

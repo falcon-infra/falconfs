@@ -40,6 +40,16 @@ set_target_properties(test_plugin_invalid PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_plugins
 )
 
+add_library(test_plugin_inline_fail SHARED test_plugin_inline_fail.c)
+set_target_properties(test_plugin_inline_fail PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_plugins
+)
+
+add_library(test_plugin_background_fail SHARED test_plugin_background_fail.c)
+set_target_properties(test_plugin_background_fail PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/test_plugins
+)
+
 # ==================== PluginFrameworkUT =================
 add_executable(PluginFrameworkUT
     ${PROJECT_SOURCE_DIR}/tests/falcon_plugin/test_plugin_framework.cpp
@@ -71,6 +81,8 @@ add_dependencies(PluginLoaderCoverageUT
     test_plugin_inline
     test_plugin_background
     test_plugin_invalid
+    test_plugin_inline_fail
+    test_plugin_background_fail
 )
 target_include_directories(PluginLoaderCoverageUT PUBLIC
     ${PROJECT_SOURCE_DIR}/falcon/include

@@ -8,12 +8,14 @@ std::string DiskCacheUT::rootPath = "/tmp/testdir/";
 
 TEST_F(DiskCacheUT, Start)
 {
+    /* Exercise Start and assert the relevant success or failure branch. */
     int ret = DiskCache::GetInstance().Start(rootPath, 100, 0.2, 0.2);
     EXPECT_EQ(ret, 0);
 }
 
 TEST_F(DiskCacheUT, StartWithZeroRatioUsesDirectFileChecks)
 {
+    /* Exercise Start With Zero Ratio Uses Direct File Checks and assert the relevant success or failure branch. */
     std::string directRoot = "/tmp/testdir_zero_ratio";
     std::filesystem::remove_all(directRoot);
     std::filesystem::create_directories(directRoot + "/0");
@@ -39,6 +41,7 @@ TEST_F(DiskCacheUT, StartWithZeroRatioUsesDirectFileChecks)
 
 TEST_F(DiskCacheUT, InsertUpdatePinAndDeleteLifecycle)
 {
+    /* Exercise Insert Update Pin And Delete Lifecycle and assert the relevant success or failure branch. */
     std::string cacheRoot = "/tmp/testdir_lifecycle";
     std::filesystem::remove_all(cacheRoot);
     for (int i = 0; i < 3; ++i) {
@@ -62,6 +65,7 @@ TEST_F(DiskCacheUT, InsertUpdatePinAndDeleteLifecycle)
     EXPECT_TRUE(cache.Find(key, true));
     cache.Unpin(key);
 
+    EXPECT_TRUE(cache.Update(key, 10));
     EXPECT_TRUE(cache.Update(key, 20));
     EXPECT_TRUE(cache.Add(key, 5));
     EXPECT_FALSE(cache.Update(999999, 1));
@@ -76,6 +80,7 @@ TEST_F(DiskCacheUT, InsertUpdatePinAndDeleteLifecycle)
 
 TEST_F(DiskCacheUT, DeleteOldCacheSkipsPinnedEntry)
 {
+    /* Exercise Delete Old Cache Skips Pinned Entry and assert the relevant success or failure branch. */
     std::string cacheRoot = "/tmp/testdir_delete_old";
     std::filesystem::remove_all(cacheRoot);
     for (int i = 0; i < 2; ++i) {
@@ -116,6 +121,7 @@ TEST_F(DiskCacheUT, DeleteOldCacheSkipsPinnedEntry)
 
 TEST_F(DiskCacheUT, StartScansExistingCacheFiles)
 {
+    /* Exercise Start Scans Existing Cache Files and assert the relevant success or failure branch. */
     std::string cacheRoot = "/tmp/testdir_scan";
     std::filesystem::remove_all(cacheRoot);
     for (int i = 0; i < 2; ++i) {
@@ -125,21 +131,32 @@ TEST_F(DiskCacheUT, StartScansExistingCacheFiles)
     SetTotalDirectory(2);
 
     uint64_t key = 302;
+    uint64_t secondKey = 303;
     std::string file = GetFilePath(key);
     {
         std::ofstream out(file);
         out << "existing-cache";
     }
+    {
+        std::ofstream out(GetFilePath(secondKey));
+        out << "second-existing-cache";
+    }
 
     DiskCache cache;
     EXPECT_EQ(cache.Start(cacheRoot, 2, 0.000001, 0.000001), 0);
     EXPECT_TRUE(cache.Find(key, false));
+    EXPECT_TRUE(cache.Find(secondKey, false));
+    EXPECT_TRUE(cache.PreAllocSpace(1));
+    cache.FreePreAllocSpace(1);
+    EXPECT_TRUE(cache.HasFreeSpace());
     EXPECT_EQ(cache.Delete(key), 0);
+    EXPECT_EQ(cache.Delete(secondKey), 0);
     std::filesystem::remove_all(cacheRoot);
 }
 
 TEST_F(DiskCacheUT, ZeroRatioStopModeCoversNoopBranches)
 {
+    /* Exercise Zero Ratio Stop Mode covers Noop branches and assert the relevant success or failure branch. */
     std::string cacheRoot = "/tmp/testdir_zero_stop";
     std::filesystem::remove_all(cacheRoot);
     std::filesystem::create_directories(cacheRoot + "/0");
@@ -173,6 +190,7 @@ TEST_F(DiskCacheUT, ZeroRatioStopModeCoversNoopBranches)
 
 TEST_F(DiskCacheUT, UtilityEnvironmentBranches)
 {
+    /* Exercise Utility Environment branches and assert the relevant success or failure branch. */
     SetRootPath("/tmp/util_root");
     SetTotalDirectory(8);
     EXPECT_EQ(GetFilePath(17), "/tmp/util_root/1/17-large");
@@ -216,6 +234,7 @@ TEST_F(DiskCacheUT, UtilityEnvironmentBranches)
 
 TEST_F(DiskCacheUT, PublicEvictAndFailureBranches)
 {
+    /* Exercise public Evict And Failure branches and assert the relevant success or failure branch. */
     std::string cacheRoot = "/tmp/testdir_public_evict";
     std::filesystem::remove_all(cacheRoot);
     std::filesystem::create_directories(cacheRoot + "/0");
@@ -267,6 +286,31 @@ TEST_F(DiskCacheUT, PublicEvictAndFailureBranches)
     EXPECT_EQ(cache.Delete(pinnedKey), 0);
 
     std::filesystem::remove_all(cacheRoot);
+
+    std::string breakRoot = "/tmp/testdir_public_evict_break";
+    std::filesystem::remove_all(breakRoot);
+    std::filesystem::create_directories(breakRoot + "/0");
+    SetRootPath(breakRoot);
+    SetTotalDirectory(1);
+    DiskCache breakCache(0.4);
+    EXPECT_EQ(breakCache.Start(breakRoot, 1, 2.0, 2.0), RETURN_ERROR);
+
+    uint64_t evictBreakKey1 = 506;
+    uint64_t evictBreakKey2 = 507;
+    {
+        std::ofstream out(GetFilePath(evictBreakKey1));
+        out << "break-one";
+    }
+    {
+        std::ofstream out(GetFilePath(evictBreakKey2));
+        out << "break-two";
+    }
+    breakCache.InsertAndUpdate(evictBreakKey1, 9, false);
+    breakCache.InsertAndUpdate(evictBreakKey2, 9, false);
+    breakCache.Evict(UINT64_MAX / 4);
+    EXPECT_FALSE(breakCache.Find(evictBreakKey1, false));
+    EXPECT_FALSE(breakCache.Find(evictBreakKey2, false));
+    std::filesystem::remove_all(breakRoot);
 }
 
 int main(int argc, char **argv)

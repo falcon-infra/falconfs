@@ -1,16 +1,54 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <arpa/inet.h>
+#include <brpc/server.h>
 #include <filesystem>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "disk_cache/disk_cache.h"
+// Coverage-only access to the private WriteStream::Merge helper.
+#define private public
 #include "write_stream/stream_assembler.h"
+#undef private
 
 namespace {
+
+class WriteStreamRemoteIOService : public falcon::brpc_io::RemoteIOService {
+  public:
+    explicit WriteStreamRemoteIOService(int errorCode)
+        : errorCode_(errorCode)
+    {
+    }
+
+    void WriteFile(google::protobuf::RpcController *cntlBase,
+                   const falcon::brpc_io::WriteRequest *,
+                   falcon::brpc_io::WriteReply *response,
+                   google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        auto *cntl = static_cast<brpc::Controller *>(cntlBase);
+        response->set_error_code(errorCode_);
+        response->set_write_size(cntl->request_attachment().size());
+    }
+
+    void CloseFile(google::protobuf::RpcController *,
+                   const falcon::brpc_io::CloseRequest *,
+                   falcon::brpc_io::ErrorCodeOnlyReply *response,
+                   google::protobuf::Closure *done) override
+    {
+        brpc::ClosureGuard doneGuard(done);
+        response->set_error_code(errorCode_);
+    }
+
+  private:
+    int errorCode_;
+};
 
 void PrepareDiskCacheForWriteStream()
 {
@@ -34,10 +72,35 @@ int OpenTmpFile(const std::string &name)
     return fd;
 }
 
+int GetUnusedLoopbackPortForWriteStream()
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    sockaddr_in addr {};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (bind(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+    socklen_t len = sizeof(addr);
+    if (getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+        close(fd);
+        return -1;
+    }
+    int port = ntohs(addr.sin_port);
+    close(fd);
+    return port;
+}
+
 } // namespace
 
 TEST(WriteStreamCoverageUT, LocalDirectAndPersistErrorBranches)
 {
+    /* Exercise local Direct And Persist Error branches and assert the relevant success or failure branch. */
     PrepareDiskCacheForWriteStream();
     auto &cache = DiskCache::GetInstance();
     uint64_t inode = 7001;
@@ -64,8 +127,34 @@ TEST(WriteStreamCoverageUT, LocalDirectAndPersistErrorBranches)
     close(fd);
 }
 
+TEST(WriteStreamCoverageUT, LocalNonDirectPushAndEmptyPersistBranches)
+{
+    /* Exercise local Non Direct Push And Empty Persist branches and assert the relevant success or failure branch. */
+    PrepareDiskCacheForWriteStream();
+    auto &cache = DiskCache::GetInstance();
+    uint64_t inode = 7101;
+    cache.InsertAndUpdate(inode, 0, false);
+
+    int fd = OpenTmpFile("non_direct_push");
+    ASSERT_GE(fd, 0);
+
+    WriteStream stream;
+    stream.SetFd(fd);
+    stream.SetInodeId(inode);
+
+    std::string payload = "non-direct payload";
+    FalconWriteBuffer empty{payload.data(), 0};
+    FalconWriteBuffer buffer{payload.data(), payload.size()};
+    EXPECT_EQ(stream.Push(empty, 0, 0), 0);
+    EXPECT_EQ(stream.Push(buffer, 0, 0), 0);
+    EXPECT_EQ(stream.PersistToFile(payload.data(), 0, 0, payload.size()), 0);
+
+    close(fd);
+}
+
 TEST(WriteStreamCoverageUT, LocalPersistCoversPwriteAndDiskCacheFailures)
 {
+    /* Exercise local Persist covers Pwrite And Disk Cache Failures and assert the relevant success or failure branch. */
     PrepareDiskCacheForWriteStream();
     std::string payload = "persist";
 
@@ -85,6 +174,7 @@ TEST(WriteStreamCoverageUT, LocalPersistCoversPwriteAndDiskCacheFailures)
 
 TEST(WriteStreamCoverageUT, CompletePersistsBufferedLocalData)
 {
+    /* Exercise Complete Persists Buffered local Data and assert the relevant success or failure branch. */
     PrepareDiskCacheForWriteStream();
     auto &cache = DiskCache::GetInstance();
     uint64_t inode = 9001;
@@ -106,6 +196,7 @@ TEST(WriteStreamCoverageUT, CompletePersistsBufferedLocalData)
 
 TEST(WriteStreamCoverageUT, RemoteBufferedPushAndSetFdBranches)
 {
+    /* Exercise remote Buffered Push And Set Fd branches and assert the relevant success or failure branch. */
     WriteStream stream;
     auto fakeClient = std::shared_ptr<FalconIOClient>(reinterpret_cast<FalconIOClient *>(0x1), [](FalconIOClient *) {});
     stream.SetClient(nullptr);
@@ -129,8 +220,46 @@ TEST(WriteStreamCoverageUT, RemoteBufferedPushAndSetFdBranches)
     EXPECT_EQ(fdStream.SetFd(124), -EBADF);
 }
 
+TEST(WriteStreamCoverageUT, RemoteClientSuccessAndErrorBranches)
+{
+    /* Exercise remote Client Success And Error branches and assert the relevant success or failure branch. */
+    for (int errorCode : {0, -EIO}) {
+        int port = GetUnusedLoopbackPortForWriteStream();
+        ASSERT_GT(port, 0);
+
+        WriteStreamRemoteIOService service(errorCode);
+        brpc::Server server;
+        ASSERT_EQ(server.AddService(&service, brpc::SERVER_DOESNT_OWN_SERVICE), 0);
+        ASSERT_EQ(server.Start(port, nullptr), 0);
+
+        auto channel = std::make_shared<brpc::Channel>();
+        brpc::ChannelOptions options;
+        ASSERT_EQ(channel->Init(("127.0.0.1:" + std::to_string(port)).c_str(), &options), 0);
+        auto client = std::make_shared<FalconIOClient>(channel);
+
+        WriteStream stream;
+        stream.SetClient(client);
+        ASSERT_EQ(stream.SetFd(4242), 0);
+
+        std::string payload = "remote-write-stream";
+        FalconWriteBuffer first{payload.data(), 6};
+        FalconWriteBuffer second{payload.data() + 6, payload.size() - 6};
+        EXPECT_EQ(stream.Push(first, 0, 0), 0);
+        EXPECT_EQ(stream.Push(second, 6, 6), 0);
+        EXPECT_EQ(stream.GetSize(), payload.size());
+        EXPECT_EQ(stream.Complete(payload.size(), true, false), errorCode);
+        EXPECT_EQ(stream.GetSize(), 0U);
+        EXPECT_EQ(stream.Complete(payload.size(), false, false), errorCode);
+        EXPECT_EQ(stream.PersistToFile(payload.data(), payload.size(), 0, 0), errorCode);
+
+        server.Stop(0);
+        server.Join();
+    }
+}
+
 TEST(WriteStreamCoverageUT, MemoryAndSliceHelpersCoverInlineBranches)
 {
+    /* Exercise Memory And Slice Helpers Cover Inline branches and assert the relevant success or failure branch. */
     ExpandableMemory memory;
     EXPECT_TRUE(memory.Empty());
     EXPECT_TRUE(memory.Append("abc", 3));
@@ -184,6 +313,22 @@ TEST(WriteStreamCoverageUT, MemoryAndSliceHelpersCoverInlineBranches)
     serial.Clear();
     EXPECT_TRUE(serial.Empty());
     EXPECT_EQ(serial.End(), 0U);
+}
+
+TEST(WriteStreamCoverageUT, MergeCombinesDisjointAndOverlappingSlices)
+{
+    /* Exercise WriteStream::Merge for first inserts, previous overlaps, and forward overlaps. */
+    WriteStream stream;
+    ExpandableMemory first;
+    ExpandableMemory second;
+    ExpandableMemory third;
+    ASSERT_TRUE(first.Append("abcd", 4));
+    ASSERT_TRUE(second.Append("EF", 2));
+    ASSERT_TRUE(third.Append("XYZ", 3));
+
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(first, 4, 0))), 4);
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(second, 2, 6))), 2);
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(third, 3, 3))), 3);
 }
 
 int main(int argc, char **argv)
