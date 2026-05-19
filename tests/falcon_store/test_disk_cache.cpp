@@ -65,6 +65,7 @@ TEST_F(DiskCacheUT, InsertUpdatePinAndDeleteLifecycle)
     EXPECT_TRUE(cache.Find(key, true));
     cache.Unpin(key);
 
+    EXPECT_TRUE(cache.Update(key, 10));
     EXPECT_TRUE(cache.Update(key, 20));
     EXPECT_TRUE(cache.Add(key, 5));
     EXPECT_FALSE(cache.Update(999999, 1));

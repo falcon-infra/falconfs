@@ -556,6 +556,10 @@ TEST(FalconBrpcServerCoverageUT, RejectsOccupiedPortAndMissingStop)
 TEST(FalconClientConnectionUT, UnreachableEndpointCoversRequestBuilders)
 {
     /* Exercise Unreachable Endpoint covers Request Builders and assert the relevant success or failure branch. */
+    ServerIdentifier defaultServer;
+    (void)defaultServer;
+    EXPECT_THROW(Connection(ServerIdentifier("bad endpoint", 1, 0)), std::runtime_error);
+
     Connection conn(ServerIdentifier("127.0.0.1", 1, 7));
     ConnectionCache cache;
     const char *path = "/connection_coverage";

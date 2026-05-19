@@ -127,6 +127,14 @@ std::string FullFalconConfigJson()
     })json";
 }
 
+std::string FalconConfigJsonWithoutLogDir()
+{
+    std::string config = FullFalconConfigJson();
+    const std::string logDir = "\"falcon_log_dir\": \"/tmp/falcon_common_cov_log\"";
+    config.replace(config.find(logDir), logDir.size(), "\"falcon_log_dir\": \"\"");
+    return config;
+}
+
 void ResetStats()
 {
     auto &stats = FalconStats::GetInstance();
@@ -331,11 +339,11 @@ TEST(CommonFalconInitUT, DirectModuleCoversInitBoundaries)
     EXPECT_EQ(missingConfig.Init(), FALCON_ERR_INNER_FAILED);
 
     /* Create runtime directories so a real config can complete the full module init path. */
-    auto config_path = MakeTempFile("falcon_common_module_init.json", FullFalconConfigJson());
+    auto config_path = MakeTempFile("falcon_common_module_init.json", FalconConfigJsonWithoutLogDir());
     std::filesystem::create_directories("/tmp/falcon_common_cov_log");
     std::filesystem::create_directories("/tmp/falcon_common_cov_cache");
     FalconModuleInit module(config_path.string());
-    /* Re-running Init verifies the module remains stable after the first successful setup. */
+    /* An empty falcon_log_dir verifies InitLog's default directory fallback; re-running covers the inited guard. */
     EXPECT_EQ(module.Init(), FALCON_SUCCESS);
     EXPECT_EQ(module.Init(), FALCON_SUCCESS);
     ASSERT_NE(module.GetFalconConfig(), nullptr);
@@ -518,6 +526,9 @@ TEST(CommonFalconCMUT, HandlesFailureAndControlFileBranches)
     FalconCM *cm = FalconCM::GetInstance("fake-zk:2181", 100, "/falcon");
     ASSERT_EQ(cm->GetInitStatus(), RETURN_OK);
     EXPECT_THROW(FalconCM::GetInstance("again", 100, "/falcon"), std::runtime_error);
+    cm->ResetState();
+    EXPECT_EQ(cm->GetConnState(), ZOO_NOTCONNECTED);
+    cm->TestTriggerWatcher(ZOO_SESSION_EVENT, ZOO_CONNECTED_STATE);
 
     cm->TestTriggerWatcher(ZOO_SESSION_EVENT + 1, ZOO_CONNECTED_STATE);
     cm->TestTriggerWatcher(ZOO_SESSION_EVENT, ZOO_CONNECTING_STATE);
@@ -549,6 +560,7 @@ TEST(CommonFalconCMUT, HandlesFailureAndControlFileBranches)
     int nodeId = -1;
     std::string rootPath = root.string();
     ASSERT_EQ(cm->Upload("", nodeInfo, nodeId, rootPath), RETURN_OK);
+    EXPECT_EQ(FalconCM::GetExitControlFilePath(), (root / "exit").string());
 
     std::ofstream(root / "exit") << 0;
     FalconCM::ExitByControlFile(1);

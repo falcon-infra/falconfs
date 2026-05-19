@@ -105,6 +105,20 @@ target_include_directories(TransactionCoverageUT PUBLIC
 
 add_test(NAME TransactionCoverageUT COMMAND TransactionCoverageUT)
 
+# ==================== TransactionCleanupCoverageUT =================
+add_executable(TransactionCleanupCoverageUT
+    ${PROJECT_SOURCE_DIR}/tests/falcon/test_transaction_cleanup_coverage.c
+)
+
+target_include_directories(TransactionCleanupCoverageUT PUBLIC
+    ${PROJECT_SOURCE_DIR}/falcon/include
+    ${PostgreSQL_TYPE_INCLUDE_DIR}
+    ${POSTGRES_SRC_DIR}/src/include
+    ${POSTGRES_INCLUDE_DIR}
+)
+
+add_test(NAME TransactionCleanupCoverageUT COMMAND TransactionCleanupCoverageUT)
+
 # ==================== ControlFuncCoverageUT =================
 add_executable(ControlFuncCoverageUT
     ${PROJECT_SOURCE_DIR}/tests/falcon/test_control_func_coverage.c
