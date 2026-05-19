@@ -12,7 +12,10 @@
 #include <gtest/gtest.h>
 
 #include "disk_cache/disk_cache.h"
+// Coverage-only access to the private WriteStream::Merge helper.
+#define private public
 #include "write_stream/stream_assembler.h"
+#undef private
 
 namespace {
 
@@ -310,6 +313,22 @@ TEST(WriteStreamCoverageUT, MemoryAndSliceHelpersCoverInlineBranches)
     serial.Clear();
     EXPECT_TRUE(serial.Empty());
     EXPECT_EQ(serial.End(), 0U);
+}
+
+TEST(WriteStreamCoverageUT, MergeCombinesDisjointAndOverlappingSlices)
+{
+    /* Exercise WriteStream::Merge for first inserts, previous overlaps, and forward overlaps. */
+    WriteStream stream;
+    ExpandableMemory first;
+    ExpandableMemory second;
+    ExpandableMemory third;
+    ASSERT_TRUE(first.Append("abcd", 4));
+    ASSERT_TRUE(second.Append("EF", 2));
+    ASSERT_TRUE(third.Append("XYZ", 3));
+
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(first, 4, 0))), 4);
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(second, 2, 6))), 2);
+    EXPECT_EQ(stream.Merge(WriteStream::MergedSlice(WriteStream::Slice(third, 3, 3))), 3);
 }
 
 int main(int argc, char **argv)

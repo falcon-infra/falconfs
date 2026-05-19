@@ -348,6 +348,10 @@ TEST(CommonFalconInitUT, DirectModuleCoversInitBoundaries)
     EXPECT_EQ(module.Init(), FALCON_SUCCESS);
     ASSERT_NE(module.GetFalconConfig(), nullptr);
     EXPECT_EQ(module.GetFalconConfig()->GetString(FalconPropertyKey::FALCON_SERVER_IP), "127.0.0.1");
+
+    /* Cover the process singleton path when CONFIG_FILE is absent. */
+    unsetenv("CONFIG_FILE");
+    EXPECT_EQ(GetInit().GetFalconConfig(), nullptr);
     std::filesystem::remove(config_path);
     std::filesystem::remove_all("/tmp/falcon_common_cov_cache");
 }

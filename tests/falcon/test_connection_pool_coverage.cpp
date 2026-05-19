@@ -531,22 +531,23 @@ TEST(ConnectionPoolCoverageUT, ShmemAllocatorCoversFullPageAndHintBranches)
 
 TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
 {
-    /* Exercise Stubbed Pool Init creates And Stops Connections and assert the relevant success or failure branch. */
+    /* Exercise pool startup, wrapper dispatch, and shutdown with stubbed PG connections. */
     PGConnection::Reset();
     FakeMetaServiceJob::ResetCounters();
-    PGConnectionPool &pool = PGConnectionPool::GetInstance();
+    FalconPGPort = 55510;
+    FalconConnectionPoolSize = 1;
 
-    ASSERT_TRUE(pool.Init(55510, "tester", 1, 20, 40));
+    ASSERT_TRUE(StartPGConnectionPool());
     EXPECT_EQ(PGConnection::constructed, 1);
 
     auto *emptyJob = new FakeMetaServiceJob(FalconMetaServiceType::CREATE, true, true);
-    pool.DispatchMetaServiceJob(emptyJob);
+    FalconDispatchMetaJob2PGConnectionPool(emptyJob);
     delete emptyJob;
 
     auto *batchJob = new FakeMetaServiceJob(FalconMetaServiceType::MKDIR, true);
     auto *singleJob = new FakeMetaServiceJob(FalconMetaServiceType::STAT, false);
-    pool.DispatchMetaServiceJob(batchJob);
-    pool.DispatchMetaServiceJob(singleJob);
+    FalconDispatchMetaJob2PGConnectionPool(batchJob);
+    FalconDispatchMetaJob2PGConnectionPool(singleJob);
 
     for (int i = 0; i < 200 && PGConnection::execCount < 2; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -555,7 +556,7 @@ TEST(ConnectionPoolCoverageUT, StubbedPoolInitCreatesAndStopsConnections)
     EXPECT_NE(PGConnection::lastTask, nullptr);
 
     PGConnection::lastTask.reset();
-    pool.Destroy();
+    DestroyPGConnectionPool();
     EXPECT_EQ(PGConnection::stopCount, 1);
     EXPECT_EQ(PGConnection::destructed, 1);
 }
