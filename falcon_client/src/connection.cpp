@@ -169,7 +169,7 @@ static timespec ConvertTimestampFromPGToUnix(uint64_t t)
     const static uint64_t SECONDS_DIFF_BETWEEN_PG_AND_UNIX = 946684800;
     timespec res;
     res.tv_sec = t / 1000000 + SECONDS_DIFF_BETWEEN_PG_AND_UNIX;
-    res.tv_nsec = t % 1000000;
+    res.tv_nsec = (t % 1000000) * 1000;
     return res;
 }
 
