@@ -24,6 +24,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <arpa/inet.h>
+#include <stdexcept>
 #include <unistd.h>
 #include <vector>
 
@@ -38,12 +39,24 @@ extern "C" {
 
 extern "C" int FalconFuseMainNoop(int, char **, const struct fuse_operations *, void *);
 extern "C" void FalconFuseOptFreeArgsNoop(struct fuse_args *);
+unsigned int FalconFuseSleepCoverage(unsigned int seconds);
+int FalconCreateFuseCoverage(const std::string &path, uint64_t &fd, int oflags, struct stat *stbuf);
+
+// Test-only hooks keep fuse_main.cpp coverage paths finite and delegate normal calls back to production code.
+class FalconFuseStatsLoopBreak : public std::runtime_error {
+public:
+    FalconFuseStatsLoopBreak() : std::runtime_error("stop stats loop after first iteration") {}
+};
 
 #define main FalconFuseMainCoverageEntry
 #undef fuse_main
 #define fuse_main FalconFuseMainNoop
 #define fuse_opt_free_args FalconFuseOptFreeArgsNoop
+#define sleep FalconFuseSleepCoverage
+#define FalconCreate FalconCreateFuseCoverage
 #include "../../falcon_client/fuse_main.cpp"
+#undef FalconCreate
+#undef sleep
 #undef fuse_opt_free_args
 #undef fuse_main
 #undef main
@@ -54,6 +67,23 @@ extern "C" int FalconFuseMainNoop(int, char **, const struct fuse_operations *, 
 }
 
 extern "C" void FalconFuseOptFreeArgsNoop(struct fuse_args *) {}
+
+unsigned int FalconFuseSleepCoverage(unsigned int)
+{
+    throw FalconFuseStatsLoopBreak();
+}
+
+namespace {
+constexpr const char *kExistingAtomicCreatePath = "/falcon_client_existing_atomic_create_coverage";
+}
+
+int FalconCreateFuseCoverage(const std::string &path, uint64_t &fd, int oflags, struct stat *stbuf)
+{
+    if (path == kExistingAtomicCreatePath) {
+        return FILE_EXISTS;
+    }
+    return FalconCreate(path, fd, oflags, stbuf);
+}
 
 TEST(FalconClientErrorCodeUT, MapsKnownFalconErrorsToErrno)
 {
@@ -1140,6 +1170,9 @@ TEST(FalconClientFuseWrapperUT, LocalBranchesWithoutService)
     EXPECT_EQ(DoSetXAttr("/any", "key", "value", 5, 0), 0);
     EXPECT_EQ(DoGetAttr(syntheticPath, &stbuf), 0);
     EXPECT_TRUE(S_ISDIR(stbuf.st_mode));
+    struct fuse_file_info createFi {};
+    createFi.flags = O_CREAT;
+    EXPECT_EQ(DoOpenAtomic(kExistingAtomicCreatePath, &stbuf, 0644, &createFi), 0);
     EXPECT_EQ(DoWrite("/missing", buffer, sizeof(buffer), 0, &fi), -EBADF);
     EXPECT_EQ(DoRead("/missing", buffer, sizeof(buffer), 0, &fi), -EBADF);
 }
@@ -1161,15 +1194,14 @@ TEST(FalconClientFuseWrapperUT, MainStatsModeRejectsUnknownCommand)
     char brpcArg[] = "-brpc";
     char *statsAllArgv[] = {arg0, statsAllArg, brpcArg, endpointArg};
     EXPECT_EQ(FalconFuseMainCoverageEntry(4, statsAllArgv), 1);
+
+    // Enter the stats loop once, then break via the test sleep hook instead of spinning forever.
+    char reachableEndpointArg[] = "--rpc_endpoint=127.0.0.1:1";
+    char *statsLoopArgv[] = {arg0, statsArg, reachableEndpointArg};
+    EXPECT_THROW(FalconFuseMainCoverageEntry(3, statsLoopArgv), FalconFuseStatsLoopBreak);
 }
 
 namespace {
-
-bool ServiceCoverageEnabled()
-{
-    const char *enabled = std::getenv("FALCON_CLIENT_SERVICE_COVERAGE");
-    return enabled != nullptr && std::string(enabled) == "1";
-}
 
 std::string GetEnvOrDefault(const char *key, const char *fallback)
 {
@@ -1208,10 +1240,6 @@ bool ServiceEndpointReady(const std::string &serverIp, int serverPort)
 
 bool InitFalconClientOrSkip()
 {
-    if (!ServiceCoverageEnabled()) {
-        return false;
-    }
-
     std::string serverIp = GetEnvOrDefault("SERVER_IP", "127.0.0.1");
     int serverPort = GetIntEnvOrDefault("SERVER_PORT", 55510);
     if (!ServiceEndpointReady(serverIp, serverPort)) {
@@ -1258,7 +1286,7 @@ TEST(FalconClientFuseWrapperServiceUT, MetadataAndIoWrappers)
 {
     /* Exercise Metadata And IO Wrappers and assert the relevant success or failure branch. */
     if (!InitFalconClientOrSkip()) {
-        GTEST_SKIP() << "Falcon client service coverage is disabled or service is unavailable";
+        GTEST_SKIP() << "Falcon client service is unavailable";
     }
 
     std::string dir = BuildUniquePath("fuse_dir");
@@ -1345,7 +1373,7 @@ TEST(FalconClientMetaServiceUT, CreateReadWriteRenameAndCleanup)
 {
     /* Exercise Create Read Write Rename And Cleanup and assert the relevant success or failure branch. */
     if (!InitFalconClientOrSkip()) {
-        GTEST_SKIP() << "Falcon client service coverage is disabled or service is unavailable";
+        GTEST_SKIP() << "Falcon client service is unavailable";
     }
 
     std::string dir = BuildUniquePath("dir");
@@ -1408,7 +1436,7 @@ TEST(FalconClientMetaServiceUT, DirectoryAndAttributeOperations)
 {
     /* Exercise Directory And Attribute Operations and assert the relevant success or failure branch. */
     if (!InitFalconClientOrSkip()) {
-        GTEST_SKIP() << "Falcon client service coverage is disabled or service is unavailable";
+        GTEST_SKIP() << "Falcon client service is unavailable";
     }
 
     std::string dir = BuildUniquePath("listdir");
@@ -1443,7 +1471,7 @@ TEST(FalconClientMetaServiceUT, RouterAndMissingPathBranches)
 {
     /* Exercise Router And missing Path branches and assert the relevant success or failure branch. */
     if (!InitFalconClientOrSkip()) {
-        GTEST_SKIP() << "Falcon client service coverage is disabled or service is unavailable";
+        GTEST_SKIP() << "Falcon client service is unavailable";
     }
 
     ASSERT_NE(router, nullptr);
