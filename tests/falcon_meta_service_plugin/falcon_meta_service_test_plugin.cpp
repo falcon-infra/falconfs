@@ -34,6 +34,13 @@ static int g_test_skipped = 0;
 static bool g_is_cn_node = false;
 static std::atomic<int> g_loop_iteration(0);  // 循环计数器，用于生成唯一标识
 
+static uint64_t ConvertUnixSecondsToPgTimestamp(uint64_t unix_seconds)
+{
+    const uint64_t seconds_diff_between_pg_and_unix = 946684800;
+    const uint64_t usecs_per_sec = 1000000;
+    return (unix_seconds - seconds_diff_between_pg_and_unix) * usecs_per_sec;
+}
+
 struct SyncContext
 {
     std::mutex mtx;
@@ -871,12 +878,21 @@ static bool TestAttributeOperations()
     TEST_ASSERT(status == 0, "CREATE failed");
     printf("  Created test file: %s\n", file_path.c_str());
 
-    // 2. UTIMENS - 修改时间
-    uint64_t new_atime = 1609459200000000000ULL; // 2021-01-01 00:00:00 UTC in nanoseconds
-    uint64_t new_mtime = 1640995200000000000ULL; // 2022-01-01 00:00:00 UTC in nanoseconds
+    // 2. UTIMENS - 修改时间。元数据层使用 PostgreSQL TimestampTz: 自 2000-01-01 起的微秒。
+    uint64_t new_atime = ConvertUnixSecondsToPgTimestamp(1779073800ULL); // 2026-05-18 11:10:00 CST
+    uint64_t new_mtime = ConvertUnixSecondsToPgTimestamp(1779073860ULL); // 2026-05-18 11:11:00 CST
     status = DoUtimens(file_path, new_atime, new_mtime);
     TEST_ASSERT(status == 0, "UTIMENS failed");
     printf("  UTIMENS succeeded\n");
+
+    StatResponse stat_resp;
+    status = DoStat(file_path, &stat_resp);
+    TEST_ASSERT(status == 0, "STAT after UTIMENS failed");
+    TEST_ASSERT_MSG(
+        stat_resp.st_atim == new_atime, "UTIMENS atime mismatch: expected %lu, got %lu", new_atime, stat_resp.st_atim);
+    TEST_ASSERT_MSG(
+        stat_resp.st_mtim == new_mtime, "UTIMENS mtime mismatch: expected %lu, got %lu", new_mtime, stat_resp.st_mtim);
+    printf("  UTIMENS timestamp verified: atime=%lu, mtime=%lu\n", stat_resp.st_atim, stat_resp.st_mtim);
 
     // 3. CHMOD - 修改权限
     uint64_t new_mode = 0755;
