@@ -27,6 +27,10 @@ target_link_libraries(FalconStore PUBLIC
     jsoncpp
 )
 
+if(ENABLE_COVERAGE)
+    target_compile_definitions(FalconStore PUBLIC FALCON_STORE_COVERAGE_TEST)
+endif()
+
 set(OBS_LIB_DIR "/usr/local/obs/lib/")
 file(GLOB OBS_LIBS "${OBS_LIB_DIR}/*.so")
 if(WITH_OBS_STORAGE)

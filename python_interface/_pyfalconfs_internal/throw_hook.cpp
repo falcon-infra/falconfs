@@ -21,6 +21,12 @@ static void PrintStacktrace()
     fflush(stderr);
 }
 
+extern "C" void coverage_print_stacktrace(int capture_stack)
+{
+    stack_size = capture_stack ? backtrace(stack_buffer, 128) : 0;
+    PrintStacktrace();
+}
+
 using __cxa_throw_type = void(*)(void*, void*, void(*)(void*));
 __cxa_throw_type orig_cxa_throw = nullptr;
 extern "C" __attribute__((noreturn)) void __cxa_throw(void* ex, void* info, void(*dest)(void*)) 

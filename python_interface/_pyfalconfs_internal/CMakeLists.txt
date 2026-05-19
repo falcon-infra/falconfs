@@ -33,6 +33,10 @@ target_link_directories(_pyfalconfs_internal PUBLIC
     ${POSTGRES_LIB_DIR}
 )
 
+if(ENABLE_COVERAGE)
+    target_compile_definitions(_pyfalconfs_internal PUBLIC FALCON_PYTHON_COVERAGE_TEST)
+endif()
+
 install(TARGETS _pyfalconfs_internal
     LIBRARY DESTINATION ${PROJECT_SOURCE_DIR}/python_interface/pyfalconfs
 )

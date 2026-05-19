@@ -59,6 +59,51 @@ class FalconStore {
     int GetInitStatus();
     int InitStore();
 
+    // Coverage-only tests inject mock storage and reach private storage helpers without changing normal builds.
+#ifdef FALCON_STORE_COVERAGE_TEST
+    void CoverageOverrideStorage(Storage *newStorage, bool newPersistToStorage)
+    {
+        storage = newStorage;
+        persistToStorage = newPersistToStorage;
+    }
+    void CoverageSetAllocPolicy(bool newToLocal, bool newIsInference, int newParentPathLevel)
+    {
+        toLocal = newToLocal;
+        isInference = newIsInference;
+        parentPathLevel = newParentPathLevel;
+    }
+    int CoveragePathToNodeId(std::string path) { return PathToNodeId(path); }
+    int CoverageDownLoadFromStorage(OpenInstance *openInstance, bool isSync, bool toBuffer = false)
+    {
+        return DownLoadFromStorage(openInstance, isSync, toBuffer);
+    }
+    int CoverageOpenFileFromRemote(OpenInstance *openInstance, bool largeFile)
+    {
+        return OpenFileFromRemote(openInstance, largeFile);
+    }
+    int CoverageDownLoadFromStorageForBrpc(uint64_t inodeId,
+                                           const std::string &path,
+                                           char *buf,
+                                           size_t bufSize,
+                                           bool isSync,
+                                           bool toBuffer)
+    {
+        return DownLoadFromStorageForBrpc(inodeId, path, buf, bufSize, isSync, toBuffer);
+    }
+    int CoverageWriteToFileAsync(uint64_t inodeId, std::string &fileName, std::shared_ptr<char> buf, size_t bufSize)
+    {
+        return WriteToFileAsync(inodeId, fileName, buf, bufSize);
+    }
+    void CoverageAllocNodeId(OpenInstance *openInstance) { AllocNodeId(openInstance); }
+    int CoverageFlushToStorage(std::string path, uint64_t inodeId) { return FlushToStorage(path, inodeId); }
+    int CoverageStatFsStorage(struct statvfs *vfsbuf) { return StatFsStorage(vfsbuf); }
+    void CoverageSetDataPath(const std::string &newDataPath) { dataPath = newDataPath; }
+    std::shared_ptr<FileLocker> CoverageHoldFileLock(uint64_t inodeId)
+    {
+        return std::make_shared<FileLocker>(&fileLock, inodeId, LockMode::X, false);
+    }
+#endif
+
   private:
     /*-----------------read-----------------*/
     bool StartPreReadThreaded(OpenInstance *openInstance);

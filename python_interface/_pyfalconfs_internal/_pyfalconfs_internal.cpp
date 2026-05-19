@@ -903,6 +903,35 @@ static PyObject* PyWrapper_AsyncPut(PyObject* self, PyObject* args)
     return (PyObject*)state;
 }
 
+// Coverage-only helper exercises async internals that are otherwise hard to reach from Python without flaky service failures.
+#ifdef FALCON_PYTHON_COVERAGE_TEST
+static PyObject* PyWrapper_CoverageExerciseInternals(PyObject*, PyObject*)
+{
+    AsyncTaskThreadPool pool(0);
+    auto future = pool.Dispatch([]() { return 7; });
+    int dynamicWorkerResult = future.get();
+
+    int baseErrorRaised = 0;
+    {
+        AsyncResultBase result(strdup("coverage base error"));
+        PyObject* pyResult = result.GeneratePyObject();
+        baseErrorRaised = pyResult == nullptr && PyErr_Occurred();
+        PyErr_Clear();
+    }
+
+    int derivedErrorRaised = 0;
+    {
+        AsyncResultIntOnly result(3);
+        result.exceptionInfo = strdup("coverage derived error");
+        PyObject* pyResult = result.GeneratePyObject();
+        derivedErrorRaised = pyResult == nullptr && PyErr_Occurred();
+        PyErr_Clear();
+    }
+
+    return Py_BuildValue("(iii)", dynamicWorkerResult, baseErrorRaised, derivedErrorRaised);
+}
+#endif
+
 static PyMethodDef PyFalconFSInternalMethods[] = 
 {
     {
@@ -1101,6 +1130,14 @@ static PyMethodDef PyFalconFSInternalMethods[] =
         "Returns:\n"
         "  write size (int): write byte size"
     },
+#ifdef FALCON_PYTHON_COVERAGE_TEST
+    {
+        "CoverageExerciseInternals",
+        PyWrapper_CoverageExerciseInternals,
+        METH_NOARGS,
+        "Exercise coverage-only async internals"
+    },
+#endif
     {
         NULL, 
         NULL, 

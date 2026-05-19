@@ -32,6 +32,12 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         handle = ctypes.CDLL(str(throw_hook), mode=os.RTLD_NOW | os.RTLD_LOCAL)
         self.assertIsNotNone(handle)
 
+        # Call the exported coverage helper directly; loading the hook locally does not interpose real C++ throws.
+        handle.coverage_print_stacktrace.argtypes = [ctypes.c_int]
+        handle.coverage_print_stacktrace.restype = None
+        handle.coverage_print_stacktrace(0)
+        handle.coverage_print_stacktrace(1)
+
     def test_argument_validation_errors(self):
         with self.assertRaises(TypeError):
             self.mod.Init("/workspace")
@@ -91,6 +97,13 @@ class PyFalconFSInternalCoverageTest(unittest.TestCase):
         ret, stbuf = self.mod.Stat("/" + chr(1) + "1middle")
         self.assertEqual(ret, 0)
         self.assertTrue(stbuf["st_mode"] & 0o40000)
+
+    def test_coverage_only_async_internals(self):
+        if not hasattr(self.mod, "CoverageExerciseInternals"):
+            self.skipTest("coverage-only internals are not built")
+
+        # The coverage-only entry drives async worker growth and exception-result conversion without service failures.
+        self.assertEqual(self.mod.CoverageExerciseInternals(), (7, 1, 1))
 
     def test_async_exists_middle_component_fast_path(self):
         async_state = self.mod.AsyncExists("/" + chr(1) + "1middle")
