@@ -126,10 +126,10 @@ fi
 CPU_HALF=$(( $(nproc) / 2 ))
 [ $CPU_HALF -eq 0 ] && CPU_HALF=32
 FalconConnectionPoolSize=$CPU_HALF
-FalconConnectionPoolBatchSize=1024
+FalconConnectionPoolBatchSize=2
 FalconConnectionPoolWaitAdjust=1
 FalconConnectionPoolWaitMin=1
-FalconConnectionPoolWaitMax=500
+FalconConnectionPoolWaitMax=2
 FalconConnectionPoolShmemSize=$((256)) #unit: MB
 username=$USER
 

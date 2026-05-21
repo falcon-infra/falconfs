@@ -122,7 +122,7 @@ TEST_F(FalconStoreUT, WriteBackRemoteSame)
     EXPECT_EQ(ret1.get(), 0);
     EXPECT_EQ(ret2.get(), 0);
     auto bufferedSize = openInstance->writeStream.GetSize();
-    EXPECT_EQ(bufferedSize, size);
+    EXPECT_EQ(bufferedSize, 0);
     EXPECT_EQ(openInstance->currentSize.load(), size);
     free(buf);
 }

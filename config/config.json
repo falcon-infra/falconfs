@@ -19,7 +19,7 @@
         "falcon_eviction": 0.1,
         "falcon_is_inference": false,
         "falcon_mount_path": "$MNT_PATH",
-        "falcon_to_local": false,
+        "falcon_to_local": true,
         "falcon_log_reserved_num": 3,
         "falcon_log_reserved_time": 1,
         "falcon_stat_max": true,

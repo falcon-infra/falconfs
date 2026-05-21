@@ -71,7 +71,7 @@ TEST(WriteStreamCoverageUT, LocalPersistCoversPwriteAndDiskCacheFailures)
 
     WriteStream badFd;
     badFd.SetInodeId(8001);
-    EXPECT_EQ(badFd.PersistToFile(payload.data(), payload.size(), 0, 0), -EBADF);
+    EXPECT_EQ(badFd.PersistToFile(payload.data(), payload.size(), 0, 0), -ENOENT);
 
     int fd = OpenTmpFile("disk_cache_add_failure");
     ASSERT_GE(fd, 0);

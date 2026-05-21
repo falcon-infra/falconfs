@@ -4,6 +4,7 @@
 
 #include "write_stream/stream_assembler.h"
 
+#include <fcntl.h>
 #include "disk_cache/disk_cache.h"
 #include "stats/falcon_stats.h"
 
@@ -98,6 +99,15 @@ int WriteStream::PersistToFile(const char *buf, size_t size, off_t offset, uint6
             return -ENOSPC;
         }
         FalconStats::GetInstance().stats[BLOCKCACHE_WRITE] += size;
+        if (currentSize == 0 && offset == 0) {
+            retSize = posix_fallocate(physicalFd, 0, size);
+            if (retSize != 0) {
+                int err = errno;
+                FALCON_LOG(LOG_ERROR) << "In WriteStream::persistToFile(): posix_fallocate failed" << strerror(err);
+                DiskCache::GetInstance().FreePreAllocSpace(sizeToAdd);
+                return -err;
+            }
+        }
         retSize = pwrite(physicalFd, buf, size, offset);
         if (retSize < 0) {
             int err = errno;
