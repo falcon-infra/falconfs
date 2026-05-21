@@ -12,7 +12,7 @@ workerPollerPortPrefix=${uniquePortPrefix}3
 cnMonitorPortPrefix=${uniquePortPrefix}8
 workerMonitorPortPrefix=${uniquePortPrefix}9
 
-workspace=$HOME
+workspace=${FALCON_META_WORKSPACE:-$HOME}
 cnPathPrefix=$workspace/metadata/coordinator
 workerPathPrefix=$workspace/metadata/worker
 
