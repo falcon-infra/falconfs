@@ -81,3 +81,16 @@ jobs:
     - name: Deploy and run tests
       shell: bash
       run: sudo -u falcon env LD_LIBRARY_PATH=/usr/local/obs/lib:$LD_LIBRARY_PATH bash -c '.github/workflows/run_test.sh'
+
+    - name: Upload failure diagnostics
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: falconfs-failure-diagnostics
+        path: ci-artifacts/
+        retention-days: 7
+
+    - name: Clean failure diagnostics
+      if: always()
+      shell: bash
+      run: rm -rf ci-artifacts
