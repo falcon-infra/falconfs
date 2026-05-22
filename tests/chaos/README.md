@@ -104,6 +104,67 @@ Execute the config-driven long run:
 bash tests/chaos/run_longrun.sh
 ```
 
+Build a daily FalconFS image from the latest source, then run long-run:
+
+```bash
+bash tests/chaos/run_daily_image_longrun.sh
+```
+
+`run_daily_image_longrun.sh` pulls the current tracking branch, copies the
+current `HEAD` source snapshot into a temporary container, runs
+`./build.sh build falcon --with-zk-init --with-prometheus`, installs FalconFS
+to `/usr/local/falconfs`, commits the result as
+`falconfs-auto-longrun:<timestamp>-<sha>`, and runs `run_longrun.sh` with
+`LONGRUN_IMAGE` set to that committed image.
+
+The script uses `/tmp/falconfs-daily-longrun` by default:
+
+- `/tmp/falconfs-daily-longrun/logs`: daily wrapper logs.
+- `/tmp/falconfs-daily-longrun/runs`: chaos long-run data and reports.
+- `/tmp/falconfs-daily-longrun/daily.lock`: host-level lock to avoid overlap.
+
+After taking the lock, the script removes the previous `logs` and `runs`
+directories unless `DAILY_LONGRUN_CLEAN_PREVIOUS=0` is set. After the new daily
+image is committed, old local images matching `falconfs-auto-longrun:*` are
+removed and only the current daily image is kept.
+
+If the local base image `falconfs-auto-longrun-base:ubuntu24.04` does not
+exist, the script builds it automatically with:
+
+```bash
+docker build \
+  -f tests/chaos/ubuntu24.04-auto-longrun-base-dockerfile \
+  -t falconfs-auto-longrun-base:ubuntu24.04 \
+  .
+```
+
+Daily result email reuses the existing chaos alert sender in
+`lib/diagnostics.sh`. Configure these environment variables on the host:
+
+```bash
+CHAOS_ALERT_ENABLE=1
+CHAOS_SMTP_HOST=smtp.example.com
+CHAOS_SMTP_PORT=587
+CHAOS_SMTP_USER=sender@example.com
+CHAOS_SMTP_PASS=<password-or-token>
+CHAOS_ALERT_EMAIL_FROM=sender@example.com
+CHAOS_ALERT_EMAIL_TO=receiver@example.com
+CHAOS_SMTP_TLS=1
+```
+
+The result email is sent for `OK`, `FAILED`, and `SKIPPED` runs. The body
+includes start/end time, duration, host, branch, commit, daily image, data path,
+log file, suite summary path, stage pass/fail totals when available, and the
+last log lines for quick triage.
+
+Use cron or systemd on the host to schedule the script. For a daily midnight
+cron job, keep SMTP credentials in a root-owned environment file outside the
+repository, source it, then run the script from the repository root:
+
+```cron
+0 0 * * * . /etc/falconfs/daily-longrun.env; cd /home/liuwei/code/falconfs && tests/chaos/run_daily_image_longrun.sh
+```
+
 Override long-run stages or quick hold settings from the environment:
 
 ```bash

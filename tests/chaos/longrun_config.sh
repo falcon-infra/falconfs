@@ -7,19 +7,19 @@
 #   2) Run: bash tests/chaos/run_longrun.sh
 
 # Image/runtime
-export LONGRUN_IMAGE="localhost:5000/falconfs-full-ubuntu24.04:v0.1.2-chaosmatrix"
-export LONGRUN_SKIP_IMAGE_BUILD=1
+export LONGRUN_IMAGE="${LONGRUN_IMAGE:-localhost:5000/falconfs-full-ubuntu24.04:v0.1.2-chaosmatrix}"
+export LONGRUN_SKIP_IMAGE_BUILD="${LONGRUN_SKIP_IMAGE_BUILD:-1}"
 
 # Output path (relative path is resolved from repo root).
 # Leave empty to auto-generate timestamped path.
-export LONGRUN_DATA_PATH=""
+export LONGRUN_DATA_PATH="${LONGRUN_DATA_PATH:-}"
 
 # Suite-level controls
 export LONGRUN_MATRIX_FILE="tests/chaos/chaos_case_matrix_default.txt"
-export LONGRUN_STRICT_COVERAGE=1
-export LONGRUN_FAIL_FAST=0
-export LONGRUN_FRESH_START=1
-export LONGRUN_SEED=20260305
+export LONGRUN_STRICT_COVERAGE="${LONGRUN_STRICT_COVERAGE:-1}"
+export LONGRUN_FAIL_FAST="${LONGRUN_FAIL_FAST:-0}"
+export LONGRUN_FRESH_START="${LONGRUN_FRESH_START:-1}"
+export LONGRUN_SEED="${LONGRUN_SEED:-20260305}"
 export LONGRUN_STAGES="${LONGRUN_STAGES:-single,dual,triple}"
 
 # Duration/profile

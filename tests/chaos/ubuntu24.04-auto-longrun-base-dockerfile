@@ -1,0 +1,22 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
+COPY deb/install-third-party-ubuntu24.04.sh /tmp/install-third-party-ubuntu24.04.sh
+
+RUN bash /tmp/install-third-party-ubuntu24.04.sh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        bc \
+        gdb \
+        iperf3 \
+        openssh-server \
+        sshpass \
+        vim && \
+    rm -f /tmp/install-third-party-ubuntu24.04.sh && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/usr/local/pgsql/bin:/usr/local/bin:/usr/local/sbin:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/pgsql/lib:/usr/local/lib:/usr/local/lib64
