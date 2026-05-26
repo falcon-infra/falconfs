@@ -6,6 +6,7 @@
 #define FALCON_POOLER_PG_CONNECTION_H
 
 #include <condition_variable>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -22,7 +23,7 @@
 class PGConnection {
   private:
     typedef std::function<void(PGConnection *conn)> PGConnectionWorkFinishNotifyFunc;
-    bool working;
+    std::atomic<bool> working;
     PGConnectionWorkFinishNotifyFunc m_workerFinishNotifyFunc;
     flatbuffers::FlatBufferBuilder flatBufferBuilder;
     SerializedData replyBuilder;

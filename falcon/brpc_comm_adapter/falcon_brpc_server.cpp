@@ -46,8 +46,8 @@ class FalconBrpcServer {
     }
     void Shutdown()
     {
+        brpc::AskToQuit();
         m_server.Stop(0);
-        m_server.Join();
     }
 
   private:
@@ -89,7 +89,6 @@ int StopFalconCommunicationServer()
     try {
         if (g_falconBrpcServerInstance != NULL) {
             g_falconBrpcServerInstance->Shutdown();
-            g_falconBrpcServerInstance = NULL;
             return 0;
         }
     } catch (const std::exception &e) {

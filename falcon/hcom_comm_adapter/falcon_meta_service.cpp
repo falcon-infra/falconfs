@@ -1043,7 +1043,6 @@ int StopFalconCommunicationServer()
     try {
         if (falcon::meta_service::g_falconHcomServerInstance != nullptr) {
             falcon::meta_service::g_falconHcomServerInstance->Shutdown();
-            falcon::meta_service::g_falconHcomServerInstance = nullptr;
             falcon::meta_service::g_dispatchFunc = nullptr;
             return 0;
         }

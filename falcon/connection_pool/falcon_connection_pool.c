@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <link.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <threads.h>
 #include <unistd.h>
@@ -52,8 +53,13 @@ static falcon_plugin_flush_coverage_func_t comm_flush_coverage_func = NULL;
 static void (*comm_plugin_gcov_dump_func)(void) = NULL;
 static void *falcon_comm_dl_handle = NULL;
 
-static volatile bool got_SIGTERM = false;
+static volatile sig_atomic_t got_SIGTERM = false;
+static thrd_t comm_server_thread;
+static bool comm_server_thread_started = false;
+static atomic_bool comm_server_done = false;
+static int comm_server_rc = 0;
 static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS);
+static int CommunicationServerThreadMain(void *arg);
 
 static void *ResolveLocalSymbolAddress(void *handle, const char *symbolName)
 {
@@ -213,6 +219,9 @@ void FalconDaemonConnectionPoolProcessMain(unsigned long int main_arg)
     // PostPortNumber need using both here and falcon_run_pooler_server_func, so set to global variable FalconPGPort
     FalconPGPort = PostPortNumber;
     RunConnectionPoolServer();
+    if (got_SIGTERM) {
+        return;
+    }
     elog(LOG, "FalconDaemonConnectionPoolProcessMain: connection pool server stopped.");
     return;
 }
@@ -221,28 +230,7 @@ static void FalconDaemonConnectionPoolProcessSigTermHandler(SIGNAL_ARGS)
 {
     int save_errno = errno;
 
-    FlushCoverageData();
-    FlushCoverageDataForPlugin();
-
-    elog(LOG, "FalconDaemonConnectionPoolProcessSigTermHandler: get sigterm.");
     got_SIGTERM = true;
-
-    DestroyPGConnectionPool();
-    if (comm_cleanup_func != NULL) {
-        comm_cleanup_func();
-        comm_cleanup_func = NULL;
-    }
-
-    if (falcon_comm_dl_handle != NULL) {
-        FlushCoverageDataForPlugin();
-        dlclose(falcon_comm_dl_handle);
-        comm_work_func = NULL;
-        comm_flush_coverage_func = NULL;
-        comm_plugin_gcov_dump_func = NULL;
-        falcon_comm_dl_handle = NULL;
-    }
-
-    FlushCoverageData();
 
     errno = save_errno;
 }
@@ -299,19 +287,45 @@ static void StartCommunicationSever()
         return;
     }
 
-    /* Execute plugin work */
-    int ret =
-        comm_work_func(FalconDispatchMetaJob2PGConnectionPool, FalconCommunicationServerIp, FalconConnectionPoolPort);
-    if (ret != 0) {
-        elog(ERROR, "Plugin work function returned %d: %s", ret, FalconCommunicationPluginPath);
+    atomic_store(&comm_server_done, false);
+    comm_server_rc = 0;
+    if (thrd_create(&comm_server_thread, CommunicationServerThreadMain, NULL) != thrd_success) {
+        elog(ERROR, "Failed to create communication server thread: %s", FalconCommunicationPluginPath);
         dlclose(falcon_comm_dl_handle);
         return;
     }
-    /* Cleanup */
+    comm_server_thread_started = true;
+
+    while (!got_SIGTERM && !atomic_load(&comm_server_done)) {
+        sleep(1);
+    }
+
+    if (got_SIGTERM && !atomic_load(&comm_server_done) && comm_cleanup_func != NULL) {
+        comm_cleanup_func();
+    }
+    if (comm_server_thread_started) {
+        thrd_join(comm_server_thread, &comm_server_rc);
+        comm_server_thread_started = false;
+    }
+    if (!got_SIGTERM && comm_server_rc != 0) {
+        elog(ERROR, "Plugin work function returned %d: %s", comm_server_rc, FalconCommunicationPluginPath);
+        dlclose(falcon_comm_dl_handle);
+        return;
+    }
+
+    if (got_SIGTERM) {
+        comm_cleanup_func = NULL;
+        comm_work_func = NULL;
+        comm_flush_coverage_func = NULL;
+        comm_plugin_gcov_dump_func = NULL;
+        falcon_comm_dl_handle = NULL;
+        return;
+    }
+
     elog(LOG, "Background worker stopping: %s", FalconCommunicationPluginPath);
     FlushCoverageData();
+
     FlushCoverageDataForPlugin();
-    comm_cleanup_func();
     comm_cleanup_func = NULL;
 
     FlushCoverageDataForPlugin();
@@ -321,6 +335,15 @@ static void StartCommunicationSever()
     comm_plugin_gcov_dump_func = NULL;
     falcon_comm_dl_handle = NULL;
     FlushCoverageData();
+}
+
+static int CommunicationServerThreadMain(void *arg)
+{
+    (void)arg;
+    comm_server_rc =
+        comm_work_func(FalconDispatchMetaJob2PGConnectionPool, FalconCommunicationServerIp, FalconConnectionPoolPort);
+    atomic_store(&comm_server_done, true);
+    return comm_server_rc;
 }
 
 void RunConnectionPoolServer(void)
@@ -333,4 +356,5 @@ void RunConnectionPoolServer(void)
 
     // start Communication Server receive jobs and dispatch jobs to PGConnectionPool
     StartCommunicationSever();
+    DestroyPGConnectionPool();
 }

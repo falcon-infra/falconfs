@@ -82,7 +82,7 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
     CurrentResourceOwner = myOwner;
     elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: wait init.");
     bool falconHasBeenLoad = false;
-    while (true)
+    while (!got_SIGTERM)
     {
         StartTransactionCommand();
         falconHasBeenLoad = CheckFalconHasBeenLoaded();
@@ -93,13 +93,16 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
         sleep(1);
     }
     bool serviceStarted = false;
-    do {
+    while (!got_SIGTERM) {
         sleep(1);
         serviceStarted = CheckFalconBackgroundServiceStarted();
-    } while (!serviceStarted || RecoveryInProgress());
+        if (serviceStarted && !RecoveryInProgress()) {
+            break;
+        }
+    }
     elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: init finished.");
     int serverId = -1;
-    while (true)
+    while (!got_SIGTERM)
     {
         StartTransactionCommand();
         serverId = GetLocalServerId();
@@ -110,7 +113,7 @@ void FalconDaemon2PCFailureCleanupProcessMain(Datum main_arg)
         // wait for shard table init
         sleep(1);
     }
-    if (serverId == 0) {
+    if (serverId == 0 && !got_SIGTERM) {
         elog(LOG, "FalconDaemon2PCFailureCleanupProcessMain: Running.");
         while (!got_SIGTERM) {
             MemoryContext oldContext = MemoryContextSwitchTo(myContext);
@@ -440,7 +443,6 @@ static void FalconDaemon2PCCleanupProcessSigTermHandler(SIGNAL_ARGS)
 {
     int save_errno = errno;
 
-    elog(LOG, "FalconDaemon2PCCleanupProcessSigTermHandler: get sigterm.");
     got_SIGTERM = true;
 
     errno = save_errno;

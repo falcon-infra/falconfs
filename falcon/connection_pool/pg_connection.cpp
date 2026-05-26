@@ -11,7 +11,7 @@
 PGConnection::PGConnection(PGConnectionWorkFinishNotifyFunc func, const char *ip, const int port, const char *userName)
 {
     m_workerFinishNotifyFunc = func;
-    working = true;
+    working.store(true);
     std::stringstream ss;
     ss << "hostaddr=" << ip << " port=" << port << " user=" << userName << " dbname=postgres";
     conn = PQconnectdb(ss.str().c_str());
@@ -29,11 +29,15 @@ PGConnection::PGConnection(PGConnectionWorkFinishNotifyFunc func, const char *ip
 
 void PGConnection::BackgroundWorker()
 {
-    while (working) {
-        if (!working)
-            break;
+    while (working.load()) {
         std::shared_ptr<BaseWorkerTask> baseWorkerTaskPtr(nullptr);
-        m_workerTaskQueue.pull(baseWorkerTaskPtr);
+        boost::concurrent::queue_op_status status = m_workerTaskQueue.wait_pull(baseWorkerTaskPtr);
+        if (status == boost::concurrent::queue_op_status::closed || !working.load()) {
+            break;
+        }
+        if (baseWorkerTaskPtr == nullptr) {
+            continue;
+        }
         try {
             baseWorkerTaskPtr->DoWork(conn, flatBufferBuilder, replyBuilder);
         } catch (const std::exception &) {
@@ -51,15 +55,25 @@ void PGConnection::BackgroundWorker()
 
 void PGConnection::Exec(std::shared_ptr<BaseWorkerTask> workerTaskPtr)
 {
-    this->m_workerTaskQueue.push(workerTaskPtr);
+    if (!working.load()) {
+        return;
+    }
+    this->m_workerTaskQueue.wait_push(workerTaskPtr);
 }
 
-void PGConnection::Stop() { working = false; }
+void PGConnection::Stop()
+{
+    if (working.exchange(false)) {
+        m_workerTaskQueue.close();
+    }
+}
 
 PGConnection::~PGConnection()
 {
     Stop();
-    thread.join();
+    if (thread.joinable()) {
+        thread.join();
+    }
     if (conn) {
         PQfinish(conn);
         conn = nullptr;
