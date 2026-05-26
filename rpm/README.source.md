@@ -23,6 +23,14 @@ sudo dnf install -y rpmdevtools dnf-plugins-core
 sudo dnf builddep -y rpm/falconfs.source.spec
 ```
 
+在 openEuler 24.03 上，也可以直接运行源码依赖安装脚本。该脚本会安装系统构建依赖，并从源码安装 PostgreSQL 17、brpc、prometheus-cpp 和 ZooKeeper C client：
+
+```bash
+bash rpm/install-third-party-openEuler24.03.sh
+```
+
+说明：OBS SDK 不会默认安装；仅在显式启用 `--with-obs-storage` 时才需要单独准备。
+
 ### 1.3 外部预编译依赖（必须）
 
 本 spec 不负责编译这些第三方组件，需提前在构建机准备好：

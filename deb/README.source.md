@@ -7,9 +7,56 @@
 - `falconfs`（完整包）
 - `falconfs-release`（精简运行时包）
 
-## 1. 前置环境
+## 1. 空白 Ubuntu 24.04 机器准备
 
-### 1.1 第三方依赖（独立预装）
+在空白 Ubuntu 24.04 机器上，先安装最小拉代码工具：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git ca-certificates sudo
+```
+
+拉取代码：
+
+```bash
+git clone <falconfs-repo-url> falconfs
+cd falconfs
+```
+
+安装 FalconFS 编译、打包和本地部署所需依赖：
+
+```bash
+bash deb/install-third-party-ubuntu24.04.sh
+```
+
+脚本默认准备：
+
+- Ubuntu apt 构建依赖，按 `debian/control` 和 `rpm/falconfs.source.spec` 对齐
+- PostgreSQL 17（默认 `/usr/local/pgsql`，提供 `pg_config`）
+- brpc（源码安装到 `/usr/local`）
+- prometheus-cpp（源码安装到 `/usr/local`）
+- ZooKeeper C client（使用 Ubuntu 包 `libzookeeper-mt-dev`，不源码编译）
+
+脚本会把 `pg_config` 软链到 `/usr/local/bin`，运行结束后当前 shell 可直接编译；其他 PostgreSQL 命令由 `deploy/falcon_env.sh` 通过 `pg_config --bindir` 加入 `PATH`。脚本也会写入 `/etc/profile.d/falconfs-third-party.sh` 供新 shell 自动加载环境。
+
+默认构建路径已解耦 OBS；仅在显式启用 `--with-obs-storage` 时才需要 OBS SDK。
+
+## 2. 源码编译与本地部署验证
+
+```bash
+./build.sh clean falcon
+./build.sh build falcon
+sudo -E ./build.sh install falcon
+source deploy/falcon_env.sh
+./deploy/falcon_start.sh
+./deploy/falcon_stop.sh
+```
+
+说明：本地启动脚本会使用默认 `brpc` 通信插件；若要验证 `hcom` 插件，需要先执行 `./build.sh build falcon --comm-plugin=hcom` 并按对应插件安装。
+
+## 3. Debian 打包
+
+### 3.1 第三方依赖（独立预装）
 
 先执行：
 
@@ -22,17 +69,15 @@ bash deb/install-third-party-ubuntu24.04.sh
 - PostgreSQL 17（`/usr/local/pgsql`）
 - brpc（源码安装）
 - prometheus-cpp（源码安装）
+- ZooKeeper C client（Ubuntu 包）
 
-默认构建路径已解耦 OBS；仅在显式启用 `--with-obs-storage` 时才需要 OBS SDK。
-
-### 1.2 Debian 打包工具
+构建 Debian 包还需要额外安装打包工具：
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y dpkg-dev debhelper devscripts fakeroot
+sudo apt-get install -y dpkg-dev debhelper devscripts fakeroot chrpath
 ```
 
-## 2. 构建 deb 包
+### 3.2 构建 deb 包
 
 在仓库根目录执行：
 
@@ -45,9 +90,9 @@ dpkg-buildpackage -b -us -uc
 - `../falconfs_0.1.0-1_*.deb`
 - `../falconfs-release_0.1.0-1_*.deb`
 
-## 3. 安装与验证
+## 4. 安装与验证
 
-### 3.1 安装
+### 4.1 安装
 
 ```bash
 sudo apt-get install -y ../falconfs_0.1.0-1_*.deb
@@ -55,7 +100,7 @@ sudo apt-get install -y ../falconfs_0.1.0-1_*.deb
 # sudo apt-get install -y ../falconfs-release_0.1.0-1_*.deb
 ```
 
-### 3.2 环境变量
+### 4.2 环境变量
 
 安装后会生成：`/etc/profile.d/falconfs.sh`
 
@@ -70,14 +115,14 @@ FalconFS 运行时动态库路径由启动脚本按进程设置，不在 profile
 source /etc/profile.d/falconfs.sh
 ```
 
-### 3.3 本地冒烟（完整包）
+### 4.3 本地冒烟（完整包）
 
 ```bash
 /usr/local/falconfs/deploy/falcon_start.sh
 /usr/local/falconfs/deploy/falcon_stop.sh
 ```
 
-### 3.4 可选日志目录配置
+### 4.4 可选日志目录配置
 
 默认情况下日志路径保持历史行为：
 
@@ -97,7 +142,7 @@ export FALCON_CN_DN_START_LOG_DIR=/path/to/cn-dn-start-logs
 
 - 不设置上述变量时，仍使用默认路径。
 
-## 4. 包内容说明
+## 5. 包内容说明
 
 - `falconfs`：完整安装目录 `/usr/local/falconfs`
 - `falconfs-release`：仅保留
@@ -108,9 +153,29 @@ export FALCON_CN_DN_START_LOG_DIR=/path/to/cn-dn-start-logs
 
 两个包互斥安装，不建议同时安装。
 
-## 5. Release 容器编排验证（docker-compose）
+## 6. 空白容器验证参考
 
-### 5.1 构建 Ubuntu release 运行时镜像
+本机已有 `ubuntu:24.04` 镜像时，可用一次性容器模拟空白机器。该验证会在容器内重新 clone 当前工作区内容并运行安装脚本：
+
+```bash
+docker run --rm --privileged -v "$PWD":/src:ro ubuntu:24.04 bash -lc '
+  apt-get update
+  apt-get install -y git ca-certificates sudo
+  git clone /src /work/falconfs
+  cd /work/falconfs
+  bash deb/install-third-party-ubuntu24.04.sh
+  ./build.sh clean falcon
+  ./build.sh build falcon
+  sudo -E ./build.sh install falcon
+  source deploy/falcon_env.sh
+  ./deploy/falcon_start.sh
+  ./deploy/falcon_stop.sh
+'
+```
+
+## 7. Release 容器编排验证（docker-compose）
+
+### 7.1 构建 Ubuntu release 运行时镜像
 
 将生成的 release deb 放到仓库根目录并重命名：
 
@@ -127,7 +192,7 @@ docker build \
   .
 ```
 
-### 5.2 用 compose 拉起 release 集群
+### 7.2 用 compose 拉起 release 集群
 
 ```bash
 export FALCON_RELEASE_IMAGE=falconfs-release-ubuntu24.04:v0.1.0

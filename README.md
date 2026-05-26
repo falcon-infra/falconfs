@@ -94,7 +94,91 @@ We do not enable metadata replication. To saturate the metadata server's computi
 
 ## Build
 
-suppose at the `~/code` dir
+FalconFS can be built on an Ubuntu 24.04 host, an openEuler 24.03 host, or in the provided dev container.
+
+### Ubuntu 24.04 host
+
+Use `deb/install-third-party-ubuntu24.04.sh` to prepare dependencies. The script installs required apt packages, PostgreSQL 17, brpc, and prometheus-cpp. The `third_party` submodule is not required for this flow. OBS SDK is only needed when building with `--with-obs-storage`.
+
+Suppose at the `~/code` dir:
+
+``` bash
+git clone https://github.com/falcon-infra/falconfs.git
+cd falconfs
+bash deb/install-third-party-ubuntu24.04.sh
+./build.sh clean falcon
+./build.sh build falcon
+sudo -E ./build.sh install falcon
+source deploy/falcon_env.sh
+./deploy/falcon_start.sh
+./deploy/falcon_stop.sh
+```
+
+If you prefer installing apt dependencies manually, install the following packages first. PostgreSQL 17, brpc, and prometheus-cpp are still required; `deb/install-third-party-ubuntu24.04.sh` builds and installs them automatically.
+
+``` bash
+sudo apt-get update
+sudo apt-get install -y \
+  ca-certificates tzdata locales sudo git rsync tar wget curl \
+  make cmake ninja-build build-essential gcc-14 g++-14 \
+  bison flex m4 autoconf automake pkg-config libtool \
+  libreadline-dev liblz4-dev libzstd-dev zstd libssl-dev \
+  fuse libfuse-dev libflatbuffers-dev flatbuffers-compiler \
+  libprotoc-dev libprotobuf-dev protobuf-compiler \
+  libgflags-dev libjsoncpp-dev libleveldb-dev libsnappy-dev \
+  libfmt-dev libboost-thread-dev libboost-system-dev \
+  libboost-filesystem-dev libboost-program-options-dev \
+  libgtest-dev libgmock-dev libgoogle-glog-dev \
+  libzookeeper-mt-dev libibverbs-dev rdma-core \
+  libcurl4-openssl-dev libunwind-dev libjansson-dev \
+  libffi-dev libxml2-dev libsystemd-dev libthrift-dev \
+  libcppunit-dev python3 python3-dev python3-pip \
+  python3-requests python3-psycopg2 python3-kazoo \
+  jq moreutils iputils-ping net-tools
+```
+
+### openEuler 24.03 host
+
+Use `rpm/install-third-party-openEuler24.03.sh` to prepare dependencies. The script installs required dnf packages and builds PostgreSQL 17, brpc, prometheus-cpp, and ZooKeeper C client from source. OBS SDK is not installed by default.
+
+Suppose at the `~/code` dir:
+
+``` bash
+git clone https://github.com/falcon-infra/falconfs.git
+cd falconfs
+bash rpm/install-third-party-openEuler24.03.sh
+./build.sh clean falcon
+./build.sh build falcon --no-tests
+sudo -E ./build.sh install falcon --no-tests
+source deploy/falcon_env.sh
+./deploy/falcon_start.sh
+./deploy/falcon_stop.sh
+```
+
+If you prefer installing dependencies manually, the following `dnf` packages only cover system build dependencies. You must also build and install PostgreSQL 17, brpc, prometheus-cpp, and ZooKeeper C client from source; `rpm/install-third-party-openEuler24.03.sh` does that automatically.
+
+``` bash
+sudo dnf makecache
+sudo dnf groupinstall -y "Development Tools"
+sudo dnf reinstall -y glibc-common
+sudo dnf install -y \
+  bash sudo git findutils shadow util-linux \
+  glibc-langpack-en glibc-all-langpacks \
+  gcc gcc-c++ make cmake ninja-build autoconf automake libtool \
+  bison flex readline-devel openssl-devel gflags-devel glog-devel \
+  leveldb-devel snappy-devel fmt-devel gperftools-devel \
+  libunwind-devel rdma-core-devel fuse-devel libcurl-devel \
+  jansson-devel libffi-devel libzstd-devel xz-devel expat-devel \
+  libxml2-devel systemd-devel protobuf-devel protobuf-compiler \
+  flatbuffers-devel flatbuffers-compiler jsoncpp-devel thrift-devel \
+  cppunit-devel gtest-devel gmock-devel python3 python3-devel \
+  python3-requests python3-psycopg2 python3-kazoo wget tar rsync \
+  libstdc++-static zstd-devel perl java-11-openjdk-devel maven \
+  hostname jq
+```
+
+### Provided dev container
+
 ``` bash
 git clone https://github.com/falcon-infra/falconfs.git
 cd falconfs
