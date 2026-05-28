@@ -28,9 +28,9 @@
    - **PostgreSQL 插件**: 提醒 falcon/ 目录的文件会被复制到 third_party
    - **CMake 变更**: 提醒新依赖需要 Find*.cmake 脚本
 
-4. **行级评论（v1.4.0 新增）**
+4. **行级评论（v1.5.0 更新）**
+   - **使用 `line` + `side: "RIGHT"` 定位**：直接使用文件绝对行号，避免多 hunk 歧义
    - **基于内容定位行号**：通过 GitHub API 读取文件内容，用 `grep -n` 定位真实行号
-   - 避免行号错乱问题
    - 支持提交前验证评论位置
 
 5. **Review 输出**
@@ -81,7 +81,9 @@ python3 .claude/skills/review-pr.py 123 --json
 
 ### ⚠️ 行号定位最佳实践
 
-为避免行号错乱，**必须通过内容定位行号**：
+**必须使用 `line` + `side: "RIGHT"` 提交行级评论，禁止使用 `position` 参数。**
+
+`position` 是 diff hunk 内的相对偏移量，同一文件有多个 hunk 时会产生歧义（不同 hunk 可能存在相同的 position 值），GitHub 会选择第一个匹配的 hunk 导致评论关联到错误行。
 
 ```bash
 # 1. 获取 PR head SHA
@@ -92,6 +94,10 @@ gh api repos/falcon-infra/falconfs/contents/<FILE>?ref=$HEAD_SHA --jq '.content'
 
 # 3. 验证行号
 gh api repos/falcon-infra/falconfs/contents/<FILE>?ref=$HEAD_SHA --jq '.content' | base64 -d | sed -n '<LINE-2>,<LINE+2>p'
+
+# 4. 提交时使用 line + side: "RIGHT"
+# comments JSON 中使用:
+# {"path": "<FILE>", "line": <LINE_NUM>, "side": "RIGHT", "body": "..."}
 ```
 
 ### 示例输出
