@@ -6,6 +6,7 @@
 #define FALCON_CONNECTION_POOL_CONNECTION_POOL_H
 
 #include "connection_pool/connection_pool_config.h"
+#include "connection_pool/falcon_kv_config.h"
 #include "utils/falcon_shmem_allocator.h"
 
 __attribute__((visibility("default")))

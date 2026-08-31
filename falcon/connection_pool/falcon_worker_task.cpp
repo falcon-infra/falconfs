@@ -2,7 +2,10 @@
  * SPDX-License-Identifier: MulanPSL-2.0
  */
 #include "connection_pool/falcon_worker_task.h"
+#include <cstdlib>
+#include <cstring>
 #include <sstream>
+#include "connection_pool/falcon_kv_runtime_bridge.h"
 #include "falcon_meta_param_generated.h"
 #include "falcon_meta_response_generated.h"
 #include "perf_counter/falcon_per_request_stat.h"
@@ -532,4 +535,60 @@ void BatchWorkerTask::DoWork(PGconn *conn,
         delete m_jobList[i];
     }
     m_jobList.clear();
+}
+
+void KVCacheWorkerTask::DoWork(PGconn *conn,
+                               flatbuffers::FlatBufferBuilder & /*flatBufferBuilder*/,
+                               SerializedData & /*replyBuilder*/)
+{
+    /* Report workerWaitLatency (final stage). */
+    if (m_job != nullptr) {
+        m_job->stageTimer.End(GetWorkerWaitLatencyData());
+    }
+
+    /* Drain any leftover libpq state from the previous task. The KV path uses
+     * `PQexecParams` for a single round-trip per sub-batch, so we don't expect
+     * stale results here, but mirroring SingleWorkerTask keeps the connection
+     * sane if some prior task left something behind. */
+    PGresult *res = nullptr;
+    while ((res = PQgetResult(conn)) != nullptr) {
+        PQclear(res);
+    }
+
+    if (m_job == nullptr) {
+        throw std::runtime_error("KVCacheWorkerTask: m_job is a nullptr");
+    }
+
+    FalconKVProcessJobFn fn = FalconKVGetProcessJob();
+    if (fn == nullptr) {
+        /* Plugin has not registered yet \u2014 surface an empty response so the
+         * BRPC closure runs and the client sees a retryable error per item. */
+        m_job->SetSerializedResponse(std::string{});
+        m_job->Done();
+        delete m_job;
+        m_job = nullptr;
+        return;
+    }
+
+    const std::string &req = m_job->GetSerializedRequest();
+    char *resp_buf = nullptr;
+    int   resp_size = 0;
+    int rc = fn(static_cast<int>(m_job->GetMethod()),
+                req.data(),
+                static_cast<int>(req.size()),
+                &resp_buf,
+                &resp_size,
+                static_cast<void *>(conn));
+    if (rc == 0 && resp_buf != nullptr && resp_size > 0) {
+        m_job->SetSerializedResponse(std::string(resp_buf, static_cast<size_t>(resp_size)));
+    } else {
+        m_job->SetSerializedResponse(std::string{});
+    }
+    if (resp_buf != nullptr) {
+        free(resp_buf);
+    }
+
+    m_job->Done();
+    delete m_job;
+    m_job = nullptr;
 }

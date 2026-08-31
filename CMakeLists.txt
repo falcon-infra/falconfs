@@ -162,6 +162,7 @@ file(GLOB_RECURSE common_src "${COMMON_SRC_PATH}/*.cpp" "${COMMON_SRC_PATH}/*.c"
 add_subdirectory(falcon_store)
 add_subdirectory(falcon_client)
 add_subdirectory(python_interface/_pyfalconfs_internal)
+add_subdirectory(vllm_kv_cache)
 
 if(NOT DEFINED POSTGRES_INCLUDE_DIR)
     message(FATAL_ERROR "POSTGRES_INCLUDE_DIR must be defined")

@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package falconfs.kv;
+import "kv_common.proto";
+
+// v6.5 §5.4 Store admin BRPC contract.
+//
+// Hosted on each DN bgworker (KVStoreAdminBrpcServiceImpl). Clients of this
+// service are:
+//   - the standalone falcon_kv_store daemon (region registration + heartbeat),
+//   - the DN-side eviction worker, which calls SpillBlockToSSD on the Store
+//     daemon over BRPC (the Store daemon ALSO hosts a peer KVStoreAdminService
+//     RPC for SpillBlockToSSD - per §5.4 the spill direction is DN -> Store).
+//
+// The DN side is admin-only and never on the latency-critical path:
+// registration runs once per Store startup, heartbeats are seconds-cadence,
+// and SpillBlockToSSD runs at eviction-cycle frequency only. Always BRPC,
+// regardless of host colocation (per design §3.4 / §5.4).
+option cc_generic_services = true;
+
+// One contiguous DRAM region the Store has carved out for a specific DN.
+// Sent during RegisterStoreRegion. The Store sends one of these per (DN,
+// region_index); each DN sees exactly one row per (store_node_id,
+// region_index) in its in-memory KVStoreEndpointTable.
+message StoreRegionInfo {
+  int32  store_node_id   = 1;
+  int32  region_index    = 2;   // 0..N-1, one per DN this Store serves.
+  int64  base_offset     = 3;   // offset inside the Store's SHM segment
+  int64  region_bytes    = 4;   // total bytes of the region
+  int32  block_size      = 5;
+  int64  store_epoch     = 6;   // bumped on Store restart
+  string shm_name         = 7;  // POSIX SHM name; Clients shm_open this if
+                                // host_node_name matches the Store's row in
+                                // pg_catalog.falcon_store_node.
+  string runtime_dir     = 8;   // operator hint
+}
+
+message RegisterStoreRegionRequest {
+  CommonRequestMeta meta = 1;
+  StoreRegionInfo   region = 2;
+
+  // Where this Store can be reached by the DN's eviction worker for the
+  // peer SpillBlockToSSD RPC. This is the Store daemon's BRPC server.
+  string store_brpc_endpoint = 3;
+}
+
+message RegisterStoreRegionResponse {
+  ItemResultMeta result = 1;
+  // DN echoes back its own current dn_epoch so the Store can fence stale
+  // RegisterStoreRegion replays from a previous DN incarnation.
+  int64 dn_epoch = 2;
+}
+
+message HeartbeatRequest {
+  CommonRequestMeta meta = 1;
+  int32  store_node_id = 2;
+  int64  store_epoch    = 3;
+  int64  now_ms         = 4;
+  // Optional tiny capacity probe: free / total blocks per region.
+  // The DN uses this to prefer less-loaded Stores in v6.5 affinity
+  // allocation; absence is fine (treated as unknown).
+  int64  free_blocks_total = 5;
+  int64  total_blocks      = 6;
+}
+
+message HeartbeatResponse {
+  ItemResultMeta result = 1;
+  int64 dn_epoch  = 2;     // DN's current dn_epoch; Store mirrors it.
+  bool  marked_unhealthy = 3; // DN telling Store the watchdog flipped it.
+}
+
+message SpillBlockToSSDRequest {
+  CommonRequestMeta meta = 1;
+  int32  store_node_id = 2;
+  int64  pool_offset    = 3;
+  bytes  block_hash     = 4;
+  int64  expected_version = 5;
+  int64  expected_store_epoch = 6;
+  string evicted_path_hint = 7;   // optional: if present, Store uses this path.
+  int32  dram_read_size = 8;       // bytes to read from DRAM; 0 = full block_size
+}
+
+message SpillBlockToSSDResponse {
+  ItemResultMeta result = 1;
+  string evicted_path = 2;        // canonical path the Store wrote to.
+  uint32 crc32 = 3;
+}
+
+message ValidateEvictedPathItem {
+  bytes block_hash = 1;
+  string evicted_path = 2;
+}
+
+message ValidateEvictedPathsRequest {
+  CommonRequestMeta meta = 1;
+  int32 store_node_id = 2;
+  repeated ValidateEvictedPathItem items = 3;
+}
+
+message ValidateEvictedPathResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  bool valid = 3;
+}
+
+message ValidateEvictedPathsResponse {
+  ItemResultMeta result = 1;
+  repeated ValidateEvictedPathResult results = 2;
+  int64 valid_count = 3;
+  int64 invalid_count = 4;
+}
+
+// Service hosted on each DN bgworker AND mirrored on each falcon_kv_store
+// daemon. Per design §5.4:
+//   - DN-hosted side accepts RegisterStoreRegion and Heartbeat from Stores.
+//   - Store-hosted side accepts SpillBlockToSSD from the DN's eviction worker.
+// Splitting them into two services would double the wire surface for no
+// gain; instead each role implements the RPCs it actually serves and stubs
+// the rest with INTERNAL_ERROR ("not hosted on this node").
+service KVStoreAdminService {
+  rpc RegisterStoreRegion(RegisterStoreRegionRequest) returns (RegisterStoreRegionResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc SpillBlockToSSD(SpillBlockToSSDRequest) returns (SpillBlockToSSDResponse);
+  rpc ValidateEvictedPaths(ValidateEvictedPathsRequest) returns (ValidateEvictedPathsResponse);
+}

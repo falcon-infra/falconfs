@@ -23,6 +23,17 @@ int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
     std::cout << "falcon_store nodeId = " << nodeId << std::endl;  
     initStatus = 0;
     int i = 0;
+    int successCount = 0;
+    int totalCount = 0;
+    
+    // Count total nodes first
+    auto tempView = clusterView;
+    for (auto&& rpcEndPoint : tempView | std::views::split(',') | std::views::transform([](auto &&rng) {
+             return std::string(&*rng.begin(), std::ranges::distance(rng));
+         })) {
+        totalCount++;
+    }
+    
     for (auto&& rpcEndPoint : clusterView | std::views::split(',') | std::views::transform([](auto &&rng) {
              return std::string(&*rng.begin(), std::ranges::distance(rng));
          })) { 
@@ -53,10 +64,21 @@ int StoreNode::SetNodeConfig(int initNodeId, std::string &clusterView)
 #endif
         if (connected) {
             nodeMap.emplace(i, std::make_pair(rpcEndPoint, connection));
+            successCount++;
+            FALCON_LOG(LOG_INFO) << "Connected to node " << i << " successfully";
         } else {
-            initStatus = 1;
+            FALCON_LOG(LOG_WARNING) << "Failed to connect to node " << i;
+            // Don't set initStatus=1 immediately, check if we have at least one successful connection
         }
         i++;
+    }
+    
+    // Only fail if we couldn't connect to ANY node (including ourselves)
+    if (successCount == 0) {
+        FALCON_LOG(LOG_ERROR) << "Failed to connect to any node in cluster view";
+        initStatus = 1;
+    } else {
+        FALCON_LOG(LOG_INFO) << "Successfully connected to " << successCount << "/" << totalCount << " nodes";
     }
 
     return initStatus;

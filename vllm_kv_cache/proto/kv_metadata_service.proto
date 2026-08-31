@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package falconfs.kv;
+import "kv_common.proto";
+
+// Enable protobuf-generated abstract Service base class so we can derive a
+// brpc-compatible service adapter without depending on grpc/brpc plugins.
+option cc_generic_services = true;
+
+service KVMetadataService {
+  rpc BatchLookupWithLease(BatchLookupRequest) returns (BatchLookupResponse);
+  rpc BatchAllocateWithLease(BatchAllocateRequest) returns (BatchAllocateResponse);
+  rpc BatchRenewLease(BatchRenewLeaseRequest) returns (BatchRenewLeaseResponse);
+  rpc BatchUpdateBlockStatus(BatchUpdateStatusRequest) returns (BatchUpdateStatusResponse);
+  rpc BatchFreeAllocated(BatchFreeAllocatedRequest) returns (BatchFreeAllocatedResponse);
+}
+
+message LookupItem {
+  bytes block_hash = 1;
+  bool renew_lease_on_hit = 2;
+}
+
+message LookupResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  BlockStatus status = 3;
+  BlockLocation location = 4;
+  LeaseInfo lease = 5;
+  int64 version = 6;
+  bool cacheable = 7;
+  // v6.4: true when status is ALLOCATED and pool_offset is intentionally unset (-1) for load.
+  bool allocated_pending_store = 8;
+  // v6.4: true when this is a catalog EVICTED hit (evicted_path is authoritative).
+  bool evicted_catalog_hit = 9;
+}
+
+message BatchLookupRequest {
+  CommonRequestMeta meta = 1;
+  repeated LookupItem items = 2;
+  bool allow_partial_result = 3;
+}
+
+message BatchLookupResponse {
+  repeated LookupResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+enum AllocateHint {
+  ALLOCATE_HINT_UNSPECIFIED = 0;
+  ALLOCATE_HINT_NORMAL = 1;
+  ALLOCATE_HINT_PROMOTE_FROM_EVICTED = 2;
+}
+
+message AllocateItem {
+  bytes block_hash = 1;
+  int32 kv_group_idx = 2;
+  int32 layer_mask = 3;
+  int32 block_size = 4;
+  int32 preferred_store_id = 5;
+  bool allow_fallback_store = 6;
+  // v6.4: pool-worker Pass-1 fills these after bitmap reservation; catalog INSERT persists them.
+  int32 worker_reserved_store_node_id = 7;
+  int64 worker_reserved_pool_offset = 8;
+  AllocateHint allocate_hint = 9;
+}
+
+message AllocateResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  BlockLocation location = 3;
+  LeaseInfo lease = 4;
+  int64 version = 5;
+  bool reused_existing_allocation = 6;
+}
+
+message BatchAllocateRequest {
+  CommonRequestMeta meta = 1;
+  repeated AllocateItem items = 2;
+  bool deduplicate_in_request = 3;
+}
+
+message BatchAllocateResponse {
+  repeated AllocateResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+message RenewLeaseItem {
+  bytes block_hash = 1;
+  int64 lease_token = 2;
+  int64 expected_dn_epoch = 3;
+  int64 expected_store_epoch = 4;
+}
+
+message RenewLeaseResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  LeaseInfo lease = 3;
+  // v6.4: STORED row location from catalog for DRAM promote after cache-miss renew.
+  BlockLocation catalog_location = 4;
+  int64 catalog_row_version = 5;
+}
+
+message BatchRenewLeaseRequest {
+  CommonRequestMeta meta = 1;
+  repeated RenewLeaseItem items = 2;
+  int32 requested_ttl_ms = 3;
+}
+
+message BatchRenewLeaseResponse {
+  repeated RenewLeaseResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+message StatusUpdateItem {
+  bytes block_hash = 1;
+  BlockStatus expected_from_status = 2;
+  BlockStatus to_status = 3;
+  int64 expected_version = 4;
+  string evicted_path = 5;
+  bool allow_noop_if_already_target = 6;
+}
+
+message StatusUpdateResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  int64 new_version = 3;
+  BlockStatus current_status = 4;
+}
+
+message BatchUpdateStatusRequest {
+  CommonRequestMeta meta = 1;
+  repeated StatusUpdateItem items = 2;
+}
+
+message BatchUpdateStatusResponse {
+  repeated StatusUpdateResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+message FreeAllocatedItem {
+  bytes block_hash = 1;
+  int64 expected_version = 2;
+  bool force = 3;
+}
+
+message FreeAllocatedResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  int64 new_version = 3;
+}
+
+message BatchFreeAllocatedRequest {
+  CommonRequestMeta meta = 1;
+  repeated FreeAllocatedItem items = 2;
+}
+
+message BatchFreeAllocatedResponse {
+  repeated FreeAllocatedResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+// Internal catalog RPC (not exposed as BRPC): libpq-driven recovery scan (v6.4 §6.5).
+message ScanShardForRecoveryRequest {
+  CommonRequestMeta meta = 1;
+  int32 shard_id = 2;
+  repeated BlockStatus wanted_status = 3;
+}
+
+message RecoveryRow {
+  bytes block_hash = 1;
+  BlockStatus status = 2;
+  BlockLocation location = 3;
+  int64 version = 4;
+  int64 updated_at_ms = 5;
+}
+
+message ScanShardForRecoveryResponse {
+  ItemResultMeta result = 1;
+  repeated RecoveryRow rows = 2;
+  int64 dn_epoch_after_bump = 3;
+  int64 server_time_ms = 4;
+}

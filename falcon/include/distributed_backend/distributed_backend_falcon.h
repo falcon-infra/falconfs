@@ -14,6 +14,8 @@ void FalconCreateDistributedDataTableByRangePoint(int);
 void FalconDropDistributedDataTableByRangePoint(int);
 void FalconCreateSliceTable(void);
 void FalconCreateKvmetaTable(void);
+/* v6.4 \u00a73.1: one falcon_kvblock_table per DN (not sharded by range_point). */
+void FalconCreateKvblockTable(void);
 void FalconPrepareCommands(void);
 
 #endif

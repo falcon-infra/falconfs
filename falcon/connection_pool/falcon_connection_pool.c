@@ -29,7 +29,11 @@
 #include "connection_pool/pg_connection_pool.h"
 #include "control/control_flag.h"
 
-int FalconPGPort = 0;
+/* libbrpcplugin.so is dlopen'd after falcon.so; LibpqKVMetaTableAccessor needs
+ * to read this value to open a libpq connection back to the local PG. falcon.so
+ * is built with -fvisibility=hidden so we have to mark this one global as
+ * default-visibility for the dlopen'd plugin to resolve it. */
+__attribute__((visibility("default"))) int FalconPGPort = 0;
 int FalconConnectionPoolPort = FALCON_CONNECTION_POOL_PORT_DEFAULT;
 int FalconConnectionPoolSize = FALCON_CONNECTION_POOL_SIZE_DEFAULT;
 int FalconConnectionPoolBatchSize = FALCON_CONNECTION_POOL_BATCH_SIZE_DEFAULT;
@@ -37,6 +41,27 @@ int FalconConnectionPoolWaitAdjust = FALCON_CONNECTION_POOL_WAIT_ADJUST_DEFAULT;
 int FalconConnectionPoolWaitMin = FALCON_CONNECTION_POOL_WAIT_MIN_DEFAULT;
 int FalconConnectionPoolWaitMax = FALCON_CONNECTION_POOL_WAIT_MAX_DEFAULT;
 uint64_t FalconConnectionPoolShmemSize = FALCON_CONNECTION_POOL_SHMEM_SIZE_DEFAULT;
+
+/* v6 \u00a714 KV eviction worker GUCs (read from libbrpcplugin.so via dlopen
+ * symbol resolution; default visibility for the plugin's extern int
+ * declarations to resolve). */
+__attribute__((visibility("default"))) int FalconKvEvictionPeriodMs =
+    FALCON_KV_EVICTION_PERIOD_MS_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvEvictionLowWatermarkPct =
+    FALCON_KV_EVICTION_LOW_WATERMARK_PCT_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvEvictionChunk =
+    FALCON_KV_EVICTION_CHUNK_DEFAULT;
+__attribute__((visibility("default"))) char* FalconKvStoreSpillEndpoint = NULL;
+__attribute__((visibility("default"))) int FalconKvWatchdogPeriodMs =
+    FALCON_KV_WATCHDOG_PERIOD_MS_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvWatchdogSkewMs =
+    FALCON_KV_WATCHDOG_SKEW_MS_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvPromoteEnabled =
+    FALCON_KV_PROMOTE_ENABLED_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvPromoteQueueCapacity =
+    FALCON_KV_PROMOTE_QUEUE_CAPACITY_DEFAULT;
+__attribute__((visibility("default"))) int FalconKvPromoteMaxInflight =
+    FALCON_KV_PROMOTE_MAX_INFLIGHT_DEFAULT;
 
 // communication plugin path, using global variable for shared to worker process
 char *FalconCommunicationPluginPath;

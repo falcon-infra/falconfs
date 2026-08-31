@@ -1,6 +1,12 @@
 .DS_Store
 .idea
 .vscode
+.cursor/
+
+# Editor swap files
+*.swp
+*.swo
+*~
 *.log
 *.a
 *.o
@@ -9,10 +15,17 @@
 __pycache__
 tmp/
 
+# CTest metadata when runs leave artifacts at repo root (not the in-tree test suite).
+Testing/
+
 .cache
 compile_commands.json
 build
+# Match any build output directory (build/, build_user/, build_release/, ...).
+# Trailing slash keeps build.sh out of the ignore set.
+build*/
 log/falcon.*
+logs/
 stats.out
 
 cloud_native/docker_build/cn/metadb
@@ -29,3 +42,4 @@ tests/falcon_cm/__pycache__
 
 falcon/connection_pool/fbs
 falcon/brpc_comm_adapter/proto
+vllm_kv_cache/python/falconfs_kv/kv_*_pb2.py

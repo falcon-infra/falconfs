@@ -307,6 +307,98 @@ COMMENT ON FUNCTION pg_catalog.falcon_meta_call_by_serialized_data(type int, cou
 
 
 ----------------------------------------------------------------
+-- v6.4 KV cache catalog: one libpq round-trip per sub-batch (\u00a74.1.1).
+-- Method enum + POD-array payload defined in connection_pool/kv_catalog_wire.h.
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_kv_metadata_catalog_call(method int, payload bytea)
+    RETURNS bytea
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_kv_metadata_catalog_call$$;
+COMMENT ON FUNCTION pg_catalog.falcon_kv_metadata_catalog_call(method int, payload bytea)
+    IS 'v6.4 KV cache catalog batch op: one round-trip per sub-batch';
+
+-----------------------------------------------------------------
+-- falcon_kv_metadata_recovery_call (v6 §15.1 / §15.4):
+--   - SCAN_FOR_RECOVERY scans falcon_kvblock_table and returns all rows.
+--   - LOAD_DN_EPOCH / BUMP_DN_EPOCH manage falcon_kvblock_dn_epoch.
+-- Method enum + payload format defined in connection_pool/kv_catalog_wire.h.
+-----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_kv_metadata_recovery_call(method int, payload bytea)
+    RETURNS bytea
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_kv_metadata_recovery_call$$;
+COMMENT ON FUNCTION pg_catalog.falcon_kv_metadata_recovery_call(method int, payload bytea)
+    IS 'v6 §15.1 KV cache DN-restart recovery: scan rows + dn_epoch fencing';
+
+
+----------------------------------------------------------------
+-- falcon_create_kvblock_table (v6.4 \u00a73.1: one row table per DN).
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_kvblock_table()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_kvblock_table$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_kvblock_table()
+    IS 'v6.4 KV cache catalog: create per-DN falcon_kvblock_table';
+
+
+----------------------------------------------------------------
+-- v6.5 KV cache membership (CN): falcon_dn_node + falcon_store_node + pg_notify
+----------------------------------------------------------------
+CREATE FUNCTION pg_catalog.falcon_create_kv_membership_tables()
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_create_kv_membership_tables$$;
+COMMENT ON FUNCTION pg_catalog.falcon_create_kv_membership_tables()
+    IS 'v6.5: create pg_catalog.falcon_dn_node and falcon_store_node if missing';
+
+CREATE FUNCTION pg_catalog.falcon_dn_node_register(server_id int, host_node_name cstring, pg_host cstring,
+    pg_port int, kv_brpc_port int, dn_epoch bigint)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_dn_node_register$$;
+
+CREATE FUNCTION pg_catalog.falcon_dn_node_heartbeat(server_id int, now_ms bigint)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_dn_node_heartbeat$$;
+
+CREATE FUNCTION pg_catalog.falcon_dn_node_unregister(server_id int)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_dn_node_unregister$$;
+
+CREATE FUNCTION pg_catalog.falcon_dn_node_update_endpoint(server_id int, host_node_name cstring, pg_host cstring,
+    pg_port int, kv_brpc_port int)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_dn_node_update_endpoint$$;
+
+CREATE FUNCTION pg_catalog.falcon_store_node_register(store_node_id int, host_node_name cstring, host cstring,
+    brpc_port int, runtime_dir cstring, shm_name cstring, dram_pool_bytes bigint, block_size int, store_epoch bigint)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_store_node_register$$;
+
+CREATE FUNCTION pg_catalog.falcon_store_node_heartbeat(store_node_id int, store_epoch bigint, now_ms bigint)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_store_node_heartbeat$$;
+
+CREATE FUNCTION pg_catalog.falcon_store_node_unregister(store_node_id int)
+    RETURNS INTEGER
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_store_node_unregister$$;
+
+CREATE FUNCTION pg_catalog.falcon_kv_membership_watchdog_tick(now_ms bigint, skew_ms bigint)
+    RETURNS BIGINT
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$falcon_kv_membership_watchdog_tick$$;
+COMMENT ON FUNCTION pg_catalog.falcon_kv_membership_watchdog_tick(bigint, bigint)
+    IS 'v6.5 P3: mark falcon_store_node / falcon_dn_node unhealthy when heartbeat skew exceeds threshold';
+
+
+----------------------------------------------------------------
 -- falcon_create_slice_table
 ----------------------------------------------------------------
 CREATE FUNCTION pg_catalog.falcon_create_slice_table()

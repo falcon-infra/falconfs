@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package falconfs.kv;
+
+enum BlockStatus {
+  BLOCK_STATUS_UNSPECIFIED = 0;
+  BLOCK_STATUS_ALLOCATED = 1;
+  BLOCK_STATUS_STORED = 2;
+  BLOCK_STATUS_EVICTING = 3;
+  BLOCK_STATUS_EVICTED = 4;
+  BLOCK_STATUS_FAILED = 5;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  OK = 1;
+  NOT_FOUND = 2;
+  INVALID_ARGUMENT = 3;
+  CAS_CONFLICT = 4;
+  LEASE_EXPIRED = 5;
+  LEASE_TOKEN_MISMATCH = 6;
+  STALE_EPOCH = 7;
+  STORE_WRITE_FAILED = 8;
+  THROTTLED = 9;
+  CHECKSUM_MISMATCH = 10;
+  INTERNAL_ERROR = 11;
+}
+
+enum CompressionType {
+  COMPRESSION_UNSPECIFIED = 0;
+  COMPRESSION_NONE = 1;
+  COMPRESSION_LZ4 = 2;
+  COMPRESSION_ZSTD = 3;
+}
+
+enum KVCatalogMethod {
+  KV_CATALOG_METHOD_UNSPECIFIED = 0;
+  KV_CATALOG_METHOD_LOOKUP = 1;
+  KV_CATALOG_METHOD_INSERT_ALLOCATED = 2;
+  KV_CATALOG_METHOD_CAS_STATUS_UPDATE = 3;
+  KV_CATALOG_METHOD_DELETE = 4;
+  KV_CATALOG_METHOD_SCAN_FOR_RECOVERY = 5;
+  KV_CATALOG_METHOD_LOAD_DN_EPOCH = 6;
+  KV_CATALOG_METHOD_BUMP_DN_EPOCH = 7;
+  KV_CATALOG_METHOD_PROMOTE_FROM_EVICTED = 8;
+  KV_CATALOG_METHOD_RECONCILE_STORE_RESTART = 9;
+}
+
+message CommonRequestMeta {
+  string request_id = 1;
+  int64 client_id = 2;
+  string client_hostname = 3;
+  string trace_id = 4;
+  int64 request_start_ms = 5;
+  int64 client_epoch_hint = 6;
+  uint32 timeout_ms = 7;
+}
+
+message ItemResultMeta {
+  bool success = 1;
+  ErrorCode error_code = 2;
+  bool retryable = 3;
+  string error_message = 4;
+}
+
+message LeaseInfo {
+  int64 lease_token = 1;
+  int64 lease_expire_ms = 2;
+  int64 dn_epoch = 3;
+  int64 store_epoch = 4;
+}
+
+message BlockLocation {
+  int32 store_node_id = 1;
+  int64 pool_offset = 2;
+  string evicted_path = 3;
+  int64 store_epoch = 4;
+}

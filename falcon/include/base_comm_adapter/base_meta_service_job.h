@@ -47,6 +47,11 @@ class BaseMetaServiceJob {
     // BrpcMetaServiceJob need recycle the data bye deleter
     using FalDataDeleter = std::function<void(void *)>;
     virtual void ProcessResponse(void *data, size_t size, FalDataDeleter deleter) = 0;
+
+    // v6.4 KV cache jobs (`BaseKVCacheServiceJob`) override this so the
+    // dispatcher in `FalconDispatchMetaJob2PGConnectionPool` can route them
+    // onto the KV-specific connection-pool queue (kvTaskList / KVDequeueExec).
+    virtual bool IsKVCacheServiceJob() const { return false; }
 };
 
 // used for dispatch Falcon meta Job, decouple the dependency connection pool and communication Service

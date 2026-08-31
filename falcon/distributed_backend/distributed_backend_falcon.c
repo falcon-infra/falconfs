@@ -7,6 +7,8 @@
 #include "executor/spi.h"
 
 #include "metadb/inode_table.h"
+#include "metadb/kvblock_table.h"
+#include "metadb/kv_membership.h"
 #include "metadb/shard_table.h"
 #include "metadb/xattr_table.h"
 #include "utils/error_log.h"
@@ -17,6 +19,7 @@ PG_FUNCTION_INFO_V1(falcon_create_distributed_data_table_by_range_point);
 PG_FUNCTION_INFO_V1(falcon_drop_distributed_data_table_by_range_point);
 PG_FUNCTION_INFO_V1(falcon_create_slice_table);
 PG_FUNCTION_INFO_V1(falcon_create_kvmeta_table);
+PG_FUNCTION_INFO_V1(falcon_create_kvblock_table);
 PG_FUNCTION_INFO_V1(falcon_prepare_commands);
 
 Datum falcon_create_distributed_data_table(PG_FUNCTION_ARGS)
@@ -53,6 +56,13 @@ Datum falcon_create_slice_table(PG_FUNCTION_ARGS)
 Datum falcon_create_kvmeta_table(PG_FUNCTION_ARGS)
 {
     FalconCreateKvmetaTable();
+
+    PG_RETURN_INT16(SUCCESS);
+}
+
+Datum falcon_create_kvblock_table(PG_FUNCTION_ARGS)
+{
+    FalconCreateKvblockTable();
 
     PG_RETURN_INT16(SUCCESS);
 }
@@ -218,6 +228,32 @@ void FalconCreateKvmetaTable()
         FALCON_ELOG_ERROR(PROGRAM_ERROR, "spi exec failed.");
     }
     SPI_finish();
+}
+
+void FalconCreateKvblockTable()
+{
+    /* v6.4 \u00a73.1: one falcon_kvblock_table per DN; not sharded by range_point.
+     * Skip if already created. */
+    if (!CheckIfRelationExists(KvblockTableName, PG_CATALOG_NAMESPACE)) {
+        StringInfo toExecCommand = makeStringInfo();
+        ConstructCreateKvblockTableCommand(toExecCommand, KvblockTableName);
+
+        int spiConnectionResult = SPI_connect();
+        if (spiConnectionResult != SPI_OK_CONNECT) {
+            SPI_finish();
+            FALCON_ELOG_ERROR(PROGRAM_ERROR, "could not connect to SPI manager.");
+        }
+
+        int spiQueryResult = SPI_execute(toExecCommand->data, false, 0);
+        if (spiQueryResult != SPI_OK_UTILITY) {
+            SPI_finish();
+            FALCON_ELOG_ERROR(PROGRAM_ERROR, "spi exec failed.");
+        }
+        SPI_finish();
+    }
+
+    /* v6.5: CN membership tables (idempotent); safe after kvblock exists. */
+    FalconCreateKvMembershipTables();
 }
 
 void FalconPrepareCommands()

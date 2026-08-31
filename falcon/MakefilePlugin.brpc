@@ -10,6 +10,26 @@ BRPC_PLUGIN_C_OBJS += \
 REMOTE_CONNECTION_DEF_DIR = $(falcon_srcdir)/../remote_connection_def
 BRPC_COMM_ADAPTER = $(falcon_srcdir)/brpc_comm_adapter
 
+# KV cache stack (vllm_kv_cache) is compiled ONLY into libbrpcplugin.so. falcon.so
+# must NOT carry these objects: a duplicate copy of falconfs::kv symbols + KV
+# protobuf descriptors in the same process correlates with a SIGSEGV in the pool
+# bgworker ~30 s after Listen() returns (protobuf descriptor pool conflicts +
+# brpc/glog/gflags static-init double-execution).
+KV_CACHE_DIR = $(falcon_srcdir)/../vllm_kv_cache
+KV_CACHE_PROTO_DIR = $(KV_CACHE_DIR)/proto
+KV_CACHE_SRC_DIR = $(KV_CACHE_DIR)/src
+KV_PROTO_OUT_DIR = $(BRPC_COMM_ADAPTER)/proto/vllm_kv_cache
+
+KV_PROTO_FILE = $(wildcard $(KV_CACHE_PROTO_DIR)/*.proto)
+KV_PROTO_SRC = $(patsubst $(KV_CACHE_PROTO_DIR)/%.proto, $(KV_PROTO_OUT_DIR)/%.pb.cc, $(KV_PROTO_FILE))
+KV_PROTO_HEAD = $(patsubst %.cc, %.h, $(KV_PROTO_SRC))
+KV_PROTO_OBJS = $(patsubst %.cc, %.o, $(KV_PROTO_SRC))
+
+KV_METADATA_SRC = $(wildcard $(KV_CACHE_SRC_DIR)/metadata/*.cpp)
+KV_STORE_SRC = $(wildcard $(KV_CACHE_SRC_DIR)/store/*.cpp)
+KV_SERVICE_SRC = $(wildcard $(KV_CACHE_SRC_DIR)/service/*.cpp)
+KV_CXX_OBJS = $(patsubst %.cpp,%.o,$(KV_METADATA_SRC) $(KV_STORE_SRC) $(KV_SERVICE_SRC))
+
 PROTO_DIR = $(shell find $(REMOTE_CONNECTION_DEF_DIR) -type d | grep -E '/proto$$')
 PROTO_FILE = $(wildcard $(PROTO_DIR)/*.proto)
 PROTO_SRC = $(patsubst $(REMOTE_CONNECTION_DEF_DIR)/%.proto, $(BRPC_COMM_ADAPTER)/%.pb.cc, $(PROTO_FILE))
@@ -18,13 +38,19 @@ PROTO_OBJS = $(patsubst %.cc, %.o, $(PROTO_SRC))
 
 BRPC_LDFLAGS_PROTO = -Wl,-Bdynamic -lprotobuf
 BPRC_LDFLAGS_BRPC = -lbrpc
+# libpq is the catalog tier round-trip (v6.4 \u00a74.1.1) used by
+# LibpqKVMetaTableAccessor to read/write `falcon_kvblock_table`.
+BRPC_LDFLAGS_LIBPQ = -L$(shell pg_config --libdir) -lpq -Wl,-rpath,$(shell pg_config --libdir)
 BRPC_LDFLAGS_DEPENDENCIES = -L../../../../falcon/third_party/glog/lib -lpthread -lgflags -lleveldb -lcrypto -lssl -ldl -lz -lglog
 
-BRPC_PLUGIN_CPPFLAGS = -I./include -I./brpc_comm_adapter/proto  \
+BRPC_PLUGIN_CPPFLAGS = -I./include -I./brpc_comm_adapter/proto \
+			  -I$(KV_PROTO_OUT_DIR) \
+			  -I$(falcon_srcdir)/.. \
 			  -I$(REMOTE_CONNECTION_DEF_DIR) \
+			  -I$(shell pg_config --includedir) \
 			  -I$(falcon_srcdir)/../../../../falcon/third_party/glog/include
 
-BRPC_PLUGIN_LINK_LIB = $(BPRC_LDFLAGS_BRPC) $(BRPC_LDFLAGS_PROTO) $(BRPC_LDFLAGS_DEPENDENCIES)
+BRPC_PLUGIN_LINK_LIB = $(BPRC_LDFLAGS_BRPC) $(BRPC_LDFLAGS_PROTO) $(BRPC_LDFLAGS_DEPENDENCIES) $(BRPC_LDFLAGS_LIBPQ)
 
 BRPC_PLUGIN_LIB_NAME = libbrpcplugin.so
 
@@ -32,18 +58,29 @@ CXXFLAGS=-Wall -Wextra -O2 -fPIC
 
 all: ${BRPC_PLUGIN_LIB_NAME}
 
-${BRPC_PLUGIN_LIB_NAME}:$(BRPC_PLUGIN_CXX_OBJS) $(PROTO_OBJS)
+${BRPC_PLUGIN_LIB_NAME}: $(BRPC_PLUGIN_CXX_OBJS) $(PROTO_OBJS) $(KV_PROTO_OBJS) $(KV_CXX_OBJS)
 	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(BRPC_PLUGIN_LINK_LIB)
 
-$(BRPC_PLUGIN_CXX_OBJS):%.o:%.cpp $(PROTO_SRC)
+$(BRPC_PLUGIN_CXX_OBJS): %.o: %.cpp $(PROTO_SRC) $(KV_PROTO_SRC)
 	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
-$(PROTO_OBJS):%o:%cc $(PROTO_SRC)
+$(KV_CXX_OBJS): %.o: %.cpp $(KV_PROTO_SRC)
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+
+$(PROTO_OBJS): %.o: %.cc $(PROTO_SRC)
+	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
+
+$(KV_PROTO_OBJS): %.o: %.cc $(KV_PROTO_SRC)
 	$(CXX) -c $(BRPC_PLUGIN_CPPFLAGS) -fPIC $(CXXFLAGS) $(CPPFLAGS) -faligned-new $< -o $@
 
 $(PROTO_SRC): $(PROTO_FILE)
 	mkdir -p $(BRPC_COMM_ADAPTER)/proto
 	protoc --cpp_out=$(BRPC_COMM_ADAPTER)/proto/ -I $(PROTO_DIR) $(notdir $(PROTO_FILE))
 
+$(KV_PROTO_SRC): $(KV_PROTO_FILE)
+	mkdir -p $(KV_PROTO_OUT_DIR)
+	protoc --cpp_out=$(KV_PROTO_OUT_DIR) -I $(KV_CACHE_PROTO_DIR) $(notdir $(KV_PROTO_FILE))
+
 clean:
-	rm -f $(PROTO_OBJS) $(BRPC_PLUGIN_CXX_OBJS) ${BRPC_PLUGIN_LIB_NAME}
+	rm -f $(PROTO_OBJS) $(KV_PROTO_OBJS) $(KV_CXX_OBJS) $(BRPC_PLUGIN_CXX_OBJS) ${BRPC_PLUGIN_LIB_NAME}
+	rm -rf $(KV_PROTO_OUT_DIR)

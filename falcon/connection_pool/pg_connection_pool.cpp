@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "base_comm_adapter/base_kv_cache_service_job.h"
 #include "base_comm_adapter/base_meta_service_job.h"
 #include "connection_pool/connection_pool_config.h"
 #include "connection_pool/falcon_batch_service_def.h"
@@ -45,6 +46,12 @@ class PGConnectionPool {
     TaskSupportBatch supportBatchTaskList[int(FalconBatchServiceType::END)];
     uint16_t batchTaskBufferMaxSize;
 
+    /* v6.4 \u00a74.1.1: dedicated queue for KV cache jobs. Each job is one BRPC
+     * sub-batch and is handled by one PGConnection worker (so the catalog
+     * libpq round-trip uses that worker's dedicated PG backend, not a single
+     * shared connection). */
+    pg_connection_pool::ConcurrentQueue<BaseKVCacheServiceJob *> kvTaskList;
+
     std::thread backgroundPoolManager;
 
     // define private construct function to avoid create single instance
@@ -62,6 +69,10 @@ class PGConnectionPool {
     // create single job work task and dispatch to connection
     int SingleDequeueExec(int toDequeue);
 
+    /* dequeue up to N KV jobs, dispatching each to its own PGConnection worker
+     * (each worker has its own libpq connection => parallel PG backends). */
+    int KVDequeueExec(int toDequeue);
+
     // adjust sleep interval while no jobs waiting to work
     int AdjustWaitTime(int prevTime, size_t reqInLoop);
 
@@ -77,6 +88,9 @@ class PGConnectionPool {
 
     // interface for communication server to call, used to dispatch meta service job to connection pool
     void DispatchMetaServiceJob(BaseMetaServiceJob *job);
+
+    /* v6.4 \u00a74.1.1: enqueue a KV cache job onto kvTaskList. */
+    void EnqueueKVCacheJob(BaseKVCacheServiceJob *job);
 
     bool Init(const uint16_t port,
               const char *userName,
@@ -110,6 +124,13 @@ void PGConnectionPool::BackgroundPoolManager()
                 } else {
                     SingleDequeueExec(toDequeue);
                 }
+            }
+            int kvQueueSizeApprox = kvTaskList.size_approx();
+            if (kvQueueSizeApprox > 0) {
+                maxCount = std::max(maxCount, kvQueueSizeApprox);
+                int toDequeue = std::min(kvQueueSizeApprox, FalconConnectionPoolBatchSize);
+                KVDequeueExec(toDequeue);
+                emptyCount = 0;
             }
             if (emptyCount == (int)FalconBatchServiceType::NOT_SUPPORT + 1) {
                 withTasks = false;
@@ -213,6 +234,35 @@ PGConnection *PGConnectionPool::GetPGConnection()
     return result;
 }
 
+int PGConnectionPool::KVDequeueExec(int toDequeue)
+{
+    /* v6.4 \u00a74.1.1: each KV job carries one BRPC sub-batch already; we don't
+     * coalesce multiple jobs into one libpq call. We DO dispatch many jobs in
+     * parallel by handing each one to a distinct PGConnection worker, so
+     * concurrent KV requests fan out across the connection pool. */
+    std::vector<BaseKVCacheServiceJob *> jobs;
+    jobs.reserve(toDequeue);
+    std::function func = [&jobs](BaseKVCacheServiceJob *job) { jobs.emplace_back(job); };
+    size_t count = kvTaskList.dequeue_bulk(std::move(func), toDequeue);
+    if (count == 0) {
+        return 0;
+    }
+    for (auto &job : jobs) {
+        job->stageTimer.EndAndRestart(GetInQueueLatencyData());
+    }
+    for (auto &job : jobs) {
+        auto workerTaskPtr =
+            std::make_shared<KVCacheWorkerTask>(GetFalconConnectionPoolShmemAllocator(), job);
+        if (workerTaskPtr == nullptr) {
+            throw std::runtime_error("KVDequeueExec make_shared<KVCacheWorkerTask> failed");
+        }
+        PGConnection *conn = GetPGConnection();
+        job->stageTimer.EndAndRestart(GetConnWaitLatencyData());
+        conn->Exec(workerTaskPtr);
+    }
+    return static_cast<int>(count);
+}
+
 // lifetime of job must be longer than this function. it will be freed later
 void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
 {
@@ -239,6 +289,19 @@ void PGConnectionPool::DispatchMetaServiceJob(BaseMetaServiceJob *job)
         std::this_thread::yield();
     }
     STAT_CKPT(job->statArrayIndex, CKPT_ENQUEUE);
+}
+
+void PGConnectionPool::EnqueueKVCacheJob(BaseKVCacheServiceJob *job)
+{
+    if (job == nullptr) {
+        return;
+    }
+    job->opcodeForE2E = NOT_SUPPORTED;
+    job->e2eTimer.Start();
+    job->stageTimer.Start();
+    while (!kvTaskList.enqueue(job)) {
+        std::this_thread::yield();
+    }
 }
 
 bool PGConnectionPool::Init(const uint16_t port,
@@ -280,6 +343,13 @@ void PGConnectionPool::Destroy()
             curWaitCnt++;
         }
     }
+    {
+        int curWaitCnt = 0;
+        while (kvTaskList.size_approx() > 0 && waitMaxCnt > curWaitCnt) {
+            std::this_thread::sleep_for(std::chrono::microseconds(waitIntervalTime));
+            curWaitCnt++;
+        }
+    }
 
     working = false;
     for (auto it = currentManagedConn.begin(); it != currentManagedConn.end(); ++it) {
@@ -305,5 +375,9 @@ void DestroyPGConnectionPool() { PGConnectionPool::GetInstance().Destroy(); }
 void FalconDispatchMetaJob2PGConnectionPool(void *job)
 {
     BaseMetaServiceJob *metaJob = static_cast<BaseMetaServiceJob *>(job);
+    if (metaJob->IsKVCacheServiceJob()) {
+        PGConnectionPool::GetInstance().EnqueueKVCacheJob(static_cast<BaseKVCacheServiceJob *>(metaJob));
+        return;
+    }
     PGConnectionPool::GetInstance().DispatchMetaServiceJob(metaJob);
 }

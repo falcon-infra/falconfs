@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package falconfs.kv;
+import "kv_common.proto";
+
+// Enable protobuf-generated abstract Service base class so we can derive a
+// brpc-compatible service adapter without depending on grpc/brpc plugins.
+option cc_generic_services = true;
+
+service KVDataService {
+  rpc WriteBlock(WriteBlockRequest) returns (WriteBlockResponse);
+  rpc ReadBlock(ReadBlockRequest) returns (ReadBlockResponse);
+  rpc ReadFromSSD(ReadFromSSDRequest) returns (ReadFromSSDResponse);
+  rpc BatchWriteBlock(BatchWriteBlockRequest) returns (BatchWriteBlockResponse);
+  rpc BatchReadBlock(BatchReadBlockRequest) returns (BatchReadBlockResponse);
+  rpc BatchReadFromSSD(BatchReadFromSSDRequest) returns (BatchReadFromSSDResponse);
+}
+
+message WriteItem {
+  bytes block_hash = 1;
+  int64 pool_offset = 2;
+  bytes payload = 3;
+  uint32 crc32 = 4;
+  CompressionType compression = 5;
+  int32 original_size = 6;
+  int32 block_size = 7;
+  int64 expected_version = 8;
+  int64 expected_store_epoch = 9;
+}
+
+message WriteResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  int32 bytes_written = 3;
+  uint32 crc32 = 4;
+}
+
+message BatchWriteBlockRequest {
+  CommonRequestMeta meta = 1;
+  repeated WriteItem items = 2;
+  bool verify_checksum = 3;
+}
+
+message WriteBlockRequest {
+  CommonRequestMeta meta = 1;
+  WriteItem item = 2;
+  bool verify_checksum = 3;
+}
+
+message WriteBlockResponse {
+  WriteResult result = 1;
+  int64 server_time_ms = 2;
+}
+
+message BatchWriteBlockResponse {
+  repeated WriteResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+message ReadItem {
+  bytes block_hash = 1;
+  int64 pool_offset = 2;
+  int32 block_size = 3;
+  int64 expected_version = 4;
+  int64 expected_store_epoch = 5;
+}
+
+message ReadResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  bytes payload = 3;
+  uint32 crc32 = 4;
+  CompressionType compression = 5;
+  int32 original_size = 6;
+}
+
+message BatchReadBlockRequest {
+  CommonRequestMeta meta = 1;
+  repeated ReadItem items = 2;
+  bool return_compressed = 3;
+}
+
+message ReadBlockRequest {
+  CommonRequestMeta meta = 1;
+  ReadItem item = 2;
+  bool return_compressed = 3;
+}
+
+message ReadBlockResponse {
+  ReadResult result = 1;
+  int64 server_time_ms = 2;
+}
+
+message BatchReadBlockResponse {
+  repeated ReadResult results = 1;
+  int64 server_time_ms = 2;
+}
+
+message SSDReadItem {
+  bytes block_hash = 1;
+  string evicted_path = 2;
+  int64 expected_version = 3;
+}
+
+message SSDReadResult {
+  bytes block_hash = 1;
+  ItemResultMeta result = 2;
+  bytes payload = 3;
+  uint32 crc32 = 4;
+  CompressionType compression = 5;
+  int32 original_size = 6;
+}
+
+message BatchReadFromSSDRequest {
+  CommonRequestMeta meta = 1;
+  repeated SSDReadItem items = 2;
+  bool return_compressed = 3;
+}
+
+message ReadFromSSDRequest {
+  CommonRequestMeta meta = 1;
+  SSDReadItem item = 2;
+  bool return_compressed = 3;
+}
+
+message ReadFromSSDResponse {
+  SSDReadResult result = 1;
+  int64 server_time_ms = 2;
+}
+
+message BatchReadFromSSDResponse {
+  repeated SSDReadResult results = 1;
+  int64 server_time_ms = 2;
+}
